@@ -11,10 +11,16 @@ export default async function SetupPage() {
 
   return (
     <div className="min-h-screen">
-      <AdminNav email={session.user?.email ?? ""} />
+      <AdminNav email={session.user?.email} />
       <main className="max-w-2xl mx-auto px-4 py-8">
         <h1 className="text-xl font-bold text-gray-900 mb-6">เปิดคาบเรียน</h1>
-        <Suspense fallback={<div className="flex justify-center py-20"><Spinner className="h-8 w-8 text-[#185FA5]" /></div>}>
+        <Suspense
+          fallback={
+            <div className="flex justify-center py-20">
+              <Spinner className="h-8 w-8 text-[#185FA5]" />
+            </div>
+          }
+        >
           <SetupClient />
         </Suspense>
       </main>

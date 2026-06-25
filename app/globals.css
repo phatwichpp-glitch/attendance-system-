@@ -1,55 +1,103 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
 
-:root {
-  --primary: #185FA5;
-  --primary-dark: #0d4a82;
+@theme {
+  --color-primary: #185FA5;
+  --color-primary-light: #E6F1FB;
+  --color-success: #3B6D11;
+  --color-success-light: #EAF3DE;
+  --color-warning: #854F0B;
+  --color-warning-light: #FAEEDA;
+  --color-danger: #A32D2D;
+  --color-danger-light: #FCEBEB;
 }
 
 @layer base {
   body {
-    @apply text-gray-900 bg-gray-50;
+    font-family: system-ui, -apple-system, sans-serif;
+    background-color: #f9fafb;
+    color: #111827;
   }
 }
 
 @layer components {
   .card {
-    @apply bg-white border border-gray-200 rounded-xl p-4;
-    border-width: 0.5px;
+    background: white;
+    border: 0.5px solid rgba(0, 0, 0, 0.12);
+    border-radius: 12px;
+    padding: 1rem;
   }
 
   .btn-primary {
-    @apply bg-[#185FA5] hover:bg-[#0d4a82] text-white font-medium px-4 py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.375rem;
+    background-color: #185FA5;
+    color: white;
+    font-weight: 500;
+    font-size: 0.875rem;
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    border: none;
+    cursor: pointer;
+    transition: background-color 0.15s;
   }
+  .btn-primary:hover { background-color: #0d4a82; }
+  .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
 
   .btn-outline {
-    @apply border border-[#185FA5] text-[#185FA5] hover:bg-blue-50 font-medium px-4 py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
-    border-width: 0.5px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.375rem;
+    background-color: transparent;
+    color: #185FA5;
+    font-weight: 500;
+    font-size: 0.875rem;
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    border: 0.5px solid #185FA5;
+    cursor: pointer;
+    transition: background-color 0.15s;
   }
+  .btn-outline:hover { background-color: #E6F1FB; }
+  .btn-outline:disabled { opacity: 0.5; cursor: not-allowed; }
 
   .btn-danger {
-    @apply bg-[#A32D2D] hover:bg-red-800 text-white font-medium px-4 py-2 rounded-lg transition-colors;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.375rem;
+    background-color: #A32D2D;
+    color: white;
+    font-weight: 500;
+    font-size: 0.875rem;
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    border: none;
+    cursor: pointer;
+    transition: background-color 0.15s;
   }
+  .btn-danger:hover { background-color: #821f1f; }
 
   .input {
-    @apply w-full border border-gray-300 rounded-lg px-3 py-2 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#185FA5] focus:border-transparent text-sm;
-    border-width: 0.5px;
+    width: 100%;
+    border: 0.5px solid rgba(0, 0, 0, 0.2);
+    border-radius: 8px;
+    padding: 0.5rem 0.75rem;
+    background-color: #f9fafb;
+    font-size: 0.875rem;
+    outline: none;
+    transition: box-shadow 0.15s, border-color 0.15s;
+  }
+  .input:focus {
+    border-color: #185FA5;
+    box-shadow: 0 0 0 3px rgba(24, 95, 165, 0.12);
   }
 
-  .badge-present {
-    @apply bg-[#EAF3DE] text-[#3B6D11] text-xs px-2 py-0.5 rounded-full font-medium;
-  }
-
-  .badge-late {
-    @apply bg-[#FAEEDA] text-[#854F0B] text-xs px-2 py-0.5 rounded-full font-medium;
-  }
-
-  .badge-absent {
-    @apply bg-[#FCEBEB] text-[#A32D2D] text-xs px-2 py-0.5 rounded-full font-medium;
-  }
-
-  .badge-gps {
-    @apply bg-gray-100 text-gray-600 text-xs px-2 py-0.5 rounded-full font-medium;
-  }
+  .badge-present  { display:inline-flex;align-items:center;background-color:#EAF3DE;color:#3B6D11;font-size:.75rem;font-weight:500;padding:.125rem .5rem;border-radius:9999px; }
+  .badge-late     { display:inline-flex;align-items:center;background-color:#E6F1FB;color:#185FA5;font-size:.75rem;font-weight:500;padding:.125rem .5rem;border-radius:9999px; }
+  .badge-absent   { display:inline-flex;align-items:center;background-color:#FCEBEB;color:#A32D2D;font-size:.75rem;font-weight:500;padding:.125rem .5rem;border-radius:9999px; }
+  .badge-gps      { display:inline-flex;align-items:center;background-color:#FAEEDA;color:#854F0B;font-size:.75rem;font-weight:500;padding:.125rem .5rem;border-radius:9999px; }
+  .badge-waiting  { display:inline-flex;align-items:center;background-color:#f3f4f6;color:#6b7280;font-size:.75rem;font-weight:500;padding:.125rem .5rem;border-radius:9999px; }
 }
