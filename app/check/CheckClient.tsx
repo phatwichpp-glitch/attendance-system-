@@ -4,6 +4,34 @@ import { useSearchParams } from "next/navigation";
 import Spinner from "@/components/Spinner";
 import { CheckInState } from "@/types";
 
+function djb2(str: string): string {
+  let h = 5381;
+  for (let i = 0; i < str.length; i++) h = ((h << 5) + h) ^ str.charCodeAt(i);
+  return (h >>> 0).toString(16);
+}
+
+function getOrCreateFingerprint(): string {
+  if (typeof window === "undefined") return "";
+  try {
+    const KEY = "device_fp";
+    const stored = localStorage.getItem(KEY);
+    if (stored) return stored;
+    const raw = [
+      navigator.userAgent,
+      navigator.language,
+      `${screen.width}x${screen.height}x${screen.colorDepth}`,
+      Intl.DateTimeFormat().resolvedOptions().timeZone,
+      String(navigator.hardwareConcurrency),
+      navigator.platform,
+    ].join("|");
+    const fp = djb2(raw);
+    localStorage.setItem(KEY, fp);
+    return fp;
+  } catch {
+    return "";
+  }
+}
+
 interface Result {
   status?: string;
   original_status?: string;
@@ -44,6 +72,11 @@ export default function CheckClient() {
   const [gpsReady, setGpsReady] = useState(false);
   const [result, setResult] = useState<Result | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const fingerprintRef = useRef<string>("");
+
+  useEffect(() => {
+    fingerprintRef.current = getOrCreateFingerprint();
+  }, []);
 
   useEffect(() => {
     if (!sessionId || !otp) {
@@ -89,6 +122,7 @@ export default function CheckClient() {
         lat: gps?.lat ?? null,
         lng: gps?.lng ?? null,
         spreadsheet_id: spreadsheetId,
+        device_fingerprint: fingerprintRef.current,
       });
       const data: Result & { error?: string } = await res.json();
 

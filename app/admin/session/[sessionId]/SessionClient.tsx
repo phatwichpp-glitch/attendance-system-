@@ -3,12 +3,13 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Spinner from "@/components/Spinner";
-import { Session, StudentWithAttendance } from "@/types";
+import { Session, StudentWithAttendance, DeviceConflict } from "@/types";
 
 interface Data {
   session: Session;
   students: StudentWithAttendance[];
   spreadsheetId: string;
+  device_conflicts: DeviceConflict[];
 }
 
 export default function SessionClient({ sessionId }: { sessionId: string }) {
@@ -74,7 +75,7 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
   const exportCsv = () => {
     if (!data) return;
     const rows = [
-      ["#", "รหัส", "ชื่อ", "นามสกุล", "สถานะ", "ระยะทาง(m)", "เวลา"],
+      ["#", "รหัส", "ชื่อ", "นามสกุล", "สถานะ", "ระยะทาง(m)", "เวลา", "device_fingerprint"],
       ...data.students.map((s) => [
         s.order_num,
         s.student_id,
@@ -85,6 +86,7 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
         s.attendance?.checked_at
           ? new Date(s.attendance.checked_at).toLocaleTimeString("th-TH")
           : "",
+        s.attendance?.device_fingerprint ?? "",
       ]),
     ];
     const csv = "﻿" + rows.map((r) => r.join(",")).join("\n");
@@ -186,6 +188,21 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
           />
         </div>
       </div>
+
+      {/* Device conflict warning */}
+      {data.device_conflicts.length > 0 && (
+        <div className="rounded-xl px-4 py-3 space-y-2" style={{ backgroundColor: "#FFFBEB", border: "1px solid #F59E0B" }}>
+          <p className="font-semibold text-sm" style={{ color: "#92400E" }}>
+            ⚠️ พบ Device เดียวกัน ({data.device_conflicts.length} กลุ่ม)
+          </p>
+          {data.device_conflicts.map((c) => (
+            <div key={c.fingerprint} className="text-xs space-y-0.5" style={{ color: "#78350F" }}>
+              <p className="font-mono opacity-60">fp: {c.fingerprint}</p>
+              <p>{c.students.map((s) => `${s.firstname} ${s.lastname} (${s.student_id})`).join(" · ")}</p>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Student list */}
       <div className="card overflow-hidden">

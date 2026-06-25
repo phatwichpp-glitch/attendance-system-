@@ -97,7 +97,7 @@ export async function initializeSpreadsheet(
           ],
         },
         {
-          range: "attendance!A1:L1",
+          range: "attendance!A1:M1",
           values: [
             [
               "attendance_id",
@@ -112,6 +112,7 @@ export async function initializeSpreadsheet(
               "checked_at",
               "overridden",
               "overridden_at",
+              "device_fingerprint",
             ],
           ],
         },
@@ -353,7 +354,7 @@ export async function getAttendanceForSession(
   const sheets = getSheetsClient(accessToken);
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId,
-    range: "attendance!A2:L",
+    range: "attendance!A2:M",
   });
   return (res.data.values ?? [])
     .filter((r) => r[1] === sessionId)
@@ -368,7 +369,7 @@ export async function getAttendanceForCourse(
   const sheets = getSheetsClient(accessToken);
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId,
-    range: "attendance!A2:L",
+    range: "attendance!A2:M",
   });
   return (res.data.values ?? [])
     .filter((r) => r[2] === courseId)
@@ -383,7 +384,7 @@ export async function addAttendance(
   const sheets = getSheetsClient(accessToken);
   await sheets.spreadsheets.values.append({
     spreadsheetId,
-    range: "attendance!A:L",
+    range: "attendance!A:M",
     valueInputOption: "RAW",
     requestBody: {
       values: [
@@ -400,6 +401,7 @@ export async function addAttendance(
           record.checked_at,
           record.overridden ? "TRUE" : "FALSE",
           record.overridden_at,
+          record.device_fingerprint ?? "",
         ],
       ],
     },
@@ -415,7 +417,7 @@ export async function overrideAttendanceRecord(
   const sheets = getSheetsClient(accessToken);
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId,
-    range: "attendance!A2:L",
+    range: "attendance!A2:M",
   });
   const rows = res.data.values ?? [];
   const idx = rows.findIndex((r) => r[0] === attendanceId);
@@ -489,5 +491,6 @@ function rowToAttendance(r: string[]): AttendanceRecord {
     checked_at: r[9] ?? "",
     overridden: r[10] === "TRUE",
     overridden_at: r[11] ?? "",
+    device_fingerprint: r[12] ?? "",
   };
 }

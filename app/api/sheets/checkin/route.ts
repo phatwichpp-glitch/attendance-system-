@@ -19,6 +19,7 @@ export async function POST(req: NextRequest) {
       lat,
       lng,
       spreadsheet_id: bodySpreadsheetId,
+      device_fingerprint,
     } = body;
 
     if (!session_id) {
@@ -138,6 +139,7 @@ export async function POST(req: NextRequest) {
       checked_at: checkedAt,
       overridden: false,
       overridden_at: "",
+      device_fingerprint: device_fingerprint ?? "",
     };
 
     await addAttendance(accessToken, spreadsheetId, record);

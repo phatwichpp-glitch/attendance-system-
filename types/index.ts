@@ -47,6 +47,12 @@ export interface AttendanceRecord {
   checked_at: string;
   overridden: boolean;
   overridden_at: string;
+  device_fingerprint?: string;
+}
+
+export interface DeviceConflict {
+  fingerprint: string;
+  students: { student_id: string; firstname: string; lastname: string; checked_at: string }[];
 }
 
 export interface StudentWithAttendance extends Student {
