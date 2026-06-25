@@ -1,0 +1,55 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --primary: #185FA5;
+  --primary-dark: #0d4a82;
+}
+
+@layer base {
+  body {
+    @apply text-gray-900 bg-gray-50;
+  }
+}
+
+@layer components {
+  .card {
+    @apply bg-white border border-gray-200 rounded-xl p-4;
+    border-width: 0.5px;
+  }
+
+  .btn-primary {
+    @apply bg-[#185FA5] hover:bg-[#0d4a82] text-white font-medium px-4 py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-outline {
+    @apply border border-[#185FA5] text-[#185FA5] hover:bg-blue-50 font-medium px-4 py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
+    border-width: 0.5px;
+  }
+
+  .btn-danger {
+    @apply bg-[#A32D2D] hover:bg-red-800 text-white font-medium px-4 py-2 rounded-lg transition-colors;
+  }
+
+  .input {
+    @apply w-full border border-gray-300 rounded-lg px-3 py-2 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#185FA5] focus:border-transparent text-sm;
+    border-width: 0.5px;
+  }
+
+  .badge-present {
+    @apply bg-[#EAF3DE] text-[#3B6D11] text-xs px-2 py-0.5 rounded-full font-medium;
+  }
+
+  .badge-late {
+    @apply bg-[#FAEEDA] text-[#854F0B] text-xs px-2 py-0.5 rounded-full font-medium;
+  }
+
+  .badge-absent {
+    @apply bg-[#FCEBEB] text-[#A32D2D] text-xs px-2 py-0.5 rounded-full font-medium;
+  }
+
+  .badge-gps {
+    @apply bg-gray-100 text-gray-600 text-xs px-2 py-0.5 rounded-full font-medium;
+  }
+}
