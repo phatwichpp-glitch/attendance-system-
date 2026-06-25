@@ -13,7 +13,7 @@ export default async function SetupPage() {
     <div className="min-h-screen">
       <AdminNav email={session.user?.email} />
       <main className="max-w-2xl mx-auto px-4 py-8">
-        <h1 className="text-xl font-bold text-gray-900 mb-6">เปิดคาบเรียน</h1>
+        <h1 className="text-[18px] font-medium text-gray-900 mb-6">Open Session</h1>
         <Suspense
           fallback={
             <div className="flex justify-center py-20">

@@ -4,10 +4,22 @@ import { useSearchParams } from "next/navigation";
 import Spinner from "@/components/Spinner";
 import { CheckInState } from "@/types";
 
-function djb2(str: string): string {
-  let h = 5381;
-  for (let i = 0; i < str.length; i++) h = ((h << 5) + h) ^ str.charCodeAt(i);
-  return (h >>> 0).toString(16);
+function generateFingerprint(): string {
+  const components = [
+    navigator.userAgent,
+    navigator.language,
+    screen.width + "x" + screen.height + "x" + screen.colorDepth,
+    Intl.DateTimeFormat().resolvedOptions().timeZone,
+    navigator.hardwareConcurrency?.toString() || "",
+    navigator.platform || "",
+  ];
+  const str = components.join("|");
+  let hash = 5381;
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) + hash) + str.charCodeAt(i);
+    hash = hash & hash;
+  }
+  return Math.abs(hash).toString(36);
 }
 
 function getOrCreateFingerprint(): string {
@@ -16,15 +28,7 @@ function getOrCreateFingerprint(): string {
     const KEY = "device_fp";
     const stored = localStorage.getItem(KEY);
     if (stored) return stored;
-    const raw = [
-      navigator.userAgent,
-      navigator.language,
-      `${screen.width}x${screen.height}x${screen.colorDepth}`,
-      Intl.DateTimeFormat().resolvedOptions().timeZone,
-      String(navigator.hardwareConcurrency),
-      navigator.platform,
-    ].join("|");
-    const fp = djb2(raw);
+    const fp = generateFingerprint();
     localStorage.setItem(KEY, fp);
     return fp;
   } catch {

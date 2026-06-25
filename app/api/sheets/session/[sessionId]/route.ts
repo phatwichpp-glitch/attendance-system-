@@ -48,12 +48,12 @@ export async function GET(
       .map((s) => ({ ...s, attendance: attMap.get(s.student_id) ?? null }));
 
     // Build device conflict groups
-    const fpMap = new Map<string, { student_id: string; firstname: string; lastname: string; checked_at: string }[]>();
+    const fpMap = new Map<string, { student_id: string; firstname: string; lastname: string; checked_at: string; status?: string }[]>();
     for (const a of attendance) {
       const fp = a.device_fingerprint;
       if (!fp) continue;
       if (!fpMap.has(fp)) fpMap.set(fp, []);
-      fpMap.get(fp)!.push({ student_id: a.student_id, firstname: a.firstname, lastname: a.lastname, checked_at: a.checked_at });
+      fpMap.get(fp)!.push({ student_id: a.student_id, firstname: a.firstname, lastname: a.lastname, checked_at: a.checked_at, status: a.status });
     }
     const device_conflicts: DeviceConflict[] = [];
     for (const [fingerprint, students] of fpMap) {

@@ -11,9 +11,7 @@ export default async function ImportPage() {
     <div className="min-h-screen">
       <AdminNav email={session.user?.email} />
       <main className="max-w-3xl mx-auto px-4 py-8">
-        <h1 className="text-xl font-bold text-gray-900 mb-6">
-          นำเข้ารายชื่อนักศึกษา
-        </h1>
+        <h1 className="text-[18px] font-medium text-gray-900 mb-6">Import Students</h1>
         <ImportClient />
       </main>
     </div>

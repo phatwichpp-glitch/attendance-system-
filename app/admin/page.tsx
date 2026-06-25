@@ -12,7 +12,7 @@ export default async function AdminPage() {
       <AdminNav email={session.user?.email} />
       <main className="max-w-5xl mx-auto px-4 py-8">
         <div className="flex items-center justify-between mb-6">
-          <h1 className="text-xl font-bold text-gray-900">รายวิชาของฉัน</h1>
+          <h1 className="text-[18px] font-medium text-gray-900">My Courses</h1>
         </div>
         <CourseList />
       </main>

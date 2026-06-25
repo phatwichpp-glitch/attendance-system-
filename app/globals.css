@@ -14,71 +14,87 @@
 @layer base {
   body {
     font-family: system-ui, -apple-system, sans-serif;
+    font-size: 13px;
     background-color: #f9fafb;
     color: #111827;
+    -webkit-tap-highlight-color: transparent;
+  }
+  *, *::before, *::after {
+    -webkit-tap-highlight-color: transparent;
   }
 }
 
 @layer components {
   .card {
     background: white;
-    border: 0.5px solid rgba(0, 0, 0, 0.12);
+    border: 0.5px solid rgba(0, 0, 0, 0.1);
     border-radius: 12px;
-    padding: 1rem;
+    padding: 18px;
   }
 
   .btn-primary {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 0.375rem;
+    gap: 6px;
     background-color: #185FA5;
     color: white;
     font-weight: 500;
-    font-size: 0.875rem;
-    padding: 0.5rem 1rem;
+    font-size: 13px;
+    padding: 9px 16px;
     border-radius: 8px;
     border: none;
     cursor: pointer;
-    transition: background-color 0.15s;
+    min-height: 44px;
+    min-width: 44px;
+    transition: background-color 0.15s ease;
   }
-  .btn-primary:hover { background-color: #0d4a82; }
+  .btn-primary:hover:not(:disabled) { background-color: #125289; }
   .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
 
   .btn-outline {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 0.375rem;
+    gap: 6px;
     background-color: transparent;
     color: #185FA5;
     font-weight: 500;
-    font-size: 0.875rem;
-    padding: 0.5rem 1rem;
+    font-size: 13px;
+    padding: 9px 16px;
     border-radius: 8px;
     border: 0.5px solid #185FA5;
     cursor: pointer;
-    transition: background-color 0.15s;
+    min-height: 44px;
+    min-width: 44px;
+    transition: background-color 0.15s ease;
   }
-  .btn-outline:hover { background-color: #E6F1FB; }
+  @media (hover: hover) {
+    .btn-outline:hover:not(:disabled) { background-color: #f5f5f5; }
+  }
   .btn-outline:disabled { opacity: 0.5; cursor: not-allowed; }
 
   .btn-danger {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 0.375rem;
-    background-color: #A32D2D;
-    color: white;
+    gap: 6px;
+    background-color: transparent;
+    color: #A32D2D;
     font-weight: 500;
-    font-size: 0.875rem;
-    padding: 0.5rem 1rem;
+    font-size: 13px;
+    padding: 9px 16px;
     border-radius: 8px;
-    border: none;
+    border: 0.5px solid #F09595;
     cursor: pointer;
-    transition: background-color 0.15s;
+    min-height: 44px;
+    min-width: 44px;
+    transition: background-color 0.15s ease;
   }
-  .btn-danger:hover { background-color: #821f1f; }
+  @media (hover: hover) {
+    .btn-danger:hover:not(:disabled) { background-color: #FCEBEB; }
+  }
+  .btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
 
   .input {
     width: 100%;
@@ -86,18 +102,31 @@
     border-radius: 8px;
     padding: 0.5rem 0.75rem;
     background-color: #f9fafb;
-    font-size: 0.875rem;
+    font-size: 13px;
     outline: none;
     transition: box-shadow 0.15s, border-color 0.15s;
+    min-height: 44px;
   }
   .input:focus {
     border-color: #185FA5;
     box-shadow: 0 0 0 3px rgba(24, 95, 165, 0.12);
   }
 
-  .badge-present  { display:inline-flex;align-items:center;background-color:#EAF3DE;color:#3B6D11;font-size:.75rem;font-weight:500;padding:.125rem .5rem;border-radius:9999px; }
-  .badge-late     { display:inline-flex;align-items:center;background-color:#E6F1FB;color:#185FA5;font-size:.75rem;font-weight:500;padding:.125rem .5rem;border-radius:9999px; }
-  .badge-absent   { display:inline-flex;align-items:center;background-color:#FCEBEB;color:#A32D2D;font-size:.75rem;font-weight:500;padding:.125rem .5rem;border-radius:9999px; }
-  .badge-gps      { display:inline-flex;align-items:center;background-color:#FAEEDA;color:#854F0B;font-size:.75rem;font-weight:500;padding:.125rem .5rem;border-radius:9999px; }
-  .badge-waiting  { display:inline-flex;align-items:center;background-color:#f3f4f6;color:#6b7280;font-size:.75rem;font-weight:500;padding:.125rem .5rem;border-radius:9999px; }
+  /* Status badges — 11px, 3px 9px, 20px radius */
+  .badge-present { display:inline-flex;align-items:center;background-color:#EAF3DE;color:#3B6D11;font-size:11px;font-weight:500;padding:3px 9px;border-radius:20px; }
+  .badge-late    { display:inline-flex;align-items:center;background-color:#E6F1FB;color:#185FA5;font-size:11px;font-weight:500;padding:3px 9px;border-radius:20px; }
+  .badge-absent  { display:inline-flex;align-items:center;background-color:#FCEBEB;color:#A32D2D;font-size:11px;font-weight:500;padding:3px 9px;border-radius:20px; }
+  .badge-gps     { display:inline-flex;align-items:center;background-color:#FAEEDA;color:#854F0B;font-size:11px;font-weight:500;padding:3px 9px;border-radius:20px; }
+  .badge-waiting { display:inline-flex;align-items:center;background-color:#F1EFE8;color:#5F5E5A;font-size:11px;font-weight:500;padding:3px 9px;border-radius:20px; }
 }
+
+/* Projector page — fade-in animation */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.projector-entry { animation: fadeIn 0.3s ease; }
+
+/* Projector page — custom scrollbar */
+.projector-list::-webkit-scrollbar { width: 4px; }
+.projector-list::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 2px; }

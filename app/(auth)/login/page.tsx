@@ -14,25 +14,16 @@ export default async function LoginPage() {
             className="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-4"
             style={{ backgroundColor: "#185FA5" }}
           >
-            <svg
-              className="w-8 h-8 text-white"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
-              />
+            <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
             </svg>
           </div>
-          <h1 className="text-2xl font-bold text-gray-900">ระบบเช็คชื่อ</h1>
-          <p className="text-sm text-gray-500 mt-1">สำหรับอาจารย์ผู้สอน</p>
+          <h1 className="text-2xl font-bold text-gray-900">Attendance System</h1>
+          <p className="text-[11px] mt-1" style={{ color: "#5F5E5A" }}>สำหรับอาจารย์ผู้สอน</p>
         </div>
         <LoginButton />
-        <p className="text-xs text-gray-400">
+        <p className="text-[11px]" style={{ color: "#5F5E5A" }}>
           ระบบจะขอสิทธิ์เข้าถึง Google Drive และ Sheets
           <br />
           เพื่อสร้างฐานข้อมูลเช็คชื่อส่วนตัว

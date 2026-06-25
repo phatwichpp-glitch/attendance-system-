@@ -52,7 +52,7 @@ export interface AttendanceRecord {
 
 export interface DeviceConflict {
   fingerprint: string;
-  students: { student_id: string; firstname: string; lastname: string; checked_at: string }[];
+  students: { student_id: string; firstname: string; lastname: string; checked_at: string; status?: string }[];
 }
 
 export interface StudentWithAttendance extends Student {

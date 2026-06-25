@@ -3,6 +3,10 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Spinner from "@/components/Spinner";
+import {
+  IconScreen, IconStop, IconDownload, IconWarning, IconCheck,
+  IconClock, IconChevronDown, IconChevronUp,
+} from "@/components/icons";
 import { Session, StudentWithAttendance, DeviceConflict } from "@/types";
 
 interface Data {
@@ -20,6 +24,7 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
   const [showClose, setShowClose] = useState(false);
   const [closing, setClosing] = useState(false);
   const [overriding, setOverriding] = useState<string | null>(null);
+  const [conflictsExpanded, setConflictsExpanded] = useState(false);
 
   const fetchData = useCallback(async () => {
     try {
@@ -46,11 +51,7 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
       await fetch("/api/sheets/sessions", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          session_id: sessionId,
-          course_id: data.session.course_id,
-          section: data.session.section,
-        }),
+        body: JSON.stringify({ session_id: sessionId, course_id: data.session.course_id, section: data.session.section }),
       });
       router.push("/admin");
     } finally {
@@ -75,7 +76,7 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
   const exportCsv = () => {
     if (!data) return;
     const rows = [
-      ["#", "รหัส", "ชื่อ", "นามสกุล", "สถานะ", "ระยะทาง(m)", "เวลา", "device_fingerprint"],
+      ["#", "Student ID", "First Name", "Last Name", "Status", "Distance (m)", "Time", "device_fingerprint"],
       ...data.students.map((s) => [
         s.order_num,
         s.student_id,
@@ -83,9 +84,7 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
         s.lastname,
         s.attendance?.status ?? "absent",
         s.attendance?.distance_m ?? "",
-        s.attendance?.checked_at
-          ? new Date(s.attendance.checked_at).toLocaleTimeString("th-TH")
-          : "",
+        s.attendance?.checked_at ? new Date(s.attendance.checked_at).toLocaleTimeString("th-TH") : "",
         s.attendance?.device_fingerprint ?? "",
       ]),
     ];
@@ -103,152 +102,179 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
   );
 
   if (!data) return (
-    <div className="card text-center py-10" style={{ color: "#A32D2D" }}>ไม่พบข้อมูลคาบ</div>
+    <div className="card text-center py-10" style={{ color: "#A32D2D" }}>Session not found</div>
   );
 
-  const { session: s, students, spreadsheetId } = data;
+  const { session: s, students, spreadsheetId, device_conflicts } = data;
   const isClosed = !!s.closed_at;
-  const present = students.filter((x) => ["present", "late"].includes(x.attendance?.status ?? "")).length;
-  const absent  = students.filter((x) => x.attendance?.status === "absent").length;
-  const gpsFail = students.filter((x) => x.attendance?.status === "gps_fail").length;
-  const total   = students.length;
+  const present  = students.filter((x) => ["present", "late"].includes(x.attendance?.status ?? "")).length;
+  const absent   = students.filter((x) => x.attendance?.status === "absent").length;
+  const gpsFail  = students.filter((x) => x.attendance?.status === "gps_fail").length;
+  const total    = students.length;
   const checkUrl = `/check?s=${sessionId}&o=${s.otp}&sid=${spreadsheetId}`;
 
-  return (
-    <div className="space-y-4">
-      {/* Header */}
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-lg font-bold text-gray-900">{s.course_id} — คาบ {s.period}</h1>
-          <p className="text-sm text-gray-500">{s.date} · Section {s.section}</p>
-          {lastUpdated && (
-            <p className="text-xs text-gray-400 mt-0.5">
-              อัปเดต {lastUpdated.toLocaleTimeString("th-TH")}
-            </p>
-          )}
-        </div>
-        <div className="flex gap-2 flex-wrap">
-          {!isClosed && (
-            <>
-              <Link
-                href={`/projector/${sessionId}`}
-                target="_blank"
-                className="btn-outline text-sm"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                </svg>
-                ฉายบน Projector
-              </Link>
-              <button onClick={() => setShowClose(true)} className="btn-danger text-sm">ปิดคาบ</button>
-            </>
-          )}
-          {isClosed && <span className="badge-absent px-3 py-2 text-sm">ปิดคาบแล้ว</span>}
-          <button onClick={exportCsv} className="btn-outline text-sm">Export CSV</button>
-        </div>
-      </div>
-
-      {/* Stats */}
-      <div className="grid grid-cols-4 gap-3">
-        <Stat label="ทั้งหมด" value={total} bg="#f3f4f6" color="#374151" />
-        <Stat label="มา/สาย" value={present} bg="#EAF3DE" color="#3B6D11" />
-        <Stat label="ขาด" value={absent} bg="#FCEBEB" color="#A32D2D" />
-        <Stat label="GPS fail" value={gpsFail} bg="#FAEEDA" color="#854F0B" />
-      </div>
-
-      {/* OTP banner */}
+  const ActionButtons = (
+    <div className="flex gap-2 flex-wrap">
       {!isClosed && (
-        <div className="card flex items-center justify-between gap-4">
-          <div>
-            <p className="text-xs text-gray-500 mb-0.5">OTP (หมดอายุใน {s.otp_expire_min} นาที)</p>
-            <p
-              className="text-4xl font-bold tracking-widest"
-              style={{ fontFamily: "monospace", color: "#185FA5" }}
-            >
-              {s.otp}
-            </p>
-          </div>
-          <div className="text-right text-xs text-gray-400 space-y-1">
-            <p>รัศมี {s.radius_m} m</p>
-            <p>สาย &gt;{s.late_after_min} นาที</p>
-          </div>
-        </div>
+        <>
+          <Link href={`/projector/${sessionId}`} target="_blank" className="btn-outline text-[13px]" style={{ minHeight: 40 }}>
+            <IconScreen size={14} /> Projector View
+          </Link>
+          <button onClick={() => setShowClose(true)} className="btn-danger text-[13px]" style={{ minHeight: 40 }}>
+            <IconStop size={14} /> Close Session
+          </button>
+        </>
       )}
+      {isClosed && <span className="badge-absent px-3 py-2 text-[13px]">Closed</span>}
+      <button onClick={exportCsv} className="btn-outline text-[13px]" style={{ minHeight: 40 }}>
+        <IconDownload size={14} /> Export CSV
+      </button>
+    </div>
+  );
 
-      {/* Progress */}
-      <div className="card">
-        <div className="flex justify-between text-sm text-gray-600 mb-2">
-          <span>เช็คชื่อแล้ว</span>
-          <span className="font-medium">{present}/{total} คน</span>
+  return (
+    <div>
+      {/* ── Sticky secondary header (md+) ─────────────────────────── */}
+      <div
+        className="hidden md:flex items-center justify-between py-3 mb-4"
+        style={{ borderBottom: "0.5px solid rgba(0,0,0,0.08)" }}
+      >
+        <div>
+          <h1 className="text-[18px] font-medium text-gray-900">{s.course_id} — Period {s.period}</h1>
+          <p className="text-[11px] mt-0.5" style={{ color: "#5F5E5A" }}>
+            {s.date} · Section {s.section}
+            {lastUpdated && <span className="ml-2">· Last updated {lastUpdated.toLocaleTimeString("th-TH")}</span>}
+          </p>
         </div>
-        <div className="h-2 rounded-full" style={{ backgroundColor: "#e5e7eb" }}>
-          <div
-            className="h-full rounded-full transition-all"
-            style={{ width: total > 0 ? `${(present / total) * 100}%` : "0%", backgroundColor: "#3B6D11" }}
-          />
-        </div>
+        {ActionButtons}
       </div>
 
-      {/* Device conflict warning */}
-      {data.device_conflicts.length > 0 && (
-        <div className="rounded-xl px-4 py-3 space-y-2" style={{ backgroundColor: "#FFFBEB", border: "1px solid #F59E0B" }}>
-          <p className="font-semibold text-sm" style={{ color: "#92400E" }}>
-            ⚠️ พบ Device เดียวกัน ({data.device_conflicts.length} กลุ่ม)
-          </p>
-          {data.device_conflicts.map((c) => (
-            <div key={c.fingerprint} className="text-xs space-y-0.5" style={{ color: "#78350F" }}>
-              <p className="font-mono opacity-60">fp: {c.fingerprint}</p>
-              <p>{c.students.map((s) => `${s.firstname} ${s.lastname} (${s.student_id})`).join(" · ")}</p>
-            </div>
-          ))}
+      {/* ── Mobile header ─────────────────────────────────────────── */}
+      <div className="md:hidden flex flex-wrap items-start justify-between gap-3 mb-4">
+        <div>
+          <h1 className="text-[18px] font-medium text-gray-900">{s.course_id} — Period {s.period}</h1>
+          <p className="text-[11px] mt-0.5" style={{ color: "#5F5E5A" }}>{s.date} · Section {s.section}</p>
+          {lastUpdated && (
+            <p className="text-[11px] text-gray-400 mt-0.5 flex items-center gap-1">
+              <IconClock size={11} /> {lastUpdated.toLocaleTimeString("th-TH")}
+            </p>
+          )}
         </div>
-      )}
+        {ActionButtons}
+      </div>
 
-      {/* Student list */}
-      <div className="card overflow-hidden">
-        <h2 className="font-semibold text-gray-900 mb-3">รายชื่อนักศึกษา</h2>
-        <div className="divide-y divide-gray-50">
-          {students.map((stu) => {
-            const att = stu.attendance;
-            return (
-              <div key={stu.student_id} className="py-2.5 flex items-center gap-3 text-sm">
-                <span className="text-gray-300 text-xs w-5 text-right">{stu.order_num}</span>
-                <span className="font-mono text-xs text-gray-400 w-24">{stu.student_id}</span>
-                <span className="flex-1 min-w-0 truncate">{stu.firstname} {stu.lastname}</span>
-                {att ? (
-                  <>
-                    <span className={
-                      att.status === "present" ? "badge-present" :
-                      att.status === "late"    ? "badge-late" :
-                      att.status === "absent"  ? "badge-absent" : "badge-gps"
-                    }>
-                      {att.status === "present" ? "มาแล้ว" :
-                       att.status === "late"    ? "สาย" :
-                       att.status === "absent"  ? "ขาด" : "GPS fail"}
-                    </span>
-                    {att.status === "gps_fail" && (
-                      <span className="text-xs text-gray-400">{att.distance_m}m</span>
-                    )}
-                    {att.status === "gps_fail" && !att.overridden && !isClosed && (
-                      <button
-                        onClick={() => handleOverride(att.attendance_id)}
-                        disabled={overriding === att.attendance_id}
-                        className="btn-outline text-xs px-2 py-1"
-                      >
-                        {overriding === att.attendance_id
-                          ? <Spinner className="h-3 w-3" />
-                          : "อนุมัติ"
-                        }
-                      </button>
-                    )}
-                    {att.overridden && <span className="text-xs text-gray-400">✓</span>}
-                  </>
-                ) : (
-                  <span className="badge-waiting">รอ</span>
-                )}
+      {/* ── iPad 2-column grid ────────────────────────────────────── */}
+      <div className="md:grid md:grid-cols-[35%_1fr] md:gap-4 md:items-start space-y-4 md:space-y-0">
+
+        {/* Left col: stats + OTP + progress */}
+        <div className="space-y-4">
+          {/* Stats — 4-col mobile, 2×2 on md */}
+          <div className="grid grid-cols-4 md:grid-cols-2 gap-3">
+            <Stat label="Total"    value={total}   bg="#f3f4f6" color="#374151" />
+            <Stat label="Present"  value={present} bg="#EAF3DE" color="#3B6D11" />
+            <Stat label="Absent"   value={absent}  bg="#FCEBEB" color="#A32D2D" />
+            <Stat label="GPS fail" value={gpsFail} bg="#FAEEDA" color="#854F0B" />
+          </div>
+
+          {/* OTP banner */}
+          {!isClosed && (
+            <div className="card flex items-center justify-between gap-4">
+              <div>
+                <p className="text-[11px] mb-0.5" style={{ color: "#5F5E5A" }}>
+                  OTP (expires in {s.otp_expire_min} min)
+                </p>
+                <p
+                  className="text-4xl font-bold tracking-widest"
+                  style={{ fontFamily: "ui-monospace, monospace", color: "#185FA5" }}
+                >
+                  {s.otp}
+                </p>
               </div>
-            );
-          })}
+              <div className="text-right text-[11px] space-y-1" style={{ color: "#5F5E5A" }}>
+                <p>Radius {s.radius_m} m</p>
+                <p>Late &gt;{s.late_after_min} min</p>
+                <a href={checkUrl} target="_blank" className="text-[#185FA5] underline text-[11px]">
+                  Check-in link ↗
+                </a>
+              </div>
+            </div>
+          )}
+
+          {/* Progress */}
+          <div className="card">
+            <div className="flex justify-between text-[13px] text-gray-600 mb-2">
+              <span>Checked In</span>
+              <span className="font-medium">{present}/{total} students</span>
+            </div>
+            <div className="h-2 rounded-full" style={{ backgroundColor: "#e5e7eb" }}>
+              <div
+                className="h-full rounded-full transition-all"
+                style={{ width: total > 0 ? `${(present / total) * 100}%` : "0%", backgroundColor: "#3B6D11" }}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Right col: conflicts + student list */}
+        <div className="space-y-4">
+
+          {/* Device conflict warning */}
+          {device_conflicts.length > 0 && (
+            <DeviceConflictBox
+              conflicts={device_conflicts}
+              expanded={conflictsExpanded}
+              onToggle={() => setConflictsExpanded((v) => !v)}
+            />
+          )}
+
+          {/* Student list */}
+          <div className="card overflow-hidden">
+            <h2 className="font-medium text-gray-900 mb-3">Student List</h2>
+            <div className="divide-y divide-gray-50">
+              {students.map((stu) => {
+                const att = stu.attendance;
+                return (
+                  <div key={stu.student_id} className="py-2.5 flex items-center gap-3 text-[13px]">
+                    <span className="text-gray-300 text-[11px] w-5 text-right font-mono">{stu.order_num}</span>
+                    <span className="font-mono text-[11px] text-gray-400 w-24">{stu.student_id}</span>
+                    <span className="flex-1 min-w-0 truncate">{stu.firstname} {stu.lastname}</span>
+                    {att ? (
+                      <>
+                        <span className={
+                          att.status === "present" ? "badge-present" :
+                          att.status === "late"    ? "badge-late"    :
+                          att.status === "absent"  ? "badge-absent"  : "badge-gps"
+                        }>
+                          {att.status === "present" ? "Present" :
+                           att.status === "late"    ? "Late"    :
+                           att.status === "absent"  ? "Absent"  : "GPS fail"}
+                        </span>
+                        {att.status === "gps_fail" && (
+                          <span className="text-[11px] text-gray-400">{att.distance_m}m</span>
+                        )}
+                        {att.status === "gps_fail" && !att.overridden && !isClosed && (
+                          <button
+                            onClick={() => handleOverride(att.attendance_id)}
+                            disabled={overriding === att.attendance_id}
+                            className="btn-outline text-[11px]"
+                            style={{ minHeight: 44, padding: "10px 16px" }}
+                          >
+                            {overriding === att.attendance_id
+                              ? <Spinner className="h-3 w-3" />
+                              : <><IconCheck size={12} /> Approve</>
+                            }
+                          </button>
+                        )}
+                        {att.overridden && <span className="text-[11px] text-gray-400">✓ approved</span>}
+                      </>
+                    ) : (
+                      <span className="badge-waiting">Pending</span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         </div>
       </div>
 
@@ -256,19 +282,19 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
       {showClose && (
         <div className="fixed inset-0 flex items-center justify-center z-50 p-4" style={{ backgroundColor: "rgba(0,0,0,0.5)" }}>
           <div className="card max-w-sm w-full space-y-4">
-            <h3 className="font-semibold text-gray-900">ยืนยันปิดคาบ?</h3>
-            <p className="text-sm text-gray-600">
-              นักศึกษาที่ยังไม่เช็คชื่อ <strong>{total - present - gpsFail} คน</strong> จะถูกบันทึกเป็น &quot;ขาด&quot; อัตโนมัติ
+            <h3 className="font-medium text-gray-900">Close Session?</h3>
+            <p className="text-[13px] text-gray-600">
+              <strong>{total - present - gpsFail} students</strong> who haven&apos;t checked in will be marked <em>Absent</em>.
             </p>
             <div className="flex gap-3">
-              <button onClick={() => setShowClose(false)} className="btn-outline flex-1">ยกเลิก</button>
+              <button onClick={() => setShowClose(false)} className="btn-outline flex-1">Cancel</button>
               <button
                 onClick={handleClose}
                 disabled={closing}
                 className="btn-danger flex-1 flex items-center justify-center gap-2"
               >
                 {closing && <Spinner className="h-4 w-4" />}
-                ปิดคาบ
+                Close Session
               </button>
             </div>
           </div>
@@ -282,7 +308,72 @@ function Stat({ label, value, bg, color }: { label: string; value: number; bg: s
   return (
     <div className="rounded-xl p-3 text-center" style={{ backgroundColor: bg }}>
       <p className="text-2xl font-bold" style={{ color }}>{value}</p>
-      <p className="text-xs mt-0.5" style={{ color }}>{label}</p>
+      <p className="text-[11px] mt-0.5" style={{ color }}>{label}</p>
+    </div>
+  );
+}
+
+function DeviceConflictBox({
+  conflicts,
+  expanded,
+  onToggle,
+}: {
+  conflicts: DeviceConflict[];
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  const SHOW_LIMIT = 3;
+  const showToggle = conflicts.length > SHOW_LIMIT;
+  const visible = showToggle && !expanded ? conflicts.slice(0, SHOW_LIMIT) : conflicts;
+
+  return (
+    <div
+      className="rounded-xl px-4 py-3 space-y-2"
+      style={{ backgroundColor: "#FAEEDA", border: "1px solid #EF9F27" }}
+    >
+      <div className="flex items-center gap-2">
+        <IconWarning size={14} className="text-[#854F0B]" />
+        <span className="font-medium text-[13px]" style={{ color: "#78350F" }}>
+          Device Conflict Detected
+        </span>
+        <span
+          className="rounded-full px-2 py-0.5 text-[11px] font-medium"
+          style={{ backgroundColor: "#EF9F27", color: "white" }}
+        >
+          {conflicts.length}
+        </span>
+      </div>
+      <p className="text-[11px]" style={{ color: "#92400E" }}>
+        นักศึกษาต่อไปนี้อาจเช็คชื่อจาก device เดียวกัน
+      </p>
+      {visible.map((c) => (
+        <div key={c.fingerprint} className="space-y-1">
+          <p className="text-[11px] font-medium" style={{ color: "#78350F" }}>
+            Same device — {c.students.length} students:
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {c.students.map((st) => (
+              <span
+                key={st.student_id}
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px]"
+                style={{ backgroundColor: "rgba(0,0,0,0.08)", color: "#78350F" }}
+              >
+                {st.firstname} {st.lastname}
+                {st.status && <span className="opacity-60">({st.status})</span>}
+              </span>
+            ))}
+          </div>
+        </div>
+      ))}
+      {showToggle && (
+        <button
+          onClick={onToggle}
+          className="flex items-center gap-1 text-[11px] font-medium"
+          style={{ color: "#854F0B", background: "none", border: "none", cursor: "pointer", padding: 0 }}
+        >
+          {expanded ? <><IconChevronUp size={12}/> Show less</> : <><IconChevronDown size={12}/> Show {conflicts.length - SHOW_LIMIT} more</>}
+        </button>
+      )}
     </div>
   );
 }

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "ระบบเช็คชื่อ",
+  title: "Attendance System",
   description: "University Attendance System",
 };
 
@@ -12,7 +12,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="th" className="h-full">
+    <html lang="en" className="h-full">
       <body className="min-h-full bg-gray-50 text-gray-900 antialiased">
         {children}
       </body>
