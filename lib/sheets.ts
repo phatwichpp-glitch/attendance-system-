@@ -78,11 +78,12 @@ export async function initializeSpreadsheet(
           ]],
         },
         {
-          range: "attendance!A1:R1",
+          range: "attendance!A1:V1",
           values: [[
             "attendance_id", "session_id", "course_id", "student_id", "firstname", "lastname",
             "status", "gps_pass", "distance_m", "checked_at", "overridden", "overridden_at",
             "device_fingerprint", "edited_at", "edited_from", "edited_to", "edit_note", "is_manual_entry",
+            "flagged", "flagged_at", "action_taken", "action_taken_at",
           ]],
         },
         {
@@ -432,7 +433,7 @@ export async function getAttendanceForSession(
 ): Promise<AttendanceRecord[]> {
   const sheets = getSheetsClient(accessToken);
   const res = await sheets.spreadsheets.values.get({
-    spreadsheetId, range: "attendance!A2:R",
+    spreadsheetId, range: "attendance!A2:V",
   });
   return (res.data.values ?? [])
     .filter((r) => r[1] === sessionId)
@@ -446,7 +447,7 @@ export async function getAttendanceForCourse(
 ): Promise<AttendanceRecord[]> {
   const sheets = getSheetsClient(accessToken);
   const res = await sheets.spreadsheets.values.get({
-    spreadsheetId, range: "attendance!A2:R",
+    spreadsheetId, range: "attendance!A2:V",
   });
   return (res.data.values ?? [])
     .filter((r) => r[2] === courseId)
@@ -461,7 +462,7 @@ export async function addAttendance(
   const sheets = getSheetsClient(accessToken);
   await sheets.spreadsheets.values.append({
     spreadsheetId,
-    range: "attendance!A:R",
+    range: "attendance!A:V",
     valueInputOption: "RAW",
     requestBody: {
       values: [[
@@ -478,6 +479,10 @@ export async function addAttendance(
         record.edited_to ?? "",
         record.edit_note ?? "",
         record.is_manual_entry ? "TRUE" : "FALSE",
+        record.flagged ? "TRUE" : "FALSE",
+        record.flagged_at ?? "",
+        record.action_taken ?? "",
+        record.action_taken_at ?? "",
       ]],
     },
   });
@@ -491,7 +496,7 @@ export async function overrideAttendanceRecord(
 ): Promise<void> {
   const sheets = getSheetsClient(accessToken);
   const res = await sheets.spreadsheets.values.get({
-    spreadsheetId, range: "attendance!A2:R",
+    spreadsheetId, range: "attendance!A2:V",
   });
   const rows = res.data.values ?? [];
   const idx = rows.findIndex((r) => r[0] === attendanceId);
@@ -522,7 +527,7 @@ export async function editAttendanceRecord(
 ): Promise<{ editedFrom: string; editedAt: string } | null> {
   const sheets = getSheetsClient(accessToken);
   const res = await sheets.spreadsheets.values.get({
-    spreadsheetId, range: "attendance!A2:R",
+    spreadsheetId, range: "attendance!A2:V",
   });
   const rows = res.data.values ?? [];
   const idx = rows.findIndex((r) => r[0] === attendanceId);
@@ -601,6 +606,60 @@ function rowToAttendance(r: string[]): AttendanceRecord {
     edited_to: r[15] ?? "",
     edit_note: r[16] ?? "",
     is_manual_entry: r[17] === "TRUE",
+    flagged: r[18] === "TRUE",
+    flagged_at: r[19] || undefined,
+    action_taken: (r[20] as AttendanceRecord["action_taken"]) || null,
+    action_taken_at: r[21] || undefined,
+  };
+}
+
+// ─── Unified attendance action ────────────────────────────────────────────────
+
+export async function updateAttendanceFields(
+  accessToken: string,
+  spreadsheetId: string,
+  attendanceId: string,
+  fields: Partial<{
+    status: string;
+    overridden: boolean;
+    overridden_at: string;
+    flagged: boolean;
+    flagged_at: string;
+    action_taken: string;
+    action_taken_at: string;
+  }>
+): Promise<{ found: boolean; previousStatus: string; previousOverridden: string }> {
+  const sheets = getSheetsClient(accessToken);
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId, range: "attendance!A2:V",
+  });
+  const rows = (res.data.values ?? []) as string[][];
+  const idx = rows.findIndex((r) => r[0] === attendanceId);
+  if (idx === -1) return { found: false, previousStatus: "", previousOverridden: "" };
+
+  const row = rows[idx];
+  const rowNum = idx + 2;
+
+  const updates: Array<{ range: string; values: string[][] }> = [];
+  if (fields.status !== undefined)       updates.push({ range: `attendance!G${rowNum}`, values: [[fields.status]] });
+  if (fields.overridden !== undefined)   updates.push({ range: `attendance!K${rowNum}`, values: [[fields.overridden ? "TRUE" : "FALSE"]] });
+  if (fields.overridden_at !== undefined) updates.push({ range: `attendance!L${rowNum}`, values: [[fields.overridden_at]] });
+  if (fields.flagged !== undefined)      updates.push({ range: `attendance!S${rowNum}`, values: [[fields.flagged ? "TRUE" : "FALSE"]] });
+  if (fields.flagged_at !== undefined)   updates.push({ range: `attendance!T${rowNum}`, values: [[fields.flagged_at]] });
+  if (fields.action_taken !== undefined) updates.push({ range: `attendance!U${rowNum}`, values: [[fields.action_taken]] });
+  if (fields.action_taken_at !== undefined) updates.push({ range: `attendance!V${rowNum}`, values: [[fields.action_taken_at]] });
+
+  if (updates.length > 0) {
+    await sheets.spreadsheets.values.batchUpdate({
+      spreadsheetId,
+      requestBody: { valueInputOption: "RAW", data: updates },
+    });
+  }
+
+  return {
+    found: true,
+    previousStatus: row[6] ?? "",
+    previousOverridden: row[10] ?? "FALSE",
   };
 }
 
@@ -822,7 +881,7 @@ export async function deleteAttendanceForStudent(
   courseId: string
 ): Promise<number> {
   return deleteMatchingRows(
-    accessToken, spreadsheetId, "attendance!A2:R",
+    accessToken, spreadsheetId, "attendance!A2:V",
     (r) => r[3] === studentId && r[2] === courseId
   );
 }
@@ -876,7 +935,7 @@ export async function deleteCourseById(
   section: string
 ): Promise<void> {
   // Delete in safe order: attendance → sessions → students → semester_config → course
-  await deleteMatchingRows(accessToken, spreadsheetId, "attendance!A2:R", (r) => r[2] === courseId);
+  await deleteMatchingRows(accessToken, spreadsheetId, "attendance!A2:V", (r) => r[2] === courseId);
   await deleteMatchingRows(accessToken, spreadsheetId, "sessions!A2:U", (r) => r[1] === courseId && r[2] === section);
   await deleteMatchingRows(accessToken, spreadsheetId, "students!A2:F", (r) => r[3] === courseId && r[4] === section);
   await deleteMatchingRows(accessToken, spreadsheetId, "courses!A2:F", (r) => r[0] === courseId && r[2] === section);
@@ -946,7 +1005,7 @@ export async function deleteSessionById(
   spreadsheetId: string,
   sessionId: string
 ): Promise<void> {
-  await deleteMatchingRows(accessToken, spreadsheetId, "attendance!A2:R", (r) => r[1] === sessionId);
+  await deleteMatchingRows(accessToken, spreadsheetId, "attendance!A2:V", (r) => r[1] === sessionId);
   await deleteMatchingRows(accessToken, spreadsheetId, "sessions!A2:U", (r) => r[0] === sessionId);
 }
 
@@ -966,7 +1025,7 @@ export async function deleteAttendanceById(
   attendanceId: string
 ): Promise<boolean> {
   const deleted = await deleteMatchingRows(
-    accessToken, spreadsheetId, "attendance!A2:R",
+    accessToken, spreadsheetId, "attendance!A2:V",
     (r) => r[0] === attendanceId
   );
   return deleted > 0;
@@ -989,7 +1048,7 @@ export async function getCourseStats(
   const [stuRes, sessRes, attRes] = await Promise.all([
     sheets.spreadsheets.values.get({ spreadsheetId, range: "students!A2:F" }),
     sheets.spreadsheets.values.get({ spreadsheetId, range: "sessions!A2:U" }),
-    sheets.spreadsheets.values.get({ spreadsheetId, range: "attendance!A2:R" }),
+    sheets.spreadsheets.values.get({ spreadsheetId, range: "attendance!A2:V" }),
   ]);
 
   const stats: Record<string, CourseStats> = {};

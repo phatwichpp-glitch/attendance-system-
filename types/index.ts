@@ -64,6 +64,11 @@ export interface AttendanceRecord {
   edited_to?: string;
   edit_note?: string;
   is_manual_entry?: boolean;
+  // Unified action system
+  flagged?: boolean;
+  flagged_at?: string;
+  action_taken?: "approve" | "flag" | "mark_absent" | "revoke" | null;
+  action_taken_at?: string;
 }
 
 export interface DeviceConflict {

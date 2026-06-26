@@ -208,6 +208,11 @@ export default function SummaryClient({ courseId }: { courseId: string }) {
     if (ss.linked_session_id) linkedIds.add(ss.linked_session_id);
   }
 
+  // Flagged records set for ✓⚠ symbol
+  const flaggedSet = new Set<string>(
+    data.attendance.filter((a) => a.flagged).map((a) => `${a.student_id}:${a.session_id}`)
+  );
+
   // Stats bar calculations
   const totalExpected = semester_config
     ? semester_config.total_weeks * semester_config.teaching_schedule.length
@@ -370,12 +375,16 @@ export default function SummaryClient({ courseId }: { courseId: string }) {
                         onClick={(e) => hasRecord ? openEdit(e, stu.student_id, ss.session_id) : undefined}
                         title={hasRecord ? "Click to edit" : undefined}
                       >
-                        {st === "present"  && <span style={{ color: "#3B6D11" }} className="font-bold text-[13px]">✓</span>}
-                        {st === "late"     && <span style={{ color: "#185FA5" }} className="text-[11px] font-bold">L</span>}
-                        {st === "absent"   && <span style={{ color: "#A32D2D" }}>—</span>}
-                        {st === "gps_fail" && <span className="text-[11px]" style={{ color: "#854F0B" }}>⚠</span>}
-                        {st === "overridden" && <span style={{ color: "#3B6D11" }} className="font-bold text-[13px]">✓*</span>}
-                        {!st               && <span className="text-gray-200 text-[11px]">·</span>}
+                        {(() => {
+                          const isFlagged = flaggedSet.has(`${stu.student_id}:${ss.session_id}`);
+                          const flag = isFlagged ? <sup style={{ color: "#a855f7", fontSize: 8 }}>⚠</sup> : null;
+                          if (st === "present")   return <span style={{ color: "#3B6D11" }} className="font-bold text-[13px]">✓{flag}</span>;
+                          if (st === "late")      return <span style={{ color: "#185FA5" }} className="text-[11px] font-bold">L{flag}</span>;
+                          if (st === "absent")    return <span style={{ color: "#A32D2D" }}>—{flag}</span>;
+                          if (st === "gps_fail")  return <span className="text-[11px]" style={{ color: "#854F0B" }}>⚠{flag}</span>;
+                          if (st === "overridden") return <span style={{ color: "#3B6D11" }} className="font-bold text-[13px]">✓*{flag}</span>;
+                          return <span className="text-gray-200 text-[11px]">·</span>;
+                        })()}
                       </td>
                     );
                   })}

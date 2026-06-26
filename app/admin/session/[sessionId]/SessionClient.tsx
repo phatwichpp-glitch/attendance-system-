@@ -4,8 +4,11 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import QRCode from "qrcode";
 import Spinner from "@/components/Spinner";
+import IssueBadge, { IssueType } from "@/components/IssueBadge";
+import ActionDropdown, { ActionType } from "@/components/ActionDropdown";
+import UndoToast from "@/components/UndoToast";
 import {
-  IconScreen, IconStop, IconDownload, IconWarning, IconCheck,
+  IconScreen, IconStop, IconDownload, IconWarning,
   IconClock, IconChevronDown, IconChevronUp, IconQR,
 } from "@/components/icons";
 import { Session, StudentWithAttendance, DeviceConflict, AttendanceStatus, AttendanceRecord } from "@/types";
@@ -27,6 +30,32 @@ type EditPopover = {
   currentStatus: AttendanceStatus;
 };
 
+type UndoState = {
+  attendanceId: string;
+  studentName: string;
+  previousStatus: string;
+};
+
+const BORDER_COLORS: Record<IssueType, string> = {
+  gps_fail: "#ef4444",
+  device_conflict: "#f97316",
+  late: "#eab308",
+  manual: "#3b82f6",
+  flagged: "#a855f7",
+};
+
+function getIssues(stu: StudentWithAttendance, conflictSet: Set<string>): IssueType[] {
+  const att = stu.attendance;
+  if (!att) return [];
+  const issues: IssueType[] = [];
+  if (att.status === "gps_fail") issues.push("gps_fail");
+  if (conflictSet.has(stu.student_id)) issues.push("device_conflict");
+  if (att.status === "late") issues.push("late");
+  if (att.is_manual_entry) issues.push("manual");
+  if (att.flagged) issues.push("flagged");
+  return issues;
+}
+
 export default function SessionClient({ sessionId }: { sessionId: string }) {
   const router = useRouter();
   const [data, setData] = useState<Data | null>(null);
@@ -34,7 +63,9 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [showClose, setShowClose] = useState(false);
   const [closing, setClosing] = useState(false);
-  const [overriding, setOverriding] = useState<string | null>(null);
+  const [actioning, setActioning] = useState<string | null>(null);
+  const [undoToast, setUndoToast] = useState<UndoState | null>(null);
+  const [conflictDismissed, setConflictDismissed] = useState(false);
   const [conflictsExpanded, setConflictsExpanded] = useState(false);
   const [showManualQR, setShowManualQR] = useState(false);
   const [manualQrDataUrl, setManualQrDataUrl] = useState("");
@@ -80,6 +111,12 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
     const t = setInterval(fetchData, 5000);
     return () => clearInterval(t);
   }, [fetchData]);
+
+  // Restore conflict banner dismiss state
+  useEffect(() => {
+    const key = `conflict_dismissed_${sessionId}`;
+    setConflictDismissed(sessionStorage.getItem(key) === "1");
+  }, [sessionId]);
 
   // Close edit popover on outside click
   useEffect(() => {
@@ -136,6 +173,35 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
     }
   };
 
+  const handleAction = async (attendanceId: string, action: ActionType, studentName: string) => {
+    setActioning(attendanceId);
+    try {
+      const res = await fetch(`/api/sheets/attendance/${attendanceId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action }),
+      });
+      const d = await res.json();
+      if (!res.ok) { alert("Action failed"); return; }
+      if (action === "mark_absent") {
+        setUndoToast({ attendanceId, studentName, previousStatus: d.previousStatus ?? "present" });
+      }
+      await fetchData();
+    } finally {
+      setActioning(null);
+    }
+  };
+
+  const handleUndo = async () => {
+    if (!undoToast) return;
+    await fetch(`/api/sheets/attendance/${undoToast.attendanceId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: undoToast.previousStatus, edit_note: "Undo mark absent" }),
+    });
+    await fetchData();
+  };
+
   const openManualQR = async () => {
     setShowManualQR(true);
     if (!manualQrDataUrl) {
@@ -154,20 +220,6 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
   };
 
   const copyCheckUrl = () => { navigator.clipboard.writeText(window.location.origin + "/check"); };
-
-  const handleOverride = async (attendanceId: string) => {
-    setOverriding(attendanceId);
-    try {
-      await fetch("/api/sheets/override", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ attendance_id: attendanceId }),
-      });
-      await fetchData();
-    } finally {
-      setOverriding(null);
-    }
-  };
 
   const openEditPopover = (stu: StudentWithAttendance) => {
     if (!stu.attendance) return;
@@ -271,6 +323,11 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
   const { session: s, students, spreadsheetId, device_conflicts, linked_session, part1_attendance } = data;
   const isClosed = !!s.closed_at;
 
+  // Conflict set
+  const conflictSet = new Set<string>(
+    device_conflicts.flatMap((c) => c.students.map((st) => st.student_id))
+  );
+
   // Double period helpers
   const isDoubleCheckIn = s.check_in_mode === "double";
   const periodLabel = s.period_count && s.period_count >= 2
@@ -282,13 +339,20 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
   const part1Map = part1_attendance
     ? new Map(part1_attendance.map((a) => [a.student_id, a.status]))
     : null;
+
   const present  = students.filter((x) => ["present", "late"].includes(x.attendance?.status ?? "")).length;
   const absent   = students.filter((x) => x.attendance?.status === "absent").length;
   const gpsFail  = students.filter((x) => x.attendance?.status === "gps_fail").length;
   const total    = students.length;
   const checkUrl = `/check?s=${sessionId}&o=${s.otp}&sid=${spreadsheetId}`;
-
   const pendingStudents = students.filter((x) => !x.attendance);
+
+  // Issue counts for summary bar
+  const gpsFailCount = students.filter((x) => x.attendance?.status === "gps_fail").length;
+  const deviceConflictCount = conflictSet.size;
+  const lateCount = students.filter((x) => x.attendance?.status === "late").length;
+  const flaggedCount = students.filter((x) => x.attendance?.flagged).length;
+  const totalIssues = gpsFailCount + deviceConflictCount + lateCount + flaggedCount;
 
   const ActionButtons = (
     <div className="flex gap-2 flex-wrap">
@@ -414,7 +478,6 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
                     )}
                   </p>
                 </div>
-                {/* "Open Part 2" button — only on Part 1 when it's closed and Part 2 not yet opened */}
                 {s.part_number === 1 && isClosed && linked_session && !linked_session.opened_at && (
                   <button
                     onClick={() => handleActivatePart2(linked_session.session_id)}
@@ -509,12 +572,83 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
             </div>
           )}
 
-          {device_conflicts.length > 0 && (
-            <DeviceConflictBox
-              conflicts={device_conflicts}
-              expanded={conflictsExpanded}
-              onToggle={() => setConflictsExpanded((v) => !v)}
-            />
+          {/* Simplified device conflict banner */}
+          {device_conflicts.length > 0 && !conflictDismissed && (
+            <div className="rounded-xl px-4 py-2.5" style={{ backgroundColor: "#FAEEDA", border: "1px solid #EF9F27" }}>
+              <div className="flex items-center gap-2">
+                <IconWarning size={13} className="text-[#854F0B] shrink-0" />
+                <span className="text-[12px] font-medium flex-1" style={{ color: "#78350F" }}>
+                  {conflictSet.size} students checked in from the same device
+                </span>
+                <button
+                  onClick={() => setConflictsExpanded((v) => !v)}
+                  className="text-[11px] underline shrink-0"
+                  style={{ color: "#854F0B", background: "none", border: "none", cursor: "pointer" }}
+                >
+                  {conflictsExpanded ? "Hide" : "Details"}
+                  {conflictsExpanded ? <IconChevronUp size={10} className="inline ml-0.5" /> : <IconChevronDown size={10} className="inline ml-0.5" />}
+                </button>
+                <button
+                  onClick={() => {
+                    setConflictDismissed(true);
+                    sessionStorage.setItem(`conflict_dismissed_${sessionId}`, "1");
+                  }}
+                  className="text-gray-400 hover:text-gray-600 shrink-0"
+                  style={{ background: "none", border: "none", cursor: "pointer", lineHeight: 1 }}
+                >
+                  ✕
+                </button>
+              </div>
+              {conflictsExpanded && (
+                <div className="mt-2 space-y-2">
+                  {device_conflicts.map((c) => (
+                    <div key={c.fingerprint}>
+                      <p className="text-[11px] font-medium mb-1" style={{ color: "#78350F" }}>
+                        {c.students.length} students — same device:
+                      </p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {c.students.map((st) => (
+                          <span key={st.student_id}
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px]"
+                            style={{ backgroundColor: "rgba(0,0,0,0.08)", color: "#78350F" }}>
+                            {st.firstname} {st.lastname}
+                            {st.status && <span className="opacity-60">({st.status})</span>}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Issue summary bar */}
+          {totalIssues > 0 && (
+            <div className="flex flex-wrap items-center gap-3 px-3 py-2 rounded-lg text-[11px]"
+              style={{ backgroundColor: "#f9fafb", border: "0.5px solid rgba(0,0,0,0.08)" }}>
+              <span className="font-medium text-gray-500">Issues:</span>
+              {gpsFailCount > 0 && (
+                <span className="flex items-center gap-1 font-medium" style={{ color: "#ef4444" }}>
+                  GPS Fail {gpsFailCount}
+                </span>
+              )}
+              {deviceConflictCount > 0 && (
+                <span className="flex items-center gap-1 font-medium" style={{ color: "#f97316" }}>
+                  Same Device {deviceConflictCount}
+                </span>
+              )}
+              {lateCount > 0 && (
+                <span className="flex items-center gap-1 font-medium" style={{ color: "#ca8a04" }}>
+                  Late {lateCount}
+                </span>
+              )}
+              {flaggedCount > 0 && (
+                <span className="flex items-center gap-1 font-medium" style={{ color: "#a855f7" }}>
+                  Flagged {flaggedCount}
+                </span>
+              )}
+            </div>
           )}
 
           <div className="card overflow-hidden">
@@ -522,12 +656,33 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
             <div className="divide-y divide-gray-50">
               {students.map((stu) => {
                 const att = stu.attendance;
+                const issues = att ? getIssues(stu, conflictSet) : [];
+                const hasIssues = issues.length > 0;
+                const primaryIssue = issues[0];
                 const isMenuOpen = rowMenuOpen === stu.student_id;
+                const isActioning = actioning === att?.attendance_id;
+
                 return (
-                  <div key={stu.student_id} className="py-2.5 flex items-center gap-3 text-[13px]">
+                  <div
+                    key={stu.student_id}
+                    className="py-2.5 flex items-center gap-3 text-[13px] pl-2"
+                    style={hasIssues ? {
+                      borderLeft: `3px solid ${BORDER_COLORS[primaryIssue]}`,
+                      paddingLeft: "8px",
+                    } : { paddingLeft: "8px" }}
+                  >
                     <span className="text-gray-300 text-[11px] w-5 text-right font-mono">{stu.order_num}</span>
                     <span className="font-mono text-[11px] text-gray-400 w-24">{stu.student_id}</span>
-                    <span className="flex-1 min-w-0 truncate">{stu.firstname} {stu.lastname}</span>
+                    <span className="flex-1 min-w-0">
+                      <span className="truncate block">{stu.firstname} {stu.lastname}</span>
+                      {hasIssues && (
+                        <span className="flex flex-wrap gap-1 mt-0.5">
+                          {issues.map((issue) => (
+                            <IssueBadge key={issue} type={issue} />
+                          ))}
+                        </span>
+                      )}
+                    </span>
                     {att ? (
                       <>
                         <button
@@ -536,7 +691,7 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
                             att.status === "present" ? "badge-present" :
                             att.status === "late"    ? "badge-late"    :
                             att.status === "absent"  ? "badge-absent"  : "badge-gps"
-                          } cursor-pointer`}
+                          } cursor-pointer shrink-0`}
                           title="Click to edit status"
                           style={{ border: "none" }}
                         >
@@ -544,23 +699,29 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
                            att.status === "late"    ? "Late"    :
                            att.status === "absent"  ? "Absent"  : "GPS fail"}
                         </button>
-                        {att.status === "gps_fail" && (
-                          <span className="text-[11px] text-gray-400">{att.distance_m}m</span>
+
+                        {/* Action dropdown for issue rows */}
+                        {hasIssues && (
+                          isActioning ? (
+                            <Spinner className="h-3 w-3 shrink-0" />
+                          ) : (
+                            <ActionDropdown
+                              status={att.status}
+                              overridden={att.overridden}
+                              flagged={att.flagged}
+                              actionTaken={att.action_taken}
+                              onAction={(action) => handleAction(att.attendance_id, action, `${stu.firstname} ${stu.lastname}`)}
+                              disabled={!!actioning}
+                            />
+                          )
                         )}
-                        {att.status === "gps_fail" && !att.overridden && !isClosed && (
-                          <button
-                            onClick={() => handleOverride(att.attendance_id)}
-                            disabled={overriding === att.attendance_id}
-                            className="btn-outline text-[11px]"
-                            style={{ minHeight: 44, padding: "10px 16px" }}
-                          >
-                            {overriding === att.attendance_id ? <Spinner className="h-3 w-3" /> : <><IconCheck size={12} /> Approve</>}
-                          </button>
+
+                        {att.overridden && !hasIssues && (
+                          <span className="text-[11px] text-gray-400 shrink-0">✓</span>
                         )}
-                        {att.overridden && <span className="text-[11px] text-gray-400">✓</span>}
 
                         {/* ⋯ row menu */}
-                        <div className="relative">
+                        <div className="relative shrink-0">
                           <button
                             onClick={() => setRowMenuOpen(isMenuOpen ? null : stu.student_id)}
                             style={{ background: "none", border: "none", cursor: "pointer", color: "#9ca3af", fontSize: 18, lineHeight: 1, padding: "4px 6px" }}
@@ -782,6 +943,15 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
           </div>
         </div>
       )}
+
+      {/* Undo toast for mark_absent */}
+      {undoToast && (
+        <UndoToast
+          message={`${undoToast.studentName} marked absent`}
+          onUndo={handleUndo}
+          onDismiss={() => setUndoToast(null)}
+        />
+      )}
     </div>
   );
 }
@@ -791,46 +961,6 @@ function Stat({ label, value, bg, color }: { label: string; value: number; bg: s
     <div className="rounded-xl p-3 text-center" style={{ backgroundColor: bg }}>
       <p className="text-2xl font-bold" style={{ color }}>{value}</p>
       <p className="text-[11px] mt-0.5" style={{ color }}>{label}</p>
-    </div>
-  );
-}
-
-function DeviceConflictBox({ conflicts, expanded, onToggle }: {
-  conflicts: DeviceConflict[]; expanded: boolean; onToggle: () => void;
-}) {
-  const SHOW_LIMIT = 3;
-  const showToggle = conflicts.length > SHOW_LIMIT;
-  const visible = showToggle && !expanded ? conflicts.slice(0, SHOW_LIMIT) : conflicts;
-  return (
-    <div className="rounded-xl px-4 py-3 space-y-2" style={{ backgroundColor: "#FAEEDA", border: "1px solid #EF9F27" }}>
-      <div className="flex items-center gap-2">
-        <IconWarning size={14} className="text-[#854F0B]" />
-        <span className="font-medium text-[13px]" style={{ color: "#78350F" }}>Device Conflict Detected</span>
-        <span className="rounded-full px-2 py-0.5 text-[11px] font-medium" style={{ backgroundColor: "#EF9F27", color: "white" }}>
-          {conflicts.length}
-        </span>
-      </div>
-      <p className="text-[11px]" style={{ color: "#92400E" }}>นักศึกษาต่อไปนี้อาจเช็คชื่อจาก device เดียวกัน</p>
-      {visible.map((c) => (
-        <div key={c.fingerprint} className="space-y-1">
-          <p className="text-[11px] font-medium" style={{ color: "#78350F" }}>Same device — {c.students.length} students:</p>
-          <div className="flex flex-wrap gap-1.5">
-            {c.students.map((st) => (
-              <span key={st.student_id} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px]"
-                style={{ backgroundColor: "rgba(0,0,0,0.08)", color: "#78350F" }}>
-                {st.firstname} {st.lastname}
-                {st.status && <span className="opacity-60">({st.status})</span>}
-              </span>
-            ))}
-          </div>
-        </div>
-      ))}
-      {showToggle && (
-        <button onClick={onToggle} className="flex items-center gap-1 text-[11px] font-medium"
-          style={{ color: "#854F0B", background: "none", border: "none", cursor: "pointer", padding: 0 }}>
-          {expanded ? <><IconChevronUp size={12} /> Show less</> : <><IconChevronDown size={12} /> Show {conflicts.length - SHOW_LIMIT} more</>}
-        </button>
-      )}
     </div>
   );
 }
