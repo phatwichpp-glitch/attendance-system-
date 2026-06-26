@@ -5,7 +5,7 @@ import {
   getAttendanceForSession,
   addAttendance,
 } from "@/lib/sheets";
-import { lookupSession } from "@/lib/session-store";
+import { lookupSession, lookupByOTP } from "@/lib/session-store";
 import { calculateDistance } from "@/lib/haversine";
 import { AttendanceRecord } from "@/types";
 
@@ -13,7 +13,6 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const {
-      session_id,
       otp,
       student_id,
       lat,
@@ -21,15 +20,26 @@ export async function POST(req: NextRequest) {
       spreadsheet_id: bodySpreadsheetId,
       device_fingerprint,
     } = body;
+    let session_id: string = body.session_id ?? "";
 
-    if (!session_id) {
-      return NextResponse.json({ error: "Missing session_id" }, { status: 400 });
+    // Resolve spreadsheet + access token.
+    // QR mode:     session_id present  → look up by session_id
+    // Manual mode: session_id absent   → look up by OTP (OTP index built while session is polled)
+    let spreadsheetId: string = bodySpreadsheetId ?? "";
+    let accessToken: string | undefined;
+
+    if (session_id) {
+      const stored = lookupSession(session_id);
+      spreadsheetId = bodySpreadsheetId ?? stored?.spreadsheetId ?? "";
+      accessToken = stored?.accessToken;
+    } else if (otp) {
+      const byOtp = lookupByOTP(otp);
+      if (byOtp) {
+        session_id = byOtp.sessionId;
+        spreadsheetId = byOtp.spreadsheetId;
+        accessToken = byOtp.accessToken;
+      }
     }
-
-    // Resolve spreadsheet + access token
-    const stored = lookupSession(session_id);
-    const spreadsheetId = bodySpreadsheetId ?? stored?.spreadsheetId;
-    const accessToken = stored?.accessToken;
 
     if (!spreadsheetId || !accessToken) {
       return NextResponse.json(
@@ -39,11 +49,7 @@ export async function POST(req: NextRequest) {
     }
 
     // 1. Find session
-    const sessionData = await getSessionById(
-      accessToken,
-      spreadsheetId,
-      session_id
-    );
+    const sessionData = await getSessionById(accessToken, spreadsheetId, session_id);
     if (!sessionData) {
       return NextResponse.json({ error: "session_not_found" }, { status: 404 });
     }
@@ -66,7 +72,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "session_expired" }, { status: 400 });
     }
 
-    // Pre-check only (no student_id)
+    // Pre-check only (no student_id) — QR mode validates the link on page load
     if (!student_id) {
       return NextResponse.json({ valid: true, session: sessionData });
     }
@@ -84,11 +90,7 @@ export async function POST(req: NextRequest) {
     }
 
     // 6. Duplicate check
-    const existing = await getAttendanceForSession(
-      accessToken,
-      spreadsheetId,
-      session_id
-    );
+    const existing = await getAttendanceForSession(accessToken, spreadsheetId, session_id);
     const dup = existing.find((a) => a.student_id === student_id);
     if (dup) {
       return NextResponse.json({
@@ -144,7 +146,6 @@ export async function POST(req: NextRequest) {
 
     await addAttendance(accessToken, spreadsheetId, record);
 
-    // 10. Return result
     return NextResponse.json({
       success: true,
       status,

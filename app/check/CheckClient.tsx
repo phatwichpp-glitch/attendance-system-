@@ -70,12 +70,16 @@ export default function CheckClient() {
   const otp = sp.get("o") ?? "";
   const spreadsheetId = sp.get("sid") ?? "";
 
+  // Manual mode: page loaded without ?s= and ?o= params
+  const isManualMode = !sessionId && !otp;
+
   const [state, setState] = useState<CheckInState>("loading");
   const [studentId, setStudentId] = useState("");
+  const [manualOtp, setManualOtp] = useState("");
   const [gps, setGps] = useState<{ lat: number; lng: number } | null>(null);
   const [gpsReady, setGpsReady] = useState(false);
   const [result, setResult] = useState<Result | null>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const studentInputRef = useRef<HTMLInputElement>(null);
   const fingerprintRef = useRef<string>("");
 
   useEffect(() => {
@@ -83,12 +87,7 @@ export default function CheckClient() {
   }, []);
 
   useEffect(() => {
-    if (!sessionId || !otp) {
-      setState("session_invalid");
-      return;
-    }
-
-    // Request GPS
+    // Always start GPS acquisition
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         setGps({ lat: pos.coords.latitude, lng: pos.coords.longitude });
@@ -98,7 +97,18 @@ export default function CheckClient() {
       { enableHighAccuracy: true, timeout: 15000 }
     );
 
-    // Pre-check session
+    if (isManualMode) {
+      // No pre-check needed — form is available immediately
+      setState("ready");
+      return;
+    }
+
+    if (!sessionId || !otp) {
+      setState("session_invalid");
+      return;
+    }
+
+    // QR mode: pre-check the session link
     fetchCheckin({ session_id: sessionId, otp, spreadsheet_id: spreadsheetId })
       .then((r) => r.json())
       .then((d) => {
@@ -107,31 +117,47 @@ export default function CheckClient() {
         else setState("session_invalid");
       })
       .catch(() => setState("session_invalid"));
-  }, [sessionId, otp, spreadsheetId]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
-    if (state === "ready") setTimeout(() => inputRef.current?.focus(), 100);
+    if (state === "ready") setTimeout(() => studentInputRef.current?.focus(), 100);
   }, [state]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!/^\d{9}$/.test(studentId)) return;
+    if (isManualMode && !/^\d{6}$/.test(manualOtp)) return;
     setState("submitting");
 
     try {
-      const res = await fetchCheckin({
-        session_id: sessionId,
-        otp,
-        student_id: studentId,
-        lat: gps?.lat ?? null,
-        lng: gps?.lng ?? null,
-        spreadsheet_id: spreadsheetId,
-        device_fingerprint: fingerprintRef.current,
-      });
+      const body = isManualMode
+        ? {
+            otp: manualOtp,
+            student_id: studentId,
+            lat: gps?.lat ?? null,
+            lng: gps?.lng ?? null,
+            device_fingerprint: fingerprintRef.current,
+          }
+        : {
+            session_id: sessionId,
+            otp,
+            student_id: studentId,
+            lat: gps?.lat ?? null,
+            lng: gps?.lng ?? null,
+            spreadsheet_id: spreadsheetId,
+            device_fingerprint: fingerprintRef.current,
+          };
+
+      const res = await fetchCheckin(body);
       const data: Result & { error?: string } = await res.json();
 
       if (!res.ok) {
         if (data.error === "session_expired") { setState("session_expired"); return; }
+        if (data.error === "session_invalid" || data.error === "session_not_found") {
+          setState("session_invalid"); return;
+        }
+        if (data.error === "invalid_otp") { setState("session_invalid"); return; }
         if (data.error === "not_found") { setState("not_found"); return; }
         setState("error"); return;
       }
@@ -148,19 +174,21 @@ export default function CheckClient() {
         return;
       }
 
-      const finalState: CheckInState = data.status === "late" ? "success_late" : "success_present";
-      setState(finalState);
+      setState(data.status === "late" ? "success_late" : "success_present");
       if (navigator.vibrate) navigator.vibrate(200);
     } catch {
       setState("error");
     }
   };
 
-  const reset = () => { setStudentId(""); setResult(null); setState(gps || gpsReady ? "ready" : "loading"); };
+  const reset = () => {
+    setStudentId("");
+    setManualOtp("");
+    setResult(null);
+    setState("ready");
+  };
 
-  if (!sessionId || !otp) {
-    return <Screen bg="#FCEBEB"><p className="text-[#A32D2D] font-medium">ลิงก์ไม่ถูกต้อง</p></Screen>;
-  }
+  // ── Screens ──────────────────────────────────────────────────────────────────
 
   if (state === "loading") {
     return (
@@ -178,7 +206,12 @@ export default function CheckClient() {
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
         </Icon>
         <p className="font-bold text-lg text-[#A32D2D]">ไม่พบคาบเรียน</p>
-        <p className="text-sm text-gray-500">QR code อาจหมดอายุหรือไม่ถูกต้อง</p>
+        <p className="text-sm text-gray-500">
+          {isManualMode ? "OTP ไม่ถูกต้องหรือไม่พบคาบที่เปิดอยู่" : "QR code อาจหมดอายุหรือไม่ถูกต้อง"}
+        </p>
+        {isManualMode && (
+          <button onClick={reset} className="btn-outline">ลองใหม่</button>
+        )}
       </Screen>
     );
   }
@@ -191,6 +224,9 @@ export default function CheckClient() {
         </Icon>
         <p className="font-bold text-lg text-[#854F0B]">OTP หมดอายุ</p>
         <p className="text-sm text-gray-500">คาบนี้ปิดการเช็คชื่อแล้ว</p>
+        {isManualMode && (
+          <button onClick={reset} className="btn-outline">ลองใหม่</button>
+        )}
       </Screen>
     );
   }
@@ -200,12 +236,19 @@ export default function CheckClient() {
       <div className="min-h-screen flex flex-col items-center justify-center p-4">
         <div className="card w-full max-w-sm space-y-6 py-8">
           <div className="text-center">
-            <div className="w-12 h-12 rounded-xl flex items-center justify-center mx-auto mb-3" style={{ backgroundColor: "#185FA5" }}>
+            <div
+              className="w-12 h-12 rounded-xl flex items-center justify-center mx-auto mb-3"
+              style={{ backgroundColor: "#185FA5" }}
+            >
               <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                  d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
             </div>
             <h1 className="text-xl font-bold text-gray-900">เช็คชื่อเข้าเรียน</h1>
+            {isManualMode && (
+              <p className="text-xs text-gray-400 mt-1 tracking-wide">Manual Check-In</p>
+            )}
           </div>
 
           {!gpsReady && (
@@ -215,10 +258,11 @@ export default function CheckClient() {
           )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
+            {/* Student ID */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">รหัสนักศึกษา</label>
               <input
-                ref={inputRef}
+                ref={studentInputRef}
                 type="tel"
                 inputMode="numeric"
                 pattern="\d{9}"
@@ -233,12 +277,46 @@ export default function CheckClient() {
               <p className="text-xs text-gray-400 text-center mt-1">{studentId.length}/9 หลัก</p>
             </div>
 
-            <div className="flex items-center gap-1.5 text-xs justify-center" style={{ color: gps ? "#3B6D11" : "#854F0B" }}>
+            {/* OTP — manual mode only */}
+            {isManualMode && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  OTP
+                  <span className="text-xs font-normal text-gray-400 ml-1">(จากกระดาน/จอโปรเจกเตอร์)</span>
+                </label>
+                <input
+                  type="tel"
+                  inputMode="numeric"
+                  pattern="\d{6}"
+                  maxLength={6}
+                  value={manualOtp}
+                  onChange={(e) => setManualOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                  placeholder="000000"
+                  className="input text-center py-4"
+                  style={{ fontSize: "1.5rem", fontFamily: "monospace", letterSpacing: "0.3em" }}
+                  autoComplete="off"
+                />
+                <p className="text-xs text-gray-400 text-center mt-1">{manualOtp.length}/6 หลัก</p>
+              </div>
+            )}
+
+            {/* GPS indicator */}
+            <div
+              className="flex items-center gap-1.5 text-xs justify-center"
+              style={{ color: gps ? "#3B6D11" : "#854F0B" }}
+            >
               <div className="w-2 h-2 rounded-full" style={{ backgroundColor: gps ? "#3B6D11" : "#854F0B" }} />
-              {gps ? `GPS พร้อม` : "GPS ไม่พร้อม"}
+              {gps ? "GPS พร้อม" : "GPS ไม่พร้อม"}
             </div>
 
-            <button type="submit" disabled={studentId.length !== 9} className="btn-primary w-full py-3 text-base">
+            <button
+              type="submit"
+              disabled={
+                studentId.length !== 9 ||
+                (isManualMode && manualOtp.length !== 6)
+              }
+              className="btn-primary w-full py-3 text-base"
+            >
               เช็คชื่อ
             </button>
           </form>
@@ -248,7 +326,12 @@ export default function CheckClient() {
   }
 
   if (state === "submitting") {
-    return <Screen><Spinner className="h-8 w-8 text-[#185FA5] mx-auto" /><p className="text-gray-500 text-sm text-center mt-3">กำลังบันทึก...</p></Screen>;
+    return (
+      <Screen>
+        <Spinner className="h-8 w-8 text-[#185FA5] mx-auto" />
+        <p className="text-gray-500 text-sm text-center mt-3">กำลังบันทึก...</p>
+      </Screen>
+    );
   }
 
   if (state === "success_present") {

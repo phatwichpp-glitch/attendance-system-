@@ -29,8 +29,8 @@ export async function GET(
       return NextResponse.json({ error: "Session not found" }, { status: 404 });
     }
 
-    // Keep session-store fresh for ongoing polling
-    registerSession(sessionId, spreadsheetId, session.access_token);
+    // Keep session-store fresh for ongoing polling; also index by OTP for manual check-in
+    registerSession(sessionId, spreadsheetId, session.access_token, sessionData.otp);
 
     const [students, attendance] = await Promise.all([
       getStudents(
