@@ -9,13 +9,35 @@ export interface ParsedImport {
   students: Omit<Student, "course_id" | "section">[];
 }
 
+export interface GenericFileData {
+  headers: string[];
+  preview: string[][];   // first 5 data rows
+  allRows: string[][];   // all data rows for final parse
+}
+
+/** Detect if a file matches CMU format (contains "COURSE NO" or "รหัสนักศึกษา") */
+export function isCmuFormat(buffer: ArrayBuffer): boolean {
+  const workbook = XLSX.read(buffer, { type: "array" });
+  const sheet = workbook.Sheets[workbook.SheetNames[0]];
+  const rows: string[][] = XLSX.utils.sheet_to_json(sheet, {
+    header: 1, defval: "", raw: false,
+  }) as string[][];
+
+  const first10 = rows.slice(0, 10);
+  return first10.some((r) =>
+    r.some((c) =>
+      String(c).toUpperCase().includes("COURSE NO") ||
+      String(c).includes("รหัสนักศึกษา")
+    )
+  );
+}
+
+/** Parse CMU format (existing logic, unchanged) */
 export function parseAttendanceXlsx(buffer: ArrayBuffer): ParsedImport {
   const workbook = XLSX.read(buffer, { type: "array" });
   const sheet = workbook.Sheets[workbook.SheetNames[0]];
   const rows: string[][] = XLSX.utils.sheet_to_json(sheet, {
-    header: 1,
-    defval: "",
-    raw: false,
+    header: 1, defval: "", raw: false,
   }) as string[][];
 
   const findValue = (keyword: string): string => {
@@ -34,11 +56,10 @@ export function parseAttendanceXlsx(buffer: ArrayBuffer): ParsedImport {
   };
 
   const course_id = findValue("COURSE NO");
-  const title = findValue("TITLE");
-  const section = findValue("SECTION");
-  const lecturer = findValue("LECTURE");
+  const title     = findValue("TITLE");
+  const section   = findValue("SECTION");
+  const lecturer  = findValue("LECTURE");
 
-  // Find student header row
   let headerIdx = -1;
   for (let i = 0; i < rows.length; i++) {
     if (rows[i].some((c) => String(c).includes("รหัสนักศึกษา"))) {
@@ -52,22 +73,64 @@ export function parseAttendanceXlsx(buffer: ArrayBuffer): ParsedImport {
   for (let i = headerIdx + 1; i < rows.length; i++) {
     const row = rows[i];
     if (!row || row.every((c) => !String(c).trim())) continue;
-
     const order_num = parseInt(String(row[0] ?? "").trim(), 10);
-    const student_id = String(row[1] ?? "")
-      .trim()
-      .replace(/\D/g, "");
-    const firstname = String(row[2] ?? "").trim();
-    const lastname = String(row[3] ?? "").trim();
-
+    const student_id = String(row[1] ?? "").trim().replace(/\D/g, "");
+    const firstname  = String(row[2] ?? "").trim();
+    const lastname   = String(row[3] ?? "").trim();
     if (!/^\d{9}$/.test(student_id)) continue;
     students.push({
-      student_id,
-      firstname,
-      lastname,
+      student_id, firstname, lastname,
       order_num: isNaN(order_num) ? students.length + 1 : order_num,
     });
   }
 
   return { course_id, title, section, lecturer, students };
+}
+
+/** Parse a generic xlsx/csv file and return headers + preview rows for column mapping */
+export function parseGenericFile(buffer: ArrayBuffer): GenericFileData {
+  const workbook = XLSX.read(buffer, { type: "array" });
+  const sheet = workbook.Sheets[workbook.SheetNames[0]];
+  const allSheetRows: string[][] = XLSX.utils.sheet_to_json(sheet, {
+    header: 1, defval: "", raw: false,
+  }) as string[][];
+
+  // Find first non-empty row to use as header
+  const headerIdx = allSheetRows.findIndex((r) => r.some((c) => String(c).trim()));
+  if (headerIdx === -1) return { headers: [], preview: [], allRows: [] };
+
+  const headers = allSheetRows[headerIdx].map((c) => String(c).trim());
+  const dataRows = allSheetRows
+    .slice(headerIdx + 1)
+    .filter((r) => r.some((c) => String(c).trim()));
+
+  return {
+    headers,
+    preview: dataRows.slice(0, 5),
+    allRows: dataRows,
+  };
+}
+
+/** Apply a column mapping to generic file rows and extract students */
+export function applyColumnMapping(
+  allRows: string[][],
+  mapping: { studentId: number; firstname: number; lastname: number; orderNum?: number }
+): ParsedImport["students"] {
+  const students: ParsedImport["students"] = [];
+  let counter = 1;
+  for (const row of allRows) {
+    const student_id = String(row[mapping.studentId] ?? "").trim().replace(/\D/g, "");
+    if (!/^\d{9}$/.test(student_id)) continue;
+    const firstname = String(row[mapping.firstname] ?? "").trim();
+    const lastname  = String(row[mapping.lastname] ?? "").trim();
+    const raw_order = mapping.orderNum !== undefined
+      ? parseInt(String(row[mapping.orderNum] ?? ""), 10)
+      : NaN;
+    students.push({
+      student_id, firstname, lastname,
+      order_num: isNaN(raw_order) ? counter : raw_order,
+    });
+    counter++;
+  }
+  return students;
 }

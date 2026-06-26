@@ -4,8 +4,9 @@ import {
   initializeSpreadsheet,
   upsertCourse,
   upsertStudents,
+  upsertSemesterConfig,
 } from "@/lib/sheets";
-import { Course, Student } from "@/types";
+import { Course, Student, SemesterConfig } from "@/types";
 
 interface ImportBody {
   course_id: string;
@@ -18,6 +19,7 @@ interface ImportBody {
     lastname: string;
     order_num: number;
   }>;
+  semester_config?: Omit<SemesterConfig, "course_id" | "section" | "created_at" | "updated_at">;
 }
 
 export async function POST(req: NextRequest) {
@@ -48,12 +50,19 @@ export async function POST(req: NextRequest) {
     }));
 
     await upsertStudents(
-      session.access_token,
-      spreadsheetId,
-      body.course_id,
-      body.section,
-      students
+      session.access_token, spreadsheetId, body.course_id, body.section, students
     );
+
+    if (body.semester_config) {
+      const sc: SemesterConfig = {
+        ...body.semester_config,
+        course_id: body.course_id,
+        section: body.section,
+        created_at: now.toISOString(),
+        updated_at: now.toISOString(),
+      };
+      await upsertSemesterConfig(session.access_token, spreadsheetId, sc);
+    }
 
     return NextResponse.json({ success: true, count: students.length });
   } catch (err) {

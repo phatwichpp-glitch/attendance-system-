@@ -30,6 +30,10 @@ export interface Session {
   otp_expire_min: number;
   opened_at: string;
   closed_at: string;
+  // Part 2 / Part 4 additions
+  week_number?: number;
+  week_label?: string;
+  is_past_session?: boolean;
 }
 
 export type AttendanceStatus = "present" | "late" | "absent" | "gps_fail";
@@ -48,11 +52,23 @@ export interface AttendanceRecord {
   overridden: boolean;
   overridden_at: string;
   device_fingerprint?: string;
+  // Part 5 audit trail
+  edited_at?: string;
+  edited_from?: string;
+  edited_to?: string;
+  edit_note?: string;
+  is_manual_entry?: boolean;
 }
 
 export interface DeviceConflict {
   fingerprint: string;
-  students: { student_id: string; firstname: string; lastname: string; checked_at: string; status?: string }[];
+  students: {
+    student_id: string;
+    firstname: string;
+    lastname: string;
+    checked_at: string;
+    status?: string;
+  }[];
 }
 
 export interface StudentWithAttendance extends Student {
@@ -100,6 +116,26 @@ export const DEFAULT_SETTINGS: Settings = {
   show_countdown: false,
 };
 
+// Part 1 / Part 2 — Semester Config
+export interface TeachingDay {
+  day: number;    // 0 = Sunday … 6 = Saturday
+  period: string; // "1"–"6"
+}
+
+export interface SemesterConfig {
+  course_id: string;
+  section: string;
+  semester_start: string;      // ISO date "YYYY-MM-DD"
+  total_weeks: number;
+  teaching_schedule: TeachingDay[];
+  default_gps_radius: number;
+  default_otp_min: number;
+  default_late_min: number;
+  attendance_threshold: number;
+  created_at: string;
+  updated_at: string;
+}
+
 export type CheckInState =
   | "loading"
   | "session_invalid"
@@ -138,3 +174,6 @@ export const PERIODS = [
   { value: "5", label: "คาบ 5 (14:30–16:00)" },
   { value: "6", label: "คาบ 6 (16:00–17:30)" },
 ] as const;
+
+export const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"] as const;
+export const DAY_NAMES_TH = ["อาทิตย์", "จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์", "เสาร์"] as const;
