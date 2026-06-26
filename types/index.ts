@@ -177,3 +177,16 @@ export const PERIODS = [
 
 export const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"] as const;
 export const DAY_NAMES_TH = ["อาทิตย์", "จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์", "เสาร์"] as const;
+
+// ─── Audit Log ────────────────────────────────────────────────────────────────
+
+export interface AuditLog {
+  log_id: string;
+  timestamp: string;
+  action: "create" | "update" | "delete";
+  entity_type: "student" | "attendance" | "course" | "session";
+  entity_id: string;
+  changed_from: string;
+  changed_to: string;
+  note: string;
+}

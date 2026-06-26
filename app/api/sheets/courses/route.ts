@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { initializeSpreadsheet, getCourses } from "@/lib/sheets";
+import { initializeSpreadsheet, getCourses, getCourseStats } from "@/lib/sheets";
 
 export async function GET() {
   const session = await auth();
@@ -9,8 +9,11 @@ export async function GET() {
   }
   try {
     const spreadsheetId = await initializeSpreadsheet(session.access_token);
-    const courses = await getCourses(session.access_token, spreadsheetId);
-    return NextResponse.json({ courses, spreadsheetId });
+    const [courses, stats] = await Promise.all([
+      getCourses(session.access_token, spreadsheetId),
+      getCourseStats(session.access_token, spreadsheetId).catch(() => ({})),
+    ]);
+    return NextResponse.json({ courses, stats, spreadsheetId });
   } catch (err) {
     console.error("[courses]", err);
     return NextResponse.json({ error: "Failed to fetch courses" }, { status: 500 });

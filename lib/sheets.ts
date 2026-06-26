@@ -592,3 +592,426 @@ function rowToAttendance(r: string[]): AttendanceRecord {
     is_manual_entry: r[17] === "TRUE",
   };
 }
+
+// ─── Generic helpers ──────────────────────────────────────────────────────────
+
+/** Fetch all rows for a range, filter, rewrite remaining rows. Returns deleted count. */
+async function deleteMatchingRows(
+  accessToken: string,
+  spreadsheetId: string,
+  sheetRange: string,   // e.g. "students!A2:F"
+  predicate: (row: string[]) => boolean
+): Promise<number> {
+  const sheets = getSheetsClient(accessToken);
+  const res = await sheets.spreadsheets.values.get({ spreadsheetId, range: sheetRange });
+  const rows = (res.data.values ?? []) as string[][];
+  const kept = rows.filter((r) => !predicate(r));
+  const deleted = rows.length - kept.length;
+  if (deleted === 0) return 0;
+
+  const sheetName = sheetRange.split("!")[0];
+  await sheets.spreadsheets.values.clear({ spreadsheetId, range: sheetRange });
+  if (kept.length > 0) {
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: `${sheetName}!A2`,
+      valueInputOption: "RAW",
+      requestBody: { values: kept },
+    });
+  }
+  return deleted;
+}
+
+// ─── Audit Log ────────────────────────────────────────────────────────────────
+
+import { AuditLog } from "@/types";
+
+async function ensureAuditLogSheet(
+  accessToken: string,
+  spreadsheetId: string
+): Promise<void> {
+  const sheets = getSheetsClient(accessToken);
+  const meta = await sheets.spreadsheets.get({
+    spreadsheetId,
+    fields: "sheets.properties.title",
+  });
+  const exists = (meta.data.sheets ?? []).some(
+    (s) => s.properties?.title === "audit_log"
+  );
+  if (!exists) {
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: { requests: [{ addSheet: { properties: { title: "audit_log" } } }] },
+    });
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: "audit_log!A1:H1",
+      valueInputOption: "RAW",
+      requestBody: {
+        values: [["log_id", "timestamp", "action", "entity_type", "entity_id", "changed_from", "changed_to", "note"]],
+      },
+    });
+  }
+}
+
+export async function appendAuditLog(
+  accessToken: string,
+  spreadsheetId: string,
+  entry: Omit<AuditLog, "log_id" | "timestamp" | "changed_from" | "changed_to"> & {
+    changed_from?: unknown;
+    changed_to?: unknown;
+  }
+): Promise<void> {
+  try {
+    await ensureAuditLogSheet(accessToken, spreadsheetId);
+    const sheets = getSheetsClient(accessToken);
+    await sheets.spreadsheets.values.append({
+      spreadsheetId,
+      range: "audit_log!A:H",
+      valueInputOption: "RAW",
+      requestBody: {
+        values: [[
+          crypto.randomUUID(),
+          new Date().toISOString(),
+          entry.action,
+          entry.entity_type,
+          entry.entity_id,
+          typeof entry.changed_from === "string" ? entry.changed_from : JSON.stringify(entry.changed_from ?? {}),
+          typeof entry.changed_to === "string" ? entry.changed_to : JSON.stringify(entry.changed_to ?? {}),
+          entry.note ?? "",
+        ]],
+      },
+    });
+  } catch {
+    // Audit log failures should not break main operations
+  }
+}
+
+export async function getAuditLog(
+  accessToken: string,
+  spreadsheetId: string,
+  filters?: { entity_type?: string; action?: string; from?: string; to?: string }
+): Promise<AuditLog[]> {
+  await ensureAuditLogSheet(accessToken, spreadsheetId);
+  const sheets = getSheetsClient(accessToken);
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: "audit_log!A2:H",
+  });
+  let entries: AuditLog[] = (res.data.values ?? []).map((r) => ({
+    log_id: r[0] ?? "",
+    timestamp: r[1] ?? "",
+    action: (r[2] as AuditLog["action"]) ?? "update",
+    entity_type: (r[3] as AuditLog["entity_type"]) ?? "student",
+    entity_id: r[4] ?? "",
+    changed_from: r[5] ?? "",
+    changed_to: r[6] ?? "",
+    note: r[7] ?? "",
+  }));
+
+  if (filters?.entity_type) entries = entries.filter((e) => e.entity_type === filters.entity_type);
+  if (filters?.action) entries = entries.filter((e) => e.action === filters.action);
+  if (filters?.from) entries = entries.filter((e) => e.timestamp >= filters.from!);
+  if (filters?.to) entries = entries.filter((e) => e.timestamp <= filters.to!);
+
+  return entries.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+}
+
+// ─── Student CRUD ─────────────────────────────────────────────────────────────
+
+export async function addStudent(
+  accessToken: string,
+  spreadsheetId: string,
+  student: Student
+): Promise<void> {
+  const sheets = getSheetsClient(accessToken);
+  await sheets.spreadsheets.values.append({
+    spreadsheetId,
+    range: "students!A:F",
+    valueInputOption: "RAW",
+    requestBody: {
+      values: [[
+        student.student_id, student.firstname, student.lastname,
+        student.course_id, student.section, student.order_num,
+      ]],
+    },
+  });
+}
+
+export async function updateStudentById(
+  accessToken: string,
+  spreadsheetId: string,
+  courseId: string,
+  section: string,
+  oldStudentId: string,
+  updates: Partial<Pick<Student, "student_id" | "firstname" | "lastname">>
+): Promise<boolean> {
+  const sheets = getSheetsClient(accessToken);
+  const res = await sheets.spreadsheets.values.get({ spreadsheetId, range: "students!A2:F" });
+  const rows = (res.data.values ?? []) as string[][];
+  const idx = rows.findIndex(
+    (r) => r[0] === oldStudentId && r[3] === courseId && r[4] === section
+  );
+  if (idx === -1) return false;
+
+  const row = [...rows[idx]];
+  if (updates.student_id) row[0] = updates.student_id;
+  if (updates.firstname !== undefined) row[1] = updates.firstname;
+  if (updates.lastname !== undefined) row[2] = updates.lastname;
+
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: `students!A${idx + 2}:F${idx + 2}`,
+    valueInputOption: "RAW",
+    requestBody: { values: [row] },
+  });
+  return true;
+}
+
+export async function deleteStudentById(
+  accessToken: string,
+  spreadsheetId: string,
+  courseId: string,
+  section: string,
+  studentId: string
+): Promise<boolean> {
+  const sheets = getSheetsClient(accessToken);
+  const res = await sheets.spreadsheets.values.get({ spreadsheetId, range: "students!A2:F" });
+  const rows = (res.data.values ?? []) as string[][];
+  const kept = rows.filter(
+    (r) => !(r[0] === studentId && r[3] === courseId && r[4] === section)
+  );
+  if (kept.length === rows.length) return false;
+
+  // Resequence order_num for this course+section
+  let counter = 1;
+  const resequenced = kept.map((r) => {
+    if (r[3] === courseId && r[4] === section) {
+      return [...r.slice(0, 5), String(counter++)];
+    }
+    return r;
+  });
+
+  await sheets.spreadsheets.values.clear({ spreadsheetId, range: "students!A2:F" });
+  if (resequenced.length > 0) {
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: "students!A2",
+      valueInputOption: "RAW",
+      requestBody: { values: resequenced },
+    });
+  }
+  return true;
+}
+
+export async function deleteAttendanceForStudent(
+  accessToken: string,
+  spreadsheetId: string,
+  studentId: string,
+  courseId: string
+): Promise<number> {
+  return deleteMatchingRows(
+    accessToken, spreadsheetId, "attendance!A2:R",
+    (r) => r[3] === studentId && r[2] === courseId
+  );
+}
+
+export async function getMaxOrderNum(
+  accessToken: string,
+  spreadsheetId: string,
+  courseId: string,
+  section: string
+): Promise<number> {
+  const students = await getStudents(accessToken, spreadsheetId, courseId, section);
+  return students.reduce((max, s) => Math.max(max, s.order_num), 0);
+}
+
+// ─── Course CRUD ──────────────────────────────────────────────────────────────
+
+export async function updateCourseById(
+  accessToken: string,
+  spreadsheetId: string,
+  courseId: string,
+  section: string,
+  updates: Partial<Pick<Course, "title" | "course_id" | "section" | "lecturer" | "semester" | "year">>
+): Promise<boolean> {
+  const sheets = getSheetsClient(accessToken);
+  const res = await sheets.spreadsheets.values.get({ spreadsheetId, range: "courses!A2:F" });
+  const rows = (res.data.values ?? []) as string[][];
+  const idx = rows.findIndex((r) => r[0] === courseId && r[2] === section);
+  if (idx === -1) return false;
+
+  const row = [...rows[idx]];
+  if (updates.course_id !== undefined) row[0] = updates.course_id;
+  if (updates.title !== undefined) row[1] = updates.title;
+  if (updates.section !== undefined) row[2] = updates.section;
+  if (updates.semester !== undefined) row[3] = updates.semester;
+  if (updates.year !== undefined) row[4] = updates.year;
+  if (updates.lecturer !== undefined) row[5] = updates.lecturer;
+
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: `courses!A${idx + 2}:F${idx + 2}`,
+    valueInputOption: "RAW",
+    requestBody: { values: [row] },
+  });
+  return true;
+}
+
+export async function deleteCourseById(
+  accessToken: string,
+  spreadsheetId: string,
+  courseId: string,
+  section: string
+): Promise<void> {
+  // Delete in safe order: attendance → sessions → students → semester_config → course
+  await deleteMatchingRows(accessToken, spreadsheetId, "attendance!A2:R", (r) => r[2] === courseId);
+  await deleteMatchingRows(accessToken, spreadsheetId, "sessions!A2:P", (r) => r[1] === courseId && r[2] === section);
+  await deleteMatchingRows(accessToken, spreadsheetId, "students!A2:F", (r) => r[3] === courseId && r[4] === section);
+  await deleteMatchingRows(accessToken, spreadsheetId, "courses!A2:F", (r) => r[0] === courseId && r[2] === section);
+
+  // Semester config
+  try {
+    const sheets = getSheetsClient(accessToken);
+    const res = await sheets.spreadsheets.values.get({ spreadsheetId, range: "semester_config!A2:K" });
+    const rows = (res.data.values ?? []) as string[][];
+    const kept = rows.filter((r) => !(r[0] === courseId && r[1] === section));
+    if (kept.length < rows.length) {
+      await sheets.spreadsheets.values.clear({ spreadsheetId, range: "semester_config!A2:K" });
+      if (kept.length > 0) {
+        await sheets.spreadsheets.values.update({
+          spreadsheetId, range: "semester_config!A2", valueInputOption: "RAW",
+          requestBody: { values: kept },
+        });
+      }
+    }
+  } catch { /* ignore */ }
+}
+
+// ─── Session CRUD ─────────────────────────────────────────────────────────────
+
+export async function updateSessionById(
+  accessToken: string,
+  spreadsheetId: string,
+  sessionId: string,
+  updates: Partial<Pick<Session, "week_label" | "date" | "period" | "closed_at" | "week_number">>
+): Promise<boolean> {
+  const sheets = getSheetsClient(accessToken);
+  const res = await sheets.spreadsheets.values.get({ spreadsheetId, range: "sessions!A2:P" });
+  const rows = (res.data.values ?? []) as string[][];
+  const idx = rows.findIndex((r) => r[0] === sessionId);
+  if (idx === -1) return false;
+
+  const row = [...rows[idx]];
+  if (updates.period !== undefined) row[3] = updates.period;
+  if (updates.date !== undefined) row[4] = updates.date;
+  if (updates.closed_at !== undefined) row[12] = updates.closed_at;
+  if (updates.week_number !== undefined) row[13] = String(updates.week_number);
+  if (updates.week_label !== undefined) row[14] = updates.week_label;
+
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: `sessions!A${idx + 2}:P${idx + 2}`,
+    valueInputOption: "RAW",
+    requestBody: { values: [row] },
+  });
+  return true;
+}
+
+export async function deleteSessionById(
+  accessToken: string,
+  spreadsheetId: string,
+  sessionId: string
+): Promise<void> {
+  await deleteMatchingRows(accessToken, spreadsheetId, "attendance!A2:R", (r) => r[1] === sessionId);
+  await deleteMatchingRows(accessToken, spreadsheetId, "sessions!A2:P", (r) => r[0] === sessionId);
+}
+
+export async function reopenSession(
+  accessToken: string,
+  spreadsheetId: string,
+  sessionId: string
+): Promise<boolean> {
+  return updateSessionById(accessToken, spreadsheetId, sessionId, { closed_at: "" });
+}
+
+// ─── Attendance CRUD ──────────────────────────────────────────────────────────
+
+export async function deleteAttendanceById(
+  accessToken: string,
+  spreadsheetId: string,
+  attendanceId: string
+): Promise<boolean> {
+  const deleted = await deleteMatchingRows(
+    accessToken, spreadsheetId, "attendance!A2:R",
+    (r) => r[0] === attendanceId
+  );
+  return deleted > 0;
+}
+
+// ─── Course stats ─────────────────────────────────────────────────────────────
+
+export interface CourseStats {
+  student_count: number;
+  session_count: number;
+  last_session_date: string;
+  avg_attendance_pct: number;
+}
+
+export async function getCourseStats(
+  accessToken: string,
+  spreadsheetId: string
+): Promise<Record<string, CourseStats>> {
+  const sheets = getSheetsClient(accessToken);
+  const [stuRes, sessRes, attRes] = await Promise.all([
+    sheets.spreadsheets.values.get({ spreadsheetId, range: "students!A2:F" }),
+    sheets.spreadsheets.values.get({ spreadsheetId, range: "sessions!A2:P" }),
+    sheets.spreadsheets.values.get({ spreadsheetId, range: "attendance!A2:R" }),
+  ]);
+
+  const stats: Record<string, CourseStats> = {};
+
+  const key = (courseId: string, section: string) => `${courseId}__${section}`;
+
+  for (const r of stuRes.data.values ?? []) {
+    const k = key(r[3] ?? "", r[4] ?? "");
+    if (!stats[k]) stats[k] = { student_count: 0, session_count: 0, last_session_date: "", avg_attendance_pct: 0 };
+    stats[k].student_count++;
+  }
+
+  const closedSessions: string[] = [];
+  for (const r of sessRes.data.values ?? []) {
+    const k = key(r[1] ?? "", r[2] ?? "");
+    if (!stats[k]) stats[k] = { student_count: 0, session_count: 0, last_session_date: "", avg_attendance_pct: 0 };
+    if (r[12]) { // closed_at
+      stats[k].session_count++;
+      closedSessions.push(r[0]);
+      if (!stats[k].last_session_date || r[4] > stats[k].last_session_date) {
+        stats[k].last_session_date = r[4];
+      }
+    }
+  }
+
+  // Per-course attendance % aggregation: count present+late / total records for closed sessions
+  const attCounts: Record<string, { attended: number; total: number }> = {};
+  for (const r of attRes.data.values ?? []) {
+    if (!closedSessions.includes(r[1])) continue;
+    const k = key(r[2] ?? "", ""); // no section in attendance
+    // We'll match by course_id only
+    const cid = r[2] ?? "";
+    if (!attCounts[cid]) attCounts[cid] = { attended: 0, total: 0 };
+    attCounts[cid].total++;
+    if (r[6] === "present" || r[6] === "late") attCounts[cid].attended++;
+  }
+
+  // Attach avg % to stats (course_id level, not course+section)
+  for (const k of Object.keys(stats)) {
+    const cid = k.split("__")[0];
+    const ac = attCounts[cid];
+    if (ac && ac.total > 0) {
+      stats[k].avg_attendance_pct = Math.round((ac.attended / ac.total) * 100);
+    }
+  }
+
+  return stats;
+}

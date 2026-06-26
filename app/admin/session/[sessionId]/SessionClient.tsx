@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import QRCode from "qrcode";
@@ -8,7 +8,7 @@ import {
   IconScreen, IconStop, IconDownload, IconWarning, IconCheck,
   IconClock, IconChevronDown, IconChevronUp, IconQR,
 } from "@/components/icons";
-import { Session, StudentWithAttendance, DeviceConflict } from "@/types";
+import { Session, StudentWithAttendance, DeviceConflict, AttendanceStatus } from "@/types";
 
 interface Data {
   session: Session;
@@ -16,6 +16,13 @@ interface Data {
   spreadsheetId: string;
   device_conflicts: DeviceConflict[];
 }
+
+type EditPopover = {
+  attendanceId: string;
+  studentId: string;
+  studentName: string;
+  currentStatus: AttendanceStatus;
+};
 
 export default function SessionClient({ sessionId }: { sessionId: string }) {
   const router = useRouter();
@@ -28,6 +35,27 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
   const [conflictsExpanded, setConflictsExpanded] = useState(false);
   const [showManualQR, setShowManualQR] = useState(false);
   const [manualQrDataUrl, setManualQrDataUrl] = useState("");
+
+  // Edit attendance
+  const [editPopover, setEditPopover] = useState<EditPopover | null>(null);
+  const [editStatus, setEditStatus] = useState<AttendanceStatus>("present");
+  const [editNote, setEditNote] = useState("");
+  const [editSaving, setEditSaving] = useState(false);
+  const editRef = useRef<HTMLDivElement>(null);
+
+  // Delete attendance
+  const [deleteAttId, setDeleteAttId] = useState<string | null>(null);
+  const [deletingAtt, setDeletingAtt] = useState(false);
+  const [rowMenuOpen, setRowMenuOpen] = useState<string | null>(null);
+
+  // Add manual record
+  const [showManual, setShowManual] = useState(false);
+  const [manualForm, setManualForm] = useState({ student_id: "", status: "present" as AttendanceStatus, note: "" });
+  const [manualSaving, setManualSaving] = useState(false);
+  const [manualError, setManualError] = useState("");
+
+  // Reopen
+  const [reopening, setReopening] = useState(false);
 
   const fetchData = useCallback(async () => {
     try {
@@ -47,6 +75,16 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
     return () => clearInterval(t);
   }, [fetchData]);
 
+  // Close edit popover on outside click
+  useEffect(() => {
+    if (!editPopover) return;
+    const handler = (e: MouseEvent) => {
+      if (editRef.current && !editRef.current.contains(e.target as Node)) setEditPopover(null);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [editPopover]);
+
   const handleClose = async () => {
     if (!data) return;
     setClosing(true);
@@ -60,6 +98,20 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
       router.push("/admin");
     } finally {
       setClosing(false);
+    }
+  };
+
+  const handleReopen = async () => {
+    setReopening(true);
+    try {
+      await fetch(`/api/sheets/sessions/${sessionId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reopen: true }),
+      });
+      await fetchData();
+    } finally {
+      setReopening(false);
     }
   };
 
@@ -80,9 +132,7 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
     a.click();
   };
 
-  const copyCheckUrl = () => {
-    navigator.clipboard.writeText(window.location.origin + "/check");
-  };
+  const copyCheckUrl = () => { navigator.clipboard.writeText(window.location.origin + "/check"); };
 
   const handleOverride = async (attendanceId: string) => {
     setOverriding(attendanceId);
@@ -98,15 +148,83 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
     }
   };
 
+  const openEditPopover = (stu: StudentWithAttendance) => {
+    if (!stu.attendance) return;
+    setEditPopover({
+      attendanceId: stu.attendance.attendance_id,
+      studentId: stu.student_id,
+      studentName: `${stu.firstname} ${stu.lastname}`,
+      currentStatus: stu.attendance.status,
+    });
+    setEditStatus(stu.attendance.status);
+    setEditNote("");
+    setRowMenuOpen(null);
+  };
+
+  const submitEdit = async () => {
+    if (!editPopover) return;
+    setEditSaving(true);
+    try {
+      const res = await fetch(`/api/sheets/attendance/${editPopover.attendanceId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: editStatus, edit_note: editNote }),
+      });
+      if (!res.ok) { alert("Edit failed"); return; }
+      await fetchData();
+      setEditPopover(null);
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
+  const handleDeleteAtt = async () => {
+    if (!deleteAttId) return;
+    setDeletingAtt(true);
+    try {
+      const res = await fetch(`/api/sheets/attendance/${deleteAttId}`, { method: "DELETE" });
+      if (!res.ok) { alert("Delete failed"); return; }
+      await fetchData();
+      setDeleteAttId(null);
+    } finally {
+      setDeletingAtt(false);
+    }
+  };
+
+  const handleAddManual = async () => {
+    if (!data) return;
+    setManualError("");
+    if (!manualForm.student_id.trim()) { setManualError("Select a student"); return; }
+    setManualSaving(true);
+    try {
+      const res = await fetch("/api/sheets/attendance/manual", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          session_id: sessionId,
+          course_id: data.session.course_id,
+          section: data.session.section,
+          student_id: manualForm.student_id,
+          status: manualForm.status,
+          note: manualForm.note,
+        }),
+      });
+      const d = await res.json();
+      if (!res.ok) { setManualError(d.error ?? "Error"); return; }
+      await fetchData();
+      setShowManual(false);
+      setManualForm({ student_id: "", status: "present", note: "" });
+    } finally {
+      setManualSaving(false);
+    }
+  };
+
   const exportCsv = () => {
     if (!data) return;
     const rows = [
       ["#", "Student ID", "First Name", "Last Name", "Status", "Distance (m)", "Time", "device_fingerprint"],
       ...data.students.map((s) => [
-        s.order_num,
-        s.student_id,
-        s.firstname,
-        s.lastname,
+        s.order_num, s.student_id, s.firstname, s.lastname,
         s.attendance?.status ?? "absent",
         s.attendance?.distance_m ?? "",
         s.attendance?.checked_at ? new Date(s.attendance.checked_at).toLocaleTimeString("th-TH") : "",
@@ -125,7 +243,6 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
       <Spinner className="h-8 w-8 text-[#185FA5]" />
     </div>
   );
-
   if (!data) return (
     <div className="card text-center py-10" style={{ color: "#A32D2D" }}>Session not found</div>
   );
@@ -138,6 +255,8 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
   const total    = students.length;
   const checkUrl = `/check?s=${sessionId}&o=${s.otp}&sid=${spreadsheetId}`;
 
+  const pendingStudents = students.filter((x) => !x.attendance);
+
   const ActionButtons = (
     <div className="flex gap-2 flex-wrap">
       {!isClosed && (
@@ -148,36 +267,61 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
           <button onClick={openManualQR} className="btn-outline text-[13px]" style={{ minHeight: 40 }}>
             <IconQR size={14} /> Manual QR
           </button>
+          <button
+            onClick={() => { setShowManual(true); setManualError(""); }}
+            className="btn-outline text-[13px]"
+            style={{ minHeight: 40 }}
+          >
+            + Manual Record
+          </button>
           <button onClick={() => setShowClose(true)} className="btn-danger text-[13px]" style={{ minHeight: 40 }}>
             <IconStop size={14} /> Close Session
           </button>
         </>
       )}
-      {isClosed && <span className="badge-absent px-3 py-2 text-[13px]">Closed</span>}
+      {isClosed && (
+        <>
+          <span className="badge-absent px-3 py-2 text-[13px]">Closed</span>
+          <button
+            onClick={handleReopen}
+            disabled={reopening}
+            className="btn-outline text-[13px]"
+            style={{ minHeight: 40 }}
+          >
+            {reopening ? <Spinner className="h-4 w-4" /> : "Reopen Session"}
+          </button>
+        </>
+      )}
       <button onClick={exportCsv} className="btn-outline text-[13px]" style={{ minHeight: 40 }}>
         <IconDownload size={14} /> Export CSV
       </button>
     </div>
   );
 
+  const STATUS_LABELS: Record<AttendanceStatus, string> = {
+    present: "Present ✓", late: "Late L", absent: "Absent —", gps_fail: "GPS ⚠",
+  };
+  const STATUS_COLORS: Record<AttendanceStatus, string> = {
+    present: "#3B6D11", late: "#185FA5", absent: "#A32D2D", gps_fail: "#854F0B",
+  };
+
   return (
     <div>
-      {/* ── Sticky secondary header (md+) ─────────────────────────── */}
-      <div
-        className="hidden md:flex items-center justify-between py-3 mb-4"
-        style={{ borderBottom: "0.5px solid rgba(0,0,0,0.08)" }}
-      >
+      {/* Sticky secondary header */}
+      <div className="hidden md:flex items-center justify-between py-3 mb-4"
+        style={{ borderBottom: "0.5px solid rgba(0,0,0,0.08)" }}>
         <div>
           <h1 className="text-[18px] font-medium text-gray-900">{s.course_id} — Period {s.period}</h1>
           <p className="text-[11px] mt-0.5" style={{ color: "#5F5E5A" }}>
             {s.date} · Section {s.section}
-            {lastUpdated && <span className="ml-2">· Last updated {lastUpdated.toLocaleTimeString("th-TH")}</span>}
+            {s.week_label && <span className="ml-2">{s.week_label}</span>}
+            {lastUpdated && <span className="ml-2">· Updated {lastUpdated.toLocaleTimeString("th-TH")}</span>}
           </p>
         </div>
         {ActionButtons}
       </div>
 
-      {/* ── Mobile header ─────────────────────────────────────────── */}
+      {/* Mobile header */}
       <div className="md:hidden flex flex-wrap items-start justify-between gap-3 mb-4">
         <div>
           <h1 className="text-[18px] font-medium text-gray-900">{s.course_id} — Period {s.period}</h1>
@@ -191,12 +335,11 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
         {ActionButtons}
       </div>
 
-      {/* ── iPad 2-column grid ────────────────────────────────────── */}
+      {/* 2-column grid */}
       <div className="md:grid md:grid-cols-[35%_1fr] md:gap-4 md:items-start space-y-4 md:space-y-0">
 
-        {/* Left col: stats + OTP + progress */}
+        {/* Left col */}
         <div className="space-y-4">
-          {/* Stats — 4-col mobile, 2×2 on md */}
           <div className="grid grid-cols-4 md:grid-cols-2 gap-3">
             <Stat label="Total"    value={total}   bg="#f3f4f6" color="#374151" />
             <Stat label="Present"  value={present} bg="#EAF3DE" color="#3B6D11" />
@@ -204,17 +347,14 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
             <Stat label="GPS fail" value={gpsFail} bg="#FAEEDA" color="#854F0B" />
           </div>
 
-          {/* OTP banner */}
           {!isClosed && (
             <div className="card flex items-center justify-between gap-4">
               <div>
                 <p className="text-[11px] mb-0.5" style={{ color: "#5F5E5A" }}>
                   OTP (expires in {s.otp_expire_min} min)
                 </p>
-                <p
-                  className="text-4xl font-bold tracking-widest"
-                  style={{ fontFamily: "ui-monospace, monospace", color: "#185FA5" }}
-                >
+                <p className="text-4xl font-bold tracking-widest"
+                  style={{ fontFamily: "ui-monospace, monospace", color: "#185FA5" }}>
                   {s.otp}
                 </p>
               </div>
@@ -228,25 +368,20 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
             </div>
           )}
 
-          {/* Progress */}
           <div className="card">
             <div className="flex justify-between text-[13px] text-gray-600 mb-2">
               <span>Checked In</span>
               <span className="font-medium">{present}/{total} students</span>
             </div>
             <div className="h-2 rounded-full" style={{ backgroundColor: "#e5e7eb" }}>
-              <div
-                className="h-full rounded-full transition-all"
-                style={{ width: total > 0 ? `${(present / total) * 100}%` : "0%", backgroundColor: "#3B6D11" }}
-              />
+              <div className="h-full rounded-full transition-all"
+                style={{ width: total > 0 ? `${(present / total) * 100}%` : "0%", backgroundColor: "#3B6D11" }} />
             </div>
           </div>
         </div>
 
-        {/* Right col: conflicts + student list */}
+        {/* Right col */}
         <div className="space-y-4">
-
-          {/* Device conflict warning */}
           {device_conflicts.length > 0 && (
             <DeviceConflictBox
               conflicts={device_conflicts}
@@ -255,12 +390,12 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
             />
           )}
 
-          {/* Student list */}
           <div className="card overflow-hidden">
             <h2 className="font-medium text-gray-900 mb-3">Student List</h2>
             <div className="divide-y divide-gray-50">
               {students.map((stu) => {
                 const att = stu.attendance;
+                const isMenuOpen = rowMenuOpen === stu.student_id;
                 return (
                   <div key={stu.student_id} className="py-2.5 flex items-center gap-3 text-[13px]">
                     <span className="text-gray-300 text-[11px] w-5 text-right font-mono">{stu.order_num}</span>
@@ -268,15 +403,20 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
                     <span className="flex-1 min-w-0 truncate">{stu.firstname} {stu.lastname}</span>
                     {att ? (
                       <>
-                        <span className={
-                          att.status === "present" ? "badge-present" :
-                          att.status === "late"    ? "badge-late"    :
-                          att.status === "absent"  ? "badge-absent"  : "badge-gps"
-                        }>
+                        <button
+                          onClick={() => openEditPopover(stu)}
+                          className={`${
+                            att.status === "present" ? "badge-present" :
+                            att.status === "late"    ? "badge-late"    :
+                            att.status === "absent"  ? "badge-absent"  : "badge-gps"
+                          } cursor-pointer`}
+                          title="Click to edit status"
+                          style={{ border: "none" }}
+                        >
                           {att.status === "present" ? "Present" :
                            att.status === "late"    ? "Late"    :
                            att.status === "absent"  ? "Absent"  : "GPS fail"}
-                        </span>
+                        </button>
                         {att.status === "gps_fail" && (
                           <span className="text-[11px] text-gray-400">{att.distance_m}m</span>
                         )}
@@ -287,13 +427,40 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
                             className="btn-outline text-[11px]"
                             style={{ minHeight: 44, padding: "10px 16px" }}
                           >
-                            {overriding === att.attendance_id
-                              ? <Spinner className="h-3 w-3" />
-                              : <><IconCheck size={12} /> Approve</>
-                            }
+                            {overriding === att.attendance_id ? <Spinner className="h-3 w-3" /> : <><IconCheck size={12} /> Approve</>}
                           </button>
                         )}
-                        {att.overridden && <span className="text-[11px] text-gray-400">✓ approved</span>}
+                        {att.overridden && <span className="text-[11px] text-gray-400">✓</span>}
+
+                        {/* ⋯ row menu */}
+                        <div className="relative">
+                          <button
+                            onClick={() => setRowMenuOpen(isMenuOpen ? null : stu.student_id)}
+                            style={{ background: "none", border: "none", cursor: "pointer", color: "#9ca3af", fontSize: 18, lineHeight: 1, padding: "4px 6px" }}
+                            title="More"
+                          >
+                            ⋯
+                          </button>
+                          {isMenuOpen && (
+                            <div className="absolute right-0 bottom-full mb-1 rounded-xl shadow-lg z-20 py-1 min-w-[140px]"
+                              style={{ backgroundColor: "white", border: "0.5px solid rgba(0,0,0,0.12)" }}>
+                              <button
+                                onClick={() => openEditPopover(stu)}
+                                className="block w-full text-left px-3 py-2 text-[13px] hover:bg-gray-50 transition-colors"
+                                style={{ background: "none", border: "none", cursor: "pointer", color: "#374151" }}
+                              >
+                                Edit Status
+                              </button>
+                              <button
+                                onClick={() => { setDeleteAttId(att.attendance_id); setRowMenuOpen(null); }}
+                                className="block w-full text-left px-3 py-2 text-[13px] hover:bg-gray-50 transition-colors"
+                                style={{ background: "none", border: "none", cursor: "pointer", color: "#A32D2D" }}
+                              >
+                                Delete Record
+                              </button>
+                            </div>
+                          )}
+                        </div>
                       </>
                     ) : (
                       <span className="badge-waiting">Pending</span>
@@ -305,6 +472,139 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
           </div>
         </div>
       </div>
+
+      {/* Edit status popover modal */}
+      {editPopover && (
+        <div className="fixed inset-0 flex items-center justify-center z-50 p-4" style={{ backgroundColor: "rgba(0,0,0,0.4)" }}>
+          <div ref={editRef} className="card max-w-sm w-full space-y-4">
+            <div>
+              <h3 className="font-medium text-gray-900">Edit Attendance Status</h3>
+              <p className="text-[12px] mt-0.5" style={{ color: "#5F5E5A" }}>
+                {editPopover.studentName} · {editPopover.studentId}
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              {(["present", "late", "absent", "gps_fail"] as AttendanceStatus[]).map((st) => (
+                <button
+                  key={st}
+                  onClick={() => setEditStatus(st)}
+                  className="rounded-lg px-3 py-2 text-[12px] font-medium capitalize transition-colors"
+                  style={{
+                    backgroundColor: editStatus === st ? STATUS_COLORS[st] : "#f3f4f6",
+                    color: editStatus === st ? "white" : "#374151",
+                    border: "none", cursor: "pointer",
+                  }}
+                >
+                  {STATUS_LABELS[st]}
+                </button>
+              ))}
+            </div>
+            <div>
+              <label className="block text-[12px] font-medium text-gray-700 mb-1">เหตุผล (ถ้ามี)</label>
+              <input
+                className="input text-[13px]"
+                value={editNote}
+                onChange={(e) => setEditNote(e.target.value)}
+                placeholder="Reason for change..."
+              />
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => setEditPopover(null)} className="btn-outline flex-1 text-[13px]" style={{ minHeight: 36 }}>Cancel</button>
+              <button
+                onClick={submitEdit}
+                disabled={editSaving || editStatus === editPopover.currentStatus}
+                className="btn-primary flex-1 text-[13px]"
+                style={{ minHeight: 36 }}
+              >
+                {editSaving ? <Spinner className="h-4 w-4" /> : "Save"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete attendance confirmation */}
+      {deleteAttId && (
+        <div className="fixed inset-0 flex items-center justify-center z-50 p-4" style={{ backgroundColor: "rgba(0,0,0,0.4)" }}>
+          <div className="card max-w-sm w-full space-y-4">
+            <h3 className="font-medium text-gray-900">Delete Attendance Record?</h3>
+            <p className="text-[13px] text-gray-600">
+              The student will show as <strong>Pending</strong> again in this session.
+            </p>
+            <div className="flex gap-3">
+              <button onClick={() => setDeleteAttId(null)} className="btn-outline flex-1">Cancel</button>
+              <button onClick={handleDeleteAtt} disabled={deletingAtt} className="btn-danger flex-1">
+                {deletingAtt ? <Spinner className="h-4 w-4" /> : "Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add manual record */}
+      {showManual && data && (
+        <div className="fixed inset-0 flex items-center justify-center z-50 p-4" style={{ backgroundColor: "rgba(0,0,0,0.4)" }}>
+          <div className="card max-w-sm w-full space-y-4">
+            <h3 className="font-medium text-gray-900">Add Manual Attendance</h3>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-[13px] font-medium text-gray-700 mb-1">Student</label>
+                <select
+                  className="input text-[13px]"
+                  value={manualForm.student_id}
+                  onChange={(e) => setManualForm((f) => ({ ...f, student_id: e.target.value }))}
+                >
+                  <option value="">-- Select student --</option>
+                  {pendingStudents.map((stu) => (
+                    <option key={stu.student_id} value={stu.student_id}>
+                      {stu.student_id} — {stu.firstname} {stu.lastname}
+                    </option>
+                  ))}
+                  {students.filter((stu) => stu.attendance).map((stu) => (
+                    <option key={stu.student_id} value={stu.student_id} disabled>
+                      {stu.student_id} — {stu.firstname} {stu.lastname} ({stu.attendance?.status})
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-[13px] font-medium text-gray-700 mb-1">Status</label>
+                <div className="flex gap-2">
+                  {(["present", "late", "absent"] as AttendanceStatus[]).map((st) => (
+                    <button
+                      key={st}
+                      onClick={() => setManualForm((f) => ({ ...f, status: st }))}
+                      className="flex-1 rounded-lg py-2 text-[12px] font-medium capitalize"
+                      style={{
+                        backgroundColor: manualForm.status === st ? STATUS_COLORS[st] : "#f3f4f6",
+                        color: manualForm.status === st ? "white" : "#374151",
+                        border: "none", cursor: "pointer",
+                      }}
+                    >
+                      {st}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="block text-[13px] font-medium text-gray-700 mb-1">หมายเหตุ (ถ้ามี)</label>
+                <input
+                  className="input text-[13px]"
+                  value={manualForm.note}
+                  onChange={(e) => setManualForm((f) => ({ ...f, note: e.target.value }))}
+                />
+              </div>
+              {manualError && <p className="text-[12px]" style={{ color: "#A32D2D" }}>{manualError}</p>}
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => { setShowManual(false); setManualError(""); }} className="btn-outline flex-1">Cancel</button>
+              <button onClick={handleAddManual} disabled={manualSaving || !manualForm.student_id} className="btn-primary flex-1">
+                {manualSaving ? <Spinner className="h-4 w-4" /> : "Add Record"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Manual QR modal */}
       {showManualQR && (
@@ -324,7 +624,7 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
                 </div>
               )}
               <p className="text-[11px] text-gray-400 text-center">
-                หรือเปิด: <span className="font-mono">{typeof window !== "undefined" ? window.location.origin : ""}/check</span>
+                {typeof window !== "undefined" ? window.location.origin : ""}/check
               </p>
             </div>
             <div className="flex gap-2">
@@ -337,7 +637,7 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
         </div>
       )}
 
-      {/* Close modal */}
+      {/* Close session modal */}
       {showClose && (
         <div className="fixed inset-0 flex items-center justify-center z-50 p-4" style={{ backgroundColor: "rgba(0,0,0,0.5)" }}>
           <div className="card max-w-sm w-full space-y-4">
@@ -347,11 +647,7 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
             </p>
             <div className="flex gap-3">
               <button onClick={() => setShowClose(false)} className="btn-outline flex-1">Cancel</button>
-              <button
-                onClick={handleClose}
-                disabled={closing}
-                className="btn-danger flex-1 flex items-center justify-center gap-2"
-              >
+              <button onClick={handleClose} disabled={closing} className="btn-danger flex-1 flex items-center justify-center gap-2">
                 {closing && <Spinner className="h-4 w-4" />}
                 Close Session
               </button>
@@ -372,51 +668,29 @@ function Stat({ label, value, bg, color }: { label: string; value: number; bg: s
   );
 }
 
-function DeviceConflictBox({
-  conflicts,
-  expanded,
-  onToggle,
-}: {
-  conflicts: DeviceConflict[];
-  expanded: boolean;
-  onToggle: () => void;
+function DeviceConflictBox({ conflicts, expanded, onToggle }: {
+  conflicts: DeviceConflict[]; expanded: boolean; onToggle: () => void;
 }) {
   const SHOW_LIMIT = 3;
   const showToggle = conflicts.length > SHOW_LIMIT;
   const visible = showToggle && !expanded ? conflicts.slice(0, SHOW_LIMIT) : conflicts;
-
   return (
-    <div
-      className="rounded-xl px-4 py-3 space-y-2"
-      style={{ backgroundColor: "#FAEEDA", border: "1px solid #EF9F27" }}
-    >
+    <div className="rounded-xl px-4 py-3 space-y-2" style={{ backgroundColor: "#FAEEDA", border: "1px solid #EF9F27" }}>
       <div className="flex items-center gap-2">
         <IconWarning size={14} className="text-[#854F0B]" />
-        <span className="font-medium text-[13px]" style={{ color: "#78350F" }}>
-          Device Conflict Detected
-        </span>
-        <span
-          className="rounded-full px-2 py-0.5 text-[11px] font-medium"
-          style={{ backgroundColor: "#EF9F27", color: "white" }}
-        >
+        <span className="font-medium text-[13px]" style={{ color: "#78350F" }}>Device Conflict Detected</span>
+        <span className="rounded-full px-2 py-0.5 text-[11px] font-medium" style={{ backgroundColor: "#EF9F27", color: "white" }}>
           {conflicts.length}
         </span>
       </div>
-      <p className="text-[11px]" style={{ color: "#92400E" }}>
-        นักศึกษาต่อไปนี้อาจเช็คชื่อจาก device เดียวกัน
-      </p>
+      <p className="text-[11px]" style={{ color: "#92400E" }}>นักศึกษาต่อไปนี้อาจเช็คชื่อจาก device เดียวกัน</p>
       {visible.map((c) => (
         <div key={c.fingerprint} className="space-y-1">
-          <p className="text-[11px] font-medium" style={{ color: "#78350F" }}>
-            Same device — {c.students.length} students:
-          </p>
+          <p className="text-[11px] font-medium" style={{ color: "#78350F" }}>Same device — {c.students.length} students:</p>
           <div className="flex flex-wrap gap-1.5">
             {c.students.map((st) => (
-              <span
-                key={st.student_id}
-                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px]"
-                style={{ backgroundColor: "rgba(0,0,0,0.08)", color: "#78350F" }}
-              >
+              <span key={st.student_id} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px]"
+                style={{ backgroundColor: "rgba(0,0,0,0.08)", color: "#78350F" }}>
                 {st.firstname} {st.lastname}
                 {st.status && <span className="opacity-60">({st.status})</span>}
               </span>
@@ -425,12 +699,9 @@ function DeviceConflictBox({
         </div>
       ))}
       {showToggle && (
-        <button
-          onClick={onToggle}
-          className="flex items-center gap-1 text-[11px] font-medium"
-          style={{ color: "#854F0B", background: "none", border: "none", cursor: "pointer", padding: 0 }}
-        >
-          {expanded ? <><IconChevronUp size={12}/> Show less</> : <><IconChevronDown size={12}/> Show {conflicts.length - SHOW_LIMIT} more</>}
+        <button onClick={onToggle} className="flex items-center gap-1 text-[11px] font-medium"
+          style={{ color: "#854F0B", background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+          {expanded ? <><IconChevronUp size={12} /> Show less</> : <><IconChevronDown size={12} /> Show {conflicts.length - SHOW_LIMIT} more</>}
         </button>
       )}
     </div>

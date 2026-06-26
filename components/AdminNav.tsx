@@ -25,12 +25,13 @@ export default function AdminNav({ email }: { email?: string | null }) {
       style={{ borderBottom: "0.5px solid rgba(0,0,0,0.12)" }}
     >
       <div className="max-w-5xl mx-auto px-4 h-14 flex items-center justify-between gap-4">
-        <nav className="flex items-center gap-1">
+        <nav className="flex items-center gap-1 overflow-x-auto">
           {link("/admin", "Courses")}
           {link("/admin/import", "Import")}
           {link("/admin/setup", "Open Session")}
+          {link("/admin/audit", "Audit Log")}
         </nav>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-shrink-0">
           {email && (
             <span className="text-[11px] text-gray-400 hidden sm:block truncate max-w-40">
               {email}
