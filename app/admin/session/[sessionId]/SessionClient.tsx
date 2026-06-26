@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect, useCallback, useRef } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import QRCode from "qrcode";
@@ -13,6 +14,7 @@ import {
 } from "@/components/icons";
 import { Session, StudentWithAttendance, DeviceConflict, AttendanceStatus, AttendanceRecord } from "@/types";
 import { getPeriodLabel } from "@/lib/period-utils";
+import { useClock } from "@/lib/hooks/useClock";
 
 interface Data {
   session: Session;
@@ -34,6 +36,15 @@ type UndoState = {
   attendanceId: string;
   studentName: string;
   previousStatus: string;
+};
+
+type RowMenuState = {
+  studentId: string;
+  top: number;
+  left: number;
+  openUpward: boolean;
+  onEdit: () => void;
+  onDelete: () => void;
 };
 
 const BORDER_COLORS: Record<IssueType, string> = {
@@ -58,13 +69,15 @@ function getIssues(stu: StudentWithAttendance, conflictSet: Set<string>): IssueT
 
 export default function SessionClient({ sessionId }: { sessionId: string }) {
   const router = useRouter();
-  const [data, setData] = useState<Data | null>(null);
-  const [loading, setLoading] = useState(true);
+  const clock  = useClock();
+
+  const [data, setData]             = useState<Data | null>(null);
+  const [loading, setLoading]       = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
-  const [showClose, setShowClose] = useState(false);
-  const [closing, setClosing] = useState(false);
-  const [actioning, setActioning] = useState<string | null>(null);
-  const [undoToast, setUndoToast] = useState<UndoState | null>(null);
+  const [showClose, setShowClose]   = useState(false);
+  const [closing, setClosing]       = useState(false);
+  const [actioning, setActioning]   = useState<string | null>(null);
+  const [undoToast, setUndoToast]   = useState<UndoState | null>(null);
   const [conflictDismissed, setConflictDismissed] = useState(false);
   const [conflictsExpanded, setConflictsExpanded] = useState(false);
   const [showManualQR, setShowManualQR] = useState(false);
@@ -72,26 +85,27 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
 
   // Edit attendance
   const [editPopover, setEditPopover] = useState<EditPopover | null>(null);
-  const [editStatus, setEditStatus] = useState<AttendanceStatus>("present");
-  const [editNote, setEditNote] = useState("");
-  const [editSaving, setEditSaving] = useState(false);
+  const [editStatus, setEditStatus]   = useState<AttendanceStatus>("present");
+  const [editNote, setEditNote]       = useState("");
+  const [editSaving, setEditSaving]   = useState(false);
   const editRef = useRef<HTMLDivElement>(null);
 
   // Delete attendance
   const [deleteAttId, setDeleteAttId] = useState<string | null>(null);
   const [deletingAtt, setDeletingAtt] = useState(false);
-  const [rowMenuOpen, setRowMenuOpen] = useState<string | null>(null);
+
+  // Row ⋯ menu (portal)
+  const [rowMenu, setRowMenu]   = useState<RowMenuState | null>(null);
+  const rowMenuRef = useRef<HTMLDivElement>(null);
 
   // Add manual record
-  const [showManual, setShowManual] = useState(false);
-  const [manualForm, setManualForm] = useState({ student_id: "", status: "present" as AttendanceStatus, note: "" });
+  const [showManual, setShowManual]   = useState(false);
+  const [manualForm, setManualForm]   = useState({ student_id: "", status: "present" as AttendanceStatus, note: "" });
   const [manualSaving, setManualSaving] = useState(false);
-  const [manualError, setManualError] = useState("");
+  const [manualError, setManualError]   = useState("");
 
-  // Reopen
-  const [reopening, setReopening] = useState(false);
-
-  // Activate Part 2
+  // Reopen / Activate Part 2
+  const [reopening, setReopening]         = useState(false);
   const [activatingPart2, setActivatingPart2] = useState(false);
 
   const fetchData = useCallback(async () => {
@@ -112,10 +126,9 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
     return () => clearInterval(t);
   }, [fetchData]);
 
-  // Restore conflict banner dismiss state
+  // Restore conflict banner dismiss state from sessionStorage
   useEffect(() => {
-    const key = `conflict_dismissed_${sessionId}`;
-    setConflictDismissed(sessionStorage.getItem(key) === "1");
+    setConflictDismissed(sessionStorage.getItem(`conflict_dismissed_${sessionId}`) === "1");
   }, [sessionId]);
 
   // Close edit popover on outside click
@@ -127,6 +140,41 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, [editPopover]);
+
+  // Close row menu on outside click or scroll
+  useEffect(() => {
+    if (!rowMenu) return;
+    const handleScroll = () => setRowMenu(null);
+    const handleMouseDown = (e: MouseEvent) => {
+      if (rowMenuRef.current && !rowMenuRef.current.contains(e.target as Node)) setRowMenu(null);
+    };
+    window.addEventListener("scroll", handleScroll, true);
+    document.addEventListener("mousedown", handleMouseDown);
+    return () => {
+      window.removeEventListener("scroll", handleScroll, true);
+      document.removeEventListener("mousedown", handleMouseDown);
+    };
+  }, [rowMenu]);
+
+  const openRowMenu = (e: React.MouseEvent<HTMLButtonElement>, stu: StudentWithAttendance) => {
+    const att = stu.attendance!;
+    if (rowMenu?.studentId === stu.student_id) { setRowMenu(null); return; }
+    const rect     = e.currentTarget.getBoundingClientRect();
+    const menuH    = 80;
+    const menuW    = 150;
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const spaceAbove = rect.top;
+    const openUpward = spaceBelow < menuH && (spaceAbove >= menuH || spaceAbove > spaceBelow);
+    const alignRight = rect.right + menuW > window.innerWidth;
+    setRowMenu({
+      studentId: stu.student_id,
+      top:  openUpward ? rect.top - menuH - 4 : rect.bottom + 4,
+      left: alignRight ? rect.right - menuW   : rect.left,
+      openUpward,
+      onEdit:   () => { openEditPopover(stu); setRowMenu(null); },
+      onDelete: () => { setDeleteAttId(att.attendance_id); setRowMenu(null); },
+    });
+  };
 
   const handleClose = async () => {
     if (!data) return;
@@ -205,7 +253,7 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
   const openManualQR = async () => {
     setShowManualQR(true);
     if (!manualQrDataUrl) {
-      const url = window.location.origin + "/check";
+      const url     = window.location.origin + "/check";
       const dataUrl = await QRCode.toDataURL(url, { width: 500, margin: 2 });
       setManualQrDataUrl(dataUrl);
     }
@@ -214,7 +262,7 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
   const downloadManualQR = () => {
     if (!manualQrDataUrl) return;
     const a = document.createElement("a");
-    a.href = manualQrDataUrl;
+    a.href     = manualQrDataUrl;
     a.download = "attendance-qr-manual.png";
     a.click();
   };
@@ -225,13 +273,12 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
     if (!stu.attendance) return;
     setEditPopover({
       attendanceId: stu.attendance.attendance_id,
-      studentId: stu.student_id,
-      studentName: `${stu.firstname} ${stu.lastname}`,
+      studentId:    stu.student_id,
+      studentName:  `${stu.firstname} ${stu.lastname}`,
       currentStatus: stu.attendance.status,
     });
     setEditStatus(stu.attendance.status);
     setEditNote("");
-    setRowMenuOpen(null);
   };
 
   const submitEdit = async () => {
@@ -275,11 +322,11 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           session_id: sessionId,
-          course_id: data.session.course_id,
-          section: data.session.section,
+          course_id:  data.session.course_id,
+          section:    data.session.section,
           student_id: manualForm.student_id,
-          status: manualForm.status,
-          note: manualForm.note,
+          status:     manualForm.status,
+          note:       manualForm.note,
         }),
       });
       const d = await res.json();
@@ -305,8 +352,8 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
       ]),
     ];
     const csv = "﻿" + rows.map((r) => r.join(",")).join("\n");
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8;" }));
+    const a   = document.createElement("a");
+    a.href     = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8;" }));
     a.download = `session_${sessionId}.csv`;
     a.click();
   };
@@ -335,7 +382,7 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
     : `Period ${s.period}`;
   const partBadge = s.part_number === 1 ? "①" : s.part_number === 2 ? "②" : "";
 
-  // Build Part 1 attendance map for comparison (Part 2 only)
+  // Part 1 attendance map (Part 2 comparison panel)
   const part1Map = part1_attendance
     ? new Map(part1_attendance.map((a) => [a.student_id, a.status]))
     : null;
@@ -348,11 +395,11 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
   const pendingStudents = students.filter((x) => !x.attendance);
 
   // Issue counts for summary bar
-  const gpsFailCount = students.filter((x) => x.attendance?.status === "gps_fail").length;
+  const gpsFailCount       = students.filter((x) => x.attendance?.status === "gps_fail").length;
   const deviceConflictCount = conflictSet.size;
-  const lateCount = students.filter((x) => x.attendance?.status === "late").length;
-  const flaggedCount = students.filter((x) => x.attendance?.flagged).length;
-  const totalIssues = gpsFailCount + deviceConflictCount + lateCount + flaggedCount;
+  const lateCount          = students.filter((x) => x.attendance?.status === "late").length;
+  const flaggedCount        = students.filter((x) => x.attendance?.flagged).length;
+  const totalIssues        = gpsFailCount + deviceConflictCount + lateCount + flaggedCount;
 
   const ActionButtons = (
     <div className="flex gap-2 flex-wrap">
@@ -379,12 +426,7 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
       {isClosed && (
         <>
           <span className="badge-absent px-3 py-2 text-[13px]">Closed</span>
-          <button
-            onClick={handleReopen}
-            disabled={reopening}
-            className="btn-outline text-[13px]"
-            style={{ minHeight: 40 }}
-          >
+          <button onClick={handleReopen} disabled={reopening} className="btn-outline text-[13px]" style={{ minHeight: 40 }}>
             {reopening ? <Spinner className="h-4 w-4" /> : "Reopen Session"}
           </button>
         </>
@@ -404,13 +446,14 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
 
   return (
     <div>
-      {/* Sticky secondary header */}
+      {/* Desktop header */}
       <div className="hidden md:flex items-center justify-between py-3 mb-4"
         style={{ borderBottom: "0.5px solid rgba(0,0,0,0.08)" }}>
         <div>
-          <h1 className="text-[18px] font-medium text-gray-900">
+          <h1 className="text-[18px] font-medium text-gray-900 flex items-center gap-2">
             {s.course_id} — {periodLabel}
-            {partBadge && <span className="ml-2 text-[14px]" style={{ color: "#185FA5" }}>{partBadge}</span>}
+            {partBadge && <span className="text-[14px]" style={{ color: "#185FA5" }}>{partBadge}</span>}
+            {!isClosed && <span className="text-[12px] font-normal" style={{ color: "#3B6D11" }}>● Live</span>}
           </h1>
           <p className="text-[11px] mt-0.5" style={{ color: "#5F5E5A" }}>
             {s.date} · Section {s.section}
@@ -418,17 +461,32 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
             {lastUpdated && <span className="ml-2">· Updated {lastUpdated.toLocaleTimeString("th-TH")}</span>}
           </p>
         </div>
+
+        {/* Live clock */}
+        {clock.time && (
+          <div className="text-right leading-tight mx-4 shrink-0">
+            <p className="text-[13px]" style={{ color: "#5F5E5A" }}>{clock.date}</p>
+            <p className="text-[22px] font-medium" style={{ fontFamily: "ui-monospace, monospace" }}>{clock.time}</p>
+          </div>
+        )}
+
         {ActionButtons}
       </div>
 
       {/* Mobile header */}
       <div className="md:hidden flex flex-wrap items-start justify-between gap-3 mb-4">
         <div>
-          <h1 className="text-[18px] font-medium text-gray-900">
+          <h1 className="text-[18px] font-medium text-gray-900 flex items-center gap-2">
             {s.course_id} — {periodLabel}
-            {partBadge && <span className="ml-2 text-[14px]" style={{ color: "#185FA5" }}>{partBadge}</span>}
+            {partBadge && <span className="text-[14px]" style={{ color: "#185FA5" }}>{partBadge}</span>}
+            {!isClosed && <span className="text-[11px] font-normal" style={{ color: "#3B6D11" }}>● Live</span>}
           </h1>
           <p className="text-[11px] mt-0.5" style={{ color: "#5F5E5A" }}>{s.date} · Section {s.section}</p>
+          {clock.time && (
+            <p className="text-[12px] mt-1 font-medium" style={{ fontFamily: "ui-monospace, monospace", color: "#374151" }}>
+              {clock.time}
+            </p>
+          )}
           {lastUpdated && (
             <p className="text-[11px] text-gray-400 mt-0.5 flex items-center gap-1">
               <IconClock size={11} /> {lastUpdated.toLocaleTimeString("th-TH")}
@@ -443,7 +501,7 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
 
         {/* Left col */}
         <div className="space-y-4">
-          {/* Linked session card (two-check-in double period) */}
+          {/* Linked session card */}
           {isDoubleCheckIn && linked_session && (
             <div className="card" style={{ border: "1px solid #185FA5" }}>
               <div className="flex items-center justify-between mb-2">
@@ -478,7 +536,7 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
                     )}
                   </p>
                 </div>
-                {s.part_number === 1 && isClosed && linked_session && !linked_session.opened_at && (
+                {s.part_number === 1 && isClosed && !linked_session.opened_at && (
                   <button
                     onClick={() => handleActivatePart2(linked_session.session_id)}
                     disabled={activatingPart2}
@@ -539,7 +597,7 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
 
         {/* Right col */}
         <div className="space-y-4">
-          {/* Part 1 → Part 2 comparison panel (Part 2 sessions only) */}
+          {/* Part 1 → Part 2 comparison panel */}
           {s.part_number === 2 && part1Map && part1Map.size > 0 && (
             <div className="card" style={{ border: "1px solid rgba(0,0,0,0.08)" }}>
               <h3 className="font-medium text-gray-900 text-[13px] mb-2">Part 1 → Part 2 Comparison</h3>
@@ -585,8 +643,7 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
                   className="text-[11px] underline shrink-0"
                   style={{ color: "#854F0B", background: "none", border: "none", cursor: "pointer" }}
                 >
-                  {conflictsExpanded ? "Hide" : "Details"}
-                  {conflictsExpanded ? <IconChevronUp size={10} className="inline ml-0.5" /> : <IconChevronDown size={10} className="inline ml-0.5" />}
+                  {conflictsExpanded ? <>Hide <IconChevronUp size={10} className="inline" /></> : <>Details <IconChevronDown size={10} className="inline" /></>}
                 </button>
                 <button
                   onClick={() => {
@@ -628,26 +685,10 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
             <div className="flex flex-wrap items-center gap-3 px-3 py-2 rounded-lg text-[11px]"
               style={{ backgroundColor: "#f9fafb", border: "0.5px solid rgba(0,0,0,0.08)" }}>
               <span className="font-medium text-gray-500">Issues:</span>
-              {gpsFailCount > 0 && (
-                <span className="flex items-center gap-1 font-medium" style={{ color: "#ef4444" }}>
-                  GPS Fail {gpsFailCount}
-                </span>
-              )}
-              {deviceConflictCount > 0 && (
-                <span className="flex items-center gap-1 font-medium" style={{ color: "#f97316" }}>
-                  Same Device {deviceConflictCount}
-                </span>
-              )}
-              {lateCount > 0 && (
-                <span className="flex items-center gap-1 font-medium" style={{ color: "#ca8a04" }}>
-                  Late {lateCount}
-                </span>
-              )}
-              {flaggedCount > 0 && (
-                <span className="flex items-center gap-1 font-medium" style={{ color: "#a855f7" }}>
-                  Flagged {flaggedCount}
-                </span>
-              )}
+              {gpsFailCount > 0 && <span className="font-medium" style={{ color: "#ef4444" }}>GPS Fail {gpsFailCount}</span>}
+              {deviceConflictCount > 0 && <span className="font-medium" style={{ color: "#f97316" }}>Same Device {deviceConflictCount}</span>}
+              {lateCount > 0 && <span className="font-medium" style={{ color: "#ca8a04" }}>Late {lateCount}</span>}
+              {flaggedCount > 0 && <span className="font-medium" style={{ color: "#a855f7" }}>Flagged {flaggedCount}</span>}
             </div>
           )}
 
@@ -655,21 +696,20 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
             <h2 className="font-medium text-gray-900 mb-3">Student List</h2>
             <div className="divide-y divide-gray-50">
               {students.map((stu) => {
-                const att = stu.attendance;
+                const att    = stu.attendance;
                 const issues = att ? getIssues(stu, conflictSet) : [];
-                const hasIssues = issues.length > 0;
+                const hasIssues    = issues.length > 0;
                 const primaryIssue = issues[0];
-                const isMenuOpen = rowMenuOpen === stu.student_id;
-                const isActioning = actioning === att?.attendance_id;
+                const isActioning  = actioning === att?.attendance_id;
 
                 return (
                   <div
                     key={stu.student_id}
-                    className="py-2.5 flex items-center gap-3 text-[13px] pl-2"
-                    style={hasIssues ? {
-                      borderLeft: `3px solid ${BORDER_COLORS[primaryIssue]}`,
-                      paddingLeft: "8px",
-                    } : { paddingLeft: "8px" }}
+                    className="py-2.5 flex items-center gap-3 text-[13px]"
+                    style={hasIssues
+                      ? { borderLeft: `3px solid ${BORDER_COLORS[primaryIssue]}`, paddingLeft: 8 }
+                      : { paddingLeft: 8 }
+                    }
                   >
                     <span className="text-gray-300 text-[11px] w-5 text-right font-mono">{stu.order_num}</span>
                     <span className="font-mono text-[11px] text-gray-400 w-24">{stu.student_id}</span>
@@ -677,9 +717,7 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
                       <span className="truncate block">{stu.firstname} {stu.lastname}</span>
                       {hasIssues && (
                         <span className="flex flex-wrap gap-1 mt-0.5">
-                          {issues.map((issue) => (
-                            <IssueBadge key={issue} type={issue} />
-                          ))}
+                          {issues.map((issue) => <IssueBadge key={issue} type={issue} />)}
                         </span>
                       )}
                     </span>
@@ -700,7 +738,6 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
                            att.status === "absent"  ? "Absent"  : "GPS fail"}
                         </button>
 
-                        {/* Action dropdown for issue rows */}
                         {hasIssues && (
                           isActioning ? (
                             <Spinner className="h-3 w-3 shrink-0" />
@@ -720,34 +757,15 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
                           <span className="text-[11px] text-gray-400 shrink-0">✓</span>
                         )}
 
-                        {/* ⋯ row menu */}
-                        <div className="relative shrink-0">
+                        {/* ⋯ row menu trigger */}
+                        <div className="shrink-0">
                           <button
-                            onClick={() => setRowMenuOpen(isMenuOpen ? null : stu.student_id)}
+                            onClick={(e) => openRowMenu(e, stu)}
                             style={{ background: "none", border: "none", cursor: "pointer", color: "#9ca3af", fontSize: 18, lineHeight: 1, padding: "4px 6px" }}
                             title="More"
                           >
                             ⋯
                           </button>
-                          {isMenuOpen && (
-                            <div className="absolute right-0 bottom-full mb-1 rounded-xl shadow-lg z-20 py-1 min-w-[140px]"
-                              style={{ backgroundColor: "white", border: "0.5px solid rgba(0,0,0,0.12)" }}>
-                              <button
-                                onClick={() => openEditPopover(stu)}
-                                className="block w-full text-left px-3 py-2 text-[13px] hover:bg-gray-50 transition-colors"
-                                style={{ background: "none", border: "none", cursor: "pointer", color: "#374151" }}
-                              >
-                                Edit Status
-                              </button>
-                              <button
-                                onClick={() => { setDeleteAttId(att.attendance_id); setRowMenuOpen(null); }}
-                                className="block w-full text-left px-3 py-2 text-[13px] hover:bg-gray-50 transition-colors"
-                                style={{ background: "none", border: "none", cursor: "pointer", color: "#A32D2D" }}
-                              >
-                                Delete Record
-                              </button>
-                            </div>
-                          )}
                         </div>
                       </>
                     ) : (
@@ -761,7 +779,7 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
         </div>
       </div>
 
-      {/* Edit status popover modal */}
+      {/* Edit status modal */}
       {editPopover && (
         <div className="fixed inset-0 flex items-center justify-center z-50 p-4" style={{ backgroundColor: "rgba(0,0,0,0.4)" }}>
           <div ref={editRef} className="card max-w-sm w-full space-y-4">
@@ -777,11 +795,7 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
                   key={st}
                   onClick={() => setEditStatus(st)}
                   className="rounded-lg px-3 py-2 text-[12px] font-medium capitalize transition-colors"
-                  style={{
-                    backgroundColor: editStatus === st ? STATUS_COLORS[st] : "#f3f4f6",
-                    color: editStatus === st ? "white" : "#374151",
-                    border: "none", cursor: "pointer",
-                  }}
+                  style={{ backgroundColor: editStatus === st ? STATUS_COLORS[st] : "#f3f4f6", color: editStatus === st ? "white" : "#374151", border: "none", cursor: "pointer" }}
                 >
                   {STATUS_LABELS[st]}
                 </button>
@@ -789,12 +803,7 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
             </div>
             <div>
               <label className="block text-[12px] font-medium text-gray-700 mb-1">เหตุผล (ถ้ามี)</label>
-              <input
-                className="input text-[13px]"
-                value={editNote}
-                onChange={(e) => setEditNote(e.target.value)}
-                placeholder="Reason for change..."
-              />
+              <input className="input text-[13px]" value={editNote} onChange={(e) => setEditNote(e.target.value)} placeholder="Reason for change..." />
             </div>
             <div className="flex gap-2">
               <button onClick={() => setEditPopover(null)} className="btn-outline flex-1 text-[13px]" style={{ minHeight: 36 }}>Cancel</button>
@@ -811,7 +820,7 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
         </div>
       )}
 
-      {/* Delete attendance confirmation */}
+      {/* Delete confirmation */}
       {deleteAttId && (
         <div className="fixed inset-0 flex items-center justify-center z-50 p-4" style={{ backgroundColor: "rgba(0,0,0,0.4)" }}>
           <div className="card max-w-sm w-full space-y-4">
@@ -829,19 +838,16 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
         </div>
       )}
 
-      {/* Add manual record */}
-      {showManual && data && (
+      {/* Add manual record modal */}
+      {showManual && (
         <div className="fixed inset-0 flex items-center justify-center z-50 p-4" style={{ backgroundColor: "rgba(0,0,0,0.4)" }}>
           <div className="card max-w-sm w-full space-y-4">
             <h3 className="font-medium text-gray-900">Add Manual Attendance</h3>
             <div className="space-y-3">
               <div>
                 <label className="block text-[13px] font-medium text-gray-700 mb-1">Student</label>
-                <select
-                  className="input text-[13px]"
-                  value={manualForm.student_id}
-                  onChange={(e) => setManualForm((f) => ({ ...f, student_id: e.target.value }))}
-                >
+                <select className="input text-[13px]" value={manualForm.student_id}
+                  onChange={(e) => setManualForm((f) => ({ ...f, student_id: e.target.value }))}>
                   <option value="">-- Select student --</option>
                   {pendingStudents.map((stu) => (
                     <option key={stu.student_id} value={stu.student_id}>
@@ -863,11 +869,7 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
                       key={st}
                       onClick={() => setManualForm((f) => ({ ...f, status: st }))}
                       className="flex-1 rounded-lg py-2 text-[12px] font-medium capitalize"
-                      style={{
-                        backgroundColor: manualForm.status === st ? STATUS_COLORS[st] : "#f3f4f6",
-                        color: manualForm.status === st ? "white" : "#374151",
-                        border: "none", cursor: "pointer",
-                      }}
+                      style={{ backgroundColor: manualForm.status === st ? STATUS_COLORS[st] : "#f3f4f6", color: manualForm.status === st ? "white" : "#374151", border: "none", cursor: "pointer" }}
                     >
                       {st}
                     </button>
@@ -876,11 +878,7 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
               </div>
               <div>
                 <label className="block text-[13px] font-medium text-gray-700 mb-1">หมายเหตุ (ถ้ามี)</label>
-                <input
-                  className="input text-[13px]"
-                  value={manualForm.note}
-                  onChange={(e) => setManualForm((f) => ({ ...f, note: e.target.value }))}
-                />
+                <input className="input text-[13px]" value={manualForm.note} onChange={(e) => setManualForm((f) => ({ ...f, note: e.target.value }))} />
               </div>
               {manualError && <p className="text-[12px]" style={{ color: "#A32D2D" }}>{manualError}</p>}
             </div>
@@ -951,6 +949,44 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
           onUndo={handleUndo}
           onDismiss={() => setUndoToast(null)}
         />
+      )}
+
+      {/* Row ⋯ menu portal */}
+      {rowMenu && typeof window !== "undefined" && createPortal(
+        <div
+          ref={rowMenuRef}
+          style={{
+            position: "fixed",
+            top:    rowMenu.top,
+            left:   rowMenu.left,
+            width:  150,
+            zIndex: 9999,
+            backgroundColor: "white",
+            border: "0.5px solid rgba(0,0,0,0.12)",
+            borderRadius: 12,
+            boxShadow: "0 8px 30px rgba(0,0,0,0.12)",
+            padding: "4px 0",
+            animation: "dd-appear 0.15s ease",
+            transformOrigin: rowMenu.openUpward ? "bottom center" : "top center",
+          }}
+        >
+          <style>{`@keyframes dd-appear{from{opacity:0;transform:scaleY(0.92)}to{opacity:1;transform:scaleY(1)}}`}</style>
+          <button
+            onClick={rowMenu.onEdit}
+            className="block w-full text-left px-3 py-2 text-[13px] hover:bg-gray-50 transition-colors"
+            style={{ background: "none", border: "none", cursor: "pointer", color: "#374151" }}
+          >
+            Edit Status
+          </button>
+          <button
+            onClick={rowMenu.onDelete}
+            className="block w-full text-left px-3 py-2 text-[13px] hover:bg-gray-50 transition-colors"
+            style={{ background: "none", border: "none", cursor: "pointer", color: "#A32D2D" }}
+          >
+            Delete Record
+          </button>
+        </div>,
+        document.body,
       )}
     </div>
   );

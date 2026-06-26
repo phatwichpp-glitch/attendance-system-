@@ -2,9 +2,11 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
+import { useClock } from "@/lib/hooks/useClock";
 
 export default function AdminNav({ email }: { email?: string | null }) {
   const pathname = usePathname();
+  const clock = useClock();
 
   const link = (href: string, label: string) => (
     <Link
@@ -36,6 +38,12 @@ export default function AdminNav({ email }: { email?: string | null }) {
             <span className="text-[11px] text-gray-400 hidden sm:block truncate max-w-40">
               {email}
             </span>
+          )}
+          {clock.date && (
+            <div className="hidden sm:block text-right leading-tight">
+              <p className="text-[11px]" style={{ color: "#5F5E5A" }}>{clock.date}</p>
+              <p className="text-[13px] font-medium" style={{ fontFamily: "ui-monospace, monospace" }}>{clock.timeShort}</p>
+            </div>
           )}
           <button
             onClick={() => signOut({ callbackUrl: "/login" })}

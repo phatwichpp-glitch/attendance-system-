@@ -4,6 +4,7 @@ import Spinner from "@/components/Spinner";
 import { IconTablet, IconScreen } from "@/components/icons";
 import { Session, StudentWithAttendance } from "@/types";
 import { getPeriodLabel } from "@/lib/period-utils";
+import { useClock } from "@/lib/hooks/useClock";
 
 type Mode = "projector" | "ipad";
 
@@ -114,6 +115,8 @@ export default function ProjectorClient({ sessionId }: { sessionId: string }) {
     const t = setInterval(tick, 1000);
     return () => clearInterval(t);
   }, [data]);
+
+  const clock = useClock();
 
   if (loading) {
     return (
@@ -261,6 +264,14 @@ export default function ProjectorClient({ sessionId }: { sessionId: string }) {
           </div>
         </div>
 
+        {/* Clock — bottom left */}
+        {clock.time && (
+          <div style={{ position: "fixed", bottom: 16, left: 16, zIndex: 10, textAlign: "left" }}>
+            {clock.date && <p style={{ fontSize: 10, color: "#666", marginBottom: 2 }}>{clock.date}</p>}
+            <p style={{ fontSize: 20, fontWeight: 500, fontFamily: "ui-monospace, monospace", color: "#fff" }}>{clock.time}</p>
+          </div>
+        )}
+
         {/* Bottom fixed strip */}
         <div
           className="flex items-center justify-between px-6"
@@ -347,6 +358,14 @@ export default function ProjectorClient({ sessionId }: { sessionId: string }) {
           </p>
         </div>
       </div>
+
+      {/* Clock — bottom left */}
+      {clock.time && (
+        <div style={{ position: "fixed", bottom: 16, left: 16, zIndex: 10, textAlign: "left" }}>
+          {clock.date && <p style={{ fontSize: 12, color: "#666", marginBottom: 2 }}>{clock.date}</p>}
+          <p style={{ fontSize: 28, fontWeight: 500, fontFamily: "ui-monospace, monospace", color: "#fff" }}>{clock.time}</p>
+        </div>
+      )}
 
       {/* BOTTOM ~40% */}
       <div className="flex-[4] flex flex-col" style={{ borderTop: "0.5px solid #222" }}>

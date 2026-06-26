@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import { CheckInState } from "@/types";
+import { useClock } from "@/lib/hooks/useClock";
 
 // ── Fingerprint ──────────────────────────────────────────────────────────────
 function generateFingerprint(): string {
@@ -192,6 +193,7 @@ export default function CheckClient() {
   const [session, setSession]         = useState<SessionInfo | null>(null);
   const inputRef     = useRef<HTMLInputElement>(null);
   const fingerprintRef = useRef("");
+  const clock = useClock();
 
   const requestGps = useCallback(() => {
     setGpsStatus("loading");
@@ -287,6 +289,11 @@ export default function CheckClient() {
             {headerText && (
               <p style={{ fontSize: 15, fontWeight: 600, color: headerColor, margin: "3px 0 0", textAlign: "center" }}>
                 {headerText}
+              </p>
+            )}
+            {clock.combined && (
+              <p style={{ fontSize: 12, color: "#888", margin: "4px 0 0", textAlign: "center" }}>
+                {clock.combined}
               </p>
             )}
           </div>
