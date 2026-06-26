@@ -81,6 +81,14 @@ export default function SetupClient() {
       });
       if (!res.ok) throw new Error("เปิดคาบไม่สำเร็จ");
       const data = await res.json();
+      localStorage.setItem("active_session", JSON.stringify({
+        session_id: data.session.session_id,
+        course_id: data.session.course_id,
+        course_title: course.title,
+        section: data.session.section,
+        period: data.session.period,
+        opened_at: new Date().toISOString(),
+      }));
       router.push(`/admin/session/${data.session.session_id}`);
     } catch (e: unknown) {
       alert(e instanceof Error ? e.message : "เกิดข้อผิดพลาด");

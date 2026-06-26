@@ -2,10 +2,11 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import QRCode from "qrcode";
 import Spinner from "@/components/Spinner";
 import {
   IconScreen, IconStop, IconDownload, IconWarning, IconCheck,
-  IconClock, IconChevronDown, IconChevronUp,
+  IconClock, IconChevronDown, IconChevronUp, IconQR,
 } from "@/components/icons";
 import { Session, StudentWithAttendance, DeviceConflict } from "@/types";
 
@@ -25,6 +26,8 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
   const [closing, setClosing] = useState(false);
   const [overriding, setOverriding] = useState<string | null>(null);
   const [conflictsExpanded, setConflictsExpanded] = useState(false);
+  const [showManualQR, setShowManualQR] = useState(false);
+  const [manualQrDataUrl, setManualQrDataUrl] = useState("");
 
   const fetchData = useCallback(async () => {
     try {
@@ -53,10 +56,32 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ session_id: sessionId, course_id: data.session.course_id, section: data.session.section }),
       });
+      localStorage.removeItem("active_session");
       router.push("/admin");
     } finally {
       setClosing(false);
     }
+  };
+
+  const openManualQR = async () => {
+    setShowManualQR(true);
+    if (!manualQrDataUrl) {
+      const url = window.location.origin + "/check";
+      const dataUrl = await QRCode.toDataURL(url, { width: 500, margin: 2 });
+      setManualQrDataUrl(dataUrl);
+    }
+  };
+
+  const downloadManualQR = () => {
+    if (!manualQrDataUrl) return;
+    const a = document.createElement("a");
+    a.href = manualQrDataUrl;
+    a.download = "attendance-qr-manual.png";
+    a.click();
+  };
+
+  const copyCheckUrl = () => {
+    navigator.clipboard.writeText(window.location.origin + "/check");
   };
 
   const handleOverride = async (attendanceId: string) => {
@@ -120,6 +145,9 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
           <Link href={`/projector/${sessionId}`} target="_blank" className="btn-outline text-[13px]" style={{ minHeight: 40 }}>
             <IconScreen size={14} /> Projector View
           </Link>
+          <button onClick={openManualQR} className="btn-outline text-[13px]" style={{ minHeight: 40 }}>
+            <IconQR size={14} /> Manual QR
+          </button>
           <button onClick={() => setShowClose(true)} className="btn-danger text-[13px]" style={{ minHeight: 40 }}>
             <IconStop size={14} /> Close Session
           </button>
@@ -277,6 +305,37 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
           </div>
         </div>
       </div>
+
+      {/* Manual QR modal */}
+      {showManualQR && (
+        <div className="fixed inset-0 flex items-center justify-center z-50 p-4" style={{ backgroundColor: "rgba(0,0,0,0.5)" }}
+          onClick={() => setShowManualQR(false)}>
+          <div className="card max-w-xs w-full space-y-4" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <h3 className="font-medium text-gray-900">Manual Check-In QR</h3>
+              <button onClick={() => setShowManualQR(false)} className="text-gray-400 hover:text-gray-600 text-lg leading-none">&times;</button>
+            </div>
+            <div className="flex flex-col items-center gap-3">
+              {manualQrDataUrl ? (
+                <img src={manualQrDataUrl} alt="Manual check-in QR" width={250} height={250} style={{ imageRendering: "crisp-edges" }} />
+              ) : (
+                <div className="w-[250px] h-[250px] rounded-lg bg-gray-100 flex items-center justify-center">
+                  <Spinner className="h-6 w-6 text-[#185FA5]" />
+                </div>
+              )}
+              <p className="text-[11px] text-gray-400 text-center">
+                หรือเปิด: <span className="font-mono">{typeof window !== "undefined" ? window.location.origin : ""}/check</span>
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={copyCheckUrl} className="btn-outline flex-1 text-[13px]">Copy URL</button>
+              <button onClick={downloadManualQR} disabled={!manualQrDataUrl} className="btn-outline flex-1 text-[13px] flex items-center justify-center gap-1">
+                <IconDownload size={13} /> Download
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Close modal */}
       {showClose && (
