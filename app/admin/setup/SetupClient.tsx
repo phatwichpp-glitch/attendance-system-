@@ -6,6 +6,7 @@ import { IconLocation, IconRefresh, IconWarning } from "@/components/icons";
 import { Course, Settings, PERIODS, DEFAULT_SETTINGS, SemesterConfig } from "@/types";
 import { loadSettings, saveSettings } from "@/lib/settings";
 import { getWeekLabel } from "@/lib/week-utils";
+import { getPeriodLabel, calcPeriodEnd } from "@/lib/period-utils";
 
 interface GpsState {
   lat: number; lng: number; accuracy: number; loading: boolean; error: string;
@@ -22,6 +23,8 @@ export default function SetupClient() {
     initCourseId && initSection ? `${initCourseId}__${initSection}` : ""
   );
   const [period, setPeriod] = useState("1");
+  const [periodCount, setPeriodCount] = useState<1 | 2>(1);
+  const [checkInMode, setCheckInMode] = useState<"single" | "double">("single");
   const [settings, setSettings] = useState<Settings>({ ...DEFAULT_SETTINGS });
   const [gps, setGps] = useState<GpsState>({ lat: 0, lng: 0, accuracy: 0, loading: true, error: "" });
   const [submitting, setSubmitting] = useState(false);
@@ -68,10 +71,15 @@ export default function SetupClient() {
           otp_expire_min: cfg.default_otp_min,
           late_after_min: cfg.default_late_min,
         }));
-        // Auto-fill period from today's teaching day
+        // Auto-fill period + double period from today's teaching day
         const todayDow = new Date().getDay();
         const todayEntry = cfg.teaching_schedule.find((t) => t.day === todayDow);
-        if (todayEntry) setPeriod(todayEntry.period);
+        if (todayEntry) {
+          setPeriod(todayEntry.period);
+          const pc = todayEntry.period_count ?? 1;
+          setPeriodCount(pc >= 2 ? 2 : 1);
+          if (pc >= 2) setCheckInMode(todayEntry.check_in_mode ?? "single");
+        }
       })
       .catch(() => setSemesterConfig(null));
   }, [courseKey, getCourse]);
@@ -82,9 +90,6 @@ export default function SetupClient() {
     const sessionD = new Date(sessionDate);
     const semStart = new Date(semesterConfig.semester_start);
     const days = semesterConfig.teaching_schedule.map((t) => t.day);
-    const wNum = Math.max(1, Math.ceil(
-      (sessionD.getTime() - semStart.getTime()) / (7 * 24 * 60 * 60 * 1000)
-    ));
     const computed = getWeekLabel(sessionD, semStart, days, 0);
     setWeekNumber(computed.weekNumber);
     setWeekLabel(computed.label);
@@ -132,6 +137,8 @@ export default function SetupClient() {
           is_past_session: isPast,
           semester_start: semesterConfig?.semester_start,
           teaching_days: semesterConfig?.teaching_schedule.map((t) => t.day),
+          period_count: periodCount,
+          check_in_mode: periodCount >= 2 ? checkInMode : undefined,
         }),
       });
       if (!res.ok) throw new Error("เปิดคาบไม่สำเร็จ");
@@ -164,6 +171,10 @@ export default function SetupClient() {
   const accWidth = Math.max(4, Math.min(100, (1 - gps.accuracy / 500) * 100));
   const accColor = gps.accuracy <= 20 ? "#3B6D11" : gps.accuracy <= 100 ? "#854F0B" : "#A32D2D";
   const course = getCourse();
+  const periodNum = parseInt(period, 10);
+  const periodEnd = periodCount >= 2 ? calcPeriodEnd(periodNum, periodCount) : undefined;
+  const periodRangeLabel = getPeriodLabel(periodNum, periodEnd);
+  const periodEndWarning = periodCount >= 2 && !periodEnd;
 
   return (
     <div className="space-y-4">
@@ -195,6 +206,7 @@ export default function SetupClient() {
               )}
             </div>
 
+            {/* Period selector */}
             <div>
               <label className="block text-[13px] font-medium text-gray-700 mb-1">Period</label>
               <select className="input" value={period} onChange={(e) => setPeriod(e.target.value)}>
@@ -203,6 +215,80 @@ export default function SetupClient() {
                 ))}
               </select>
             </div>
+
+            {/* Period duration toggle */}
+            <div>
+              <label className="block text-[13px] font-medium text-gray-700 mb-2">Period Duration</label>
+              <div className="flex gap-2">
+                {([1, 2] as const).map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    onClick={() => { setPeriodCount(n); if (n === 1) setCheckInMode("single"); }}
+                    className="flex-1 rounded-lg text-[13px] font-medium transition-colors"
+                    style={{
+                      padding: "8px 0",
+                      border: periodCount === n ? "2px solid #185FA5" : "1px solid #d1d5db",
+                      backgroundColor: periodCount === n ? "#E6F1FB" : "white",
+                      color: periodCount === n ? "#185FA5" : "#374151",
+                    }}
+                  >
+                    {n === 1 ? "Single (1 period)" : "Double (2 periods)"}
+                  </button>
+                ))}
+              </div>
+
+              {/* Period range display */}
+              {periodCount >= 2 && (
+                <div className="mt-2 rounded-lg px-3 py-2 text-[12px]"
+                  style={{ backgroundColor: periodEndWarning ? "#FCEBEB" : "#E6F1FB", color: periodEndWarning ? "#A32D2D" : "#185FA5" }}>
+                  {periodEndWarning
+                    ? `Period ${periodNum} + 1 exceeds คาบ 6 — please select an earlier period`
+                    : periodRangeLabel}
+                </div>
+              )}
+            </div>
+
+            {/* Check-in mode (only for double period) */}
+            {periodCount >= 2 && !periodEndWarning && (
+              <div>
+                <label className="block text-[13px] font-medium text-gray-700 mb-2">Check-in Mode</label>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setCheckInMode("single")}
+                    className="flex-1 rounded-lg text-[13px] transition-colors"
+                    style={{
+                      padding: "8px 0",
+                      border: checkInMode === "single" ? "2px solid #185FA5" : "1px solid #d1d5db",
+                      backgroundColor: checkInMode === "single" ? "#E6F1FB" : "white",
+                      color: checkInMode === "single" ? "#185FA5" : "#374151",
+                    }}
+                  >
+                    Single Check-in
+                    <span className="block text-[11px] font-normal mt-0.5" style={{ color: checkInMode === "single" ? "#185FA5" : "#6b7280" }}>
+                      1 OTP covers both periods
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCheckInMode("double")}
+                    className="flex-1 rounded-lg text-[13px] transition-colors"
+                    style={{
+                      padding: "8px 0",
+                      border: checkInMode === "double" ? "2px solid #185FA5" : "1px solid #d1d5db",
+                      backgroundColor: checkInMode === "double" ? "#E6F1FB" : "white",
+                      color: checkInMode === "double" ? "#185FA5" : "#374151",
+                    }}
+                  >
+                    Two Check-ins
+                    <span className="block text-[11px] font-normal mt-0.5" style={{ color: checkInMode === "double" ? "#185FA5" : "#6b7280" }}>
+                      Separate OTP per period
+                    </span>
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* Past session toggle */}
             <label className="flex items-center gap-3 cursor-pointer select-none rounded-lg p-3 transition-colors"
@@ -231,7 +317,7 @@ export default function SetupClient() {
               </div>
             </label>
 
-            {/* Date (shown for past session or always editable) */}
+            {/* Date */}
             <div>
               <label className="block text-[13px] font-medium text-gray-700 mb-1">
                 {isPast ? "วันที่ (Past Date)" : "Date"}
@@ -280,6 +366,12 @@ export default function SetupClient() {
                 <span style={{ color: "#5F5E5A" }}>Course ID: <strong className="font-mono text-gray-700">{course.course_id}</strong></span>
                 <span style={{ color: "#5F5E5A" }}>Section: <strong className="text-gray-700">{course.section}</strong></span>
                 <span className="col-span-2" style={{ color: "#5F5E5A" }}>Date: <strong className="text-gray-700">{today}</strong></span>
+                {periodCount >= 2 && (
+                  <span className="col-span-2" style={{ color: "#185FA5" }}>
+                    Period: <strong>{periodRangeLabel}</strong>
+                    {checkInMode === "double" && " · Two Check-ins"}
+                  </span>
+                )}
               </div>
             )}
           </div>
@@ -345,14 +437,16 @@ export default function SetupClient() {
 
       <button
         onClick={handleSubmit}
-        disabled={submitting || !courseKey || (!isPast && gps.loading)}
+        disabled={submitting || !courseKey || (!isPast && gps.loading) || (periodCount >= 2 && !!periodEndWarning)}
         className="btn-primary w-full py-3 text-[13px]"
       >
         {submitting
-          ? <><Spinner className="h-5 w-5" /> {isPast ? "Creating..." : "Creating..."}</>
+          ? <><Spinner className="h-5 w-5" /> Creating...</>
           : isPast
             ? "Create Past Session & Enter Attendance"
-            : "Open Session & Generate OTP"}
+            : periodCount >= 2 && checkInMode === "double"
+              ? "Open Double Period (Part 1) & Generate OTP"
+              : "Open Session & Generate OTP"}
       </button>
 
       {showGpsWarn && (

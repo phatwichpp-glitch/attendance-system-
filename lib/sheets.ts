@@ -69,11 +69,12 @@ export async function initializeSpreadsheet(
           values: [["student_id", "firstname", "lastname", "course_id", "section", "order_num"]],
         },
         {
-          range: "sessions!A1:P1",
+          range: "sessions!A1:U1",
           values: [[
             "session_id", "course_id", "section", "period", "date", "otp",
             "lat", "lng", "radius_m", "late_after_min", "otp_expire_min",
             "opened_at", "closed_at", "week_number", "week_label", "is_past_session",
+            "period_count", "period_end", "check_in_mode", "linked_session_id", "part_number",
           ]],
         },
         {
@@ -333,7 +334,7 @@ export async function createSession(
   const sheets = getSheetsClient(accessToken);
   await sheets.spreadsheets.values.append({
     spreadsheetId,
-    range: "sessions!A:P",
+    range: "sessions!A:U",
     valueInputOption: "RAW",
     requestBody: {
       values: [[
@@ -344,6 +345,11 @@ export async function createSession(
         session.week_number ?? "",
         session.week_label ?? "",
         session.is_past_session ? "TRUE" : "FALSE",
+        session.period_count ?? 1,
+        session.period_end ?? "",
+        session.check_in_mode ?? "",
+        session.linked_session_id ?? "",
+        session.part_number ?? "",
       ]],
     },
   });
@@ -355,7 +361,7 @@ export async function getAllSessions(
 ): Promise<Session[]> {
   const sheets = getSheetsClient(accessToken);
   const res = await sheets.spreadsheets.values.get({
-    spreadsheetId, range: "sessions!A2:P",
+    spreadsheetId, range: "sessions!A2:U",
   });
   return (res.data.values ?? []).map(rowToSession);
 }
@@ -377,7 +383,7 @@ export async function closeSessionInSheet(
 ): Promise<void> {
   const sheets = getSheetsClient(accessToken);
   const res = await sheets.spreadsheets.values.get({
-    spreadsheetId, range: "sessions!A2:P",
+    spreadsheetId, range: "sessions!A2:U",
   });
   const rows = res.data.values ?? [];
   const idx = rows.findIndex((r) => r[0] === sessionId);
@@ -409,6 +415,11 @@ function rowToSession(r: string[]): Session {
     week_number: r[13] ? parseInt(r[13], 10) : undefined,
     week_label: r[14] || undefined,
     is_past_session: r[15] === "TRUE",
+    period_count: r[16] ? parseInt(r[16], 10) : undefined,
+    period_end: r[17] ? parseInt(r[17], 10) : undefined,
+    check_in_mode: (r[18] as Session["check_in_mode"]) || undefined,
+    linked_session_id: r[19] || undefined,
+    part_number: r[20] ? parseInt(r[20], 10) : undefined,
   };
 }
 
@@ -866,7 +877,7 @@ export async function deleteCourseById(
 ): Promise<void> {
   // Delete in safe order: attendance → sessions → students → semester_config → course
   await deleteMatchingRows(accessToken, spreadsheetId, "attendance!A2:R", (r) => r[2] === courseId);
-  await deleteMatchingRows(accessToken, spreadsheetId, "sessions!A2:P", (r) => r[1] === courseId && r[2] === section);
+  await deleteMatchingRows(accessToken, spreadsheetId, "sessions!A2:U", (r) => r[1] === courseId && r[2] === section);
   await deleteMatchingRows(accessToken, spreadsheetId, "students!A2:F", (r) => r[3] === courseId && r[4] === section);
   await deleteMatchingRows(accessToken, spreadsheetId, "courses!A2:F", (r) => r[0] === courseId && r[2] === section);
 
@@ -894,24 +905,36 @@ export async function updateSessionById(
   accessToken: string,
   spreadsheetId: string,
   sessionId: string,
-  updates: Partial<Pick<Session, "week_label" | "date" | "period" | "closed_at" | "week_number">>
+  updates: Partial<Pick<Session,
+    "week_label" | "date" | "period" | "closed_at" | "week_number" | "opened_at" |
+    "period_count" | "period_end" | "check_in_mode" | "linked_session_id" | "part_number"
+  >>
 ): Promise<boolean> {
   const sheets = getSheetsClient(accessToken);
-  const res = await sheets.spreadsheets.values.get({ spreadsheetId, range: "sessions!A2:P" });
+  const res = await sheets.spreadsheets.values.get({ spreadsheetId, range: "sessions!A2:U" });
   const rows = (res.data.values ?? []) as string[][];
   const idx = rows.findIndex((r) => r[0] === sessionId);
   if (idx === -1) return false;
 
+  // Pad row to 21 columns so new fields always have indices
   const row = [...rows[idx]];
+  while (row.length < 21) row.push("");
+
   if (updates.period !== undefined) row[3] = updates.period;
   if (updates.date !== undefined) row[4] = updates.date;
+  if (updates.opened_at !== undefined) row[11] = updates.opened_at;
   if (updates.closed_at !== undefined) row[12] = updates.closed_at;
   if (updates.week_number !== undefined) row[13] = String(updates.week_number);
   if (updates.week_label !== undefined) row[14] = updates.week_label;
+  if (updates.period_count !== undefined) row[16] = String(updates.period_count);
+  if (updates.period_end !== undefined) row[17] = updates.period_end ? String(updates.period_end) : "";
+  if (updates.check_in_mode !== undefined) row[18] = updates.check_in_mode ?? "";
+  if (updates.linked_session_id !== undefined) row[19] = updates.linked_session_id ?? "";
+  if (updates.part_number !== undefined) row[20] = updates.part_number ? String(updates.part_number) : "";
 
   await sheets.spreadsheets.values.update({
     spreadsheetId,
-    range: `sessions!A${idx + 2}:P${idx + 2}`,
+    range: `sessions!A${idx + 2}:U${idx + 2}`,
     valueInputOption: "RAW",
     requestBody: { values: [row] },
   });
@@ -924,7 +947,7 @@ export async function deleteSessionById(
   sessionId: string
 ): Promise<void> {
   await deleteMatchingRows(accessToken, spreadsheetId, "attendance!A2:R", (r) => r[1] === sessionId);
-  await deleteMatchingRows(accessToken, spreadsheetId, "sessions!A2:P", (r) => r[0] === sessionId);
+  await deleteMatchingRows(accessToken, spreadsheetId, "sessions!A2:U", (r) => r[0] === sessionId);
 }
 
 export async function reopenSession(
@@ -965,7 +988,7 @@ export async function getCourseStats(
   const sheets = getSheetsClient(accessToken);
   const [stuRes, sessRes, attRes] = await Promise.all([
     sheets.spreadsheets.values.get({ spreadsheetId, range: "students!A2:F" }),
-    sheets.spreadsheets.values.get({ spreadsheetId, range: "sessions!A2:P" }),
+    sheets.spreadsheets.values.get({ spreadsheetId, range: "sessions!A2:U" }),
     sheets.spreadsheets.values.get({ spreadsheetId, range: "attendance!A2:R" }),
   ]);
 

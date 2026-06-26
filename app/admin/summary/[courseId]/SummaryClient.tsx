@@ -188,6 +188,26 @@ export default function SummaryClient({ courseId }: { courseId: string }) {
   const { course, sessions, students, grid, totals, semester_config } = data;
   const holidayDates = new Set(holidays.map((h) => h.date.slice(0, 10)));
 
+  // Weighted % calculation: sum(period_count for attended) / sum(period_count for all)
+  const weightedPct = (studentId: string): number => {
+    let attended = 0, total = 0;
+    for (const ss of sessions) {
+      const w = ss.period_count ?? 1;
+      const st = grid[studentId]?.[ss.session_id];
+      if (st !== undefined) {
+        total += w;
+        if (st === "present" || st === "late") attended += w;
+      }
+    }
+    return total > 0 ? Math.round((attended / total) * 100) : 0;
+  };
+
+  // Build set of linked session IDs (for visual grouping)
+  const linkedIds = new Set<string>();
+  for (const ss of sessions) {
+    if (ss.linked_session_id) linkedIds.add(ss.linked_session_id);
+  }
+
   // Stats bar calculations
   const totalExpected = semester_config
     ? semester_config.total_weeks * semester_config.teaching_schedule.length
@@ -195,7 +215,7 @@ export default function SummaryClient({ courseId }: { courseId: string }) {
   const remaining = Math.max(0, totalExpected - sessions.length);
   const belowThreshold = students.filter((s) => {
     const t = totals[s.student_id];
-    return t && t.percentage < threshold && t.total_sessions > 0;
+    return t && weightedPct(s.student_id) < threshold && t.total_sessions > 0;
   }).length;
 
   // Session column summary (count of present+late per session)
@@ -267,14 +287,22 @@ export default function SummaryClient({ courseId }: { courseId: string }) {
               <th className="sticky left-8 z-10 bg-gray-50 text-left px-3 py-2.5 text-[11px] font-medium min-w-[7rem]" style={{ color: "#5F5E5A", boxShadow: "2px 0 4px rgba(0,0,0,0.05)" }}>
                 Student
               </th>
-              {sessions.map((ss) => {
+              {sessions.map((ss, ssIdx) => {
                 const isHoliday = holidayDates.has(ss.date);
                 const isPast = !!ss.is_past_session;
                 const holiday = holidays.find((h) => h.date.slice(0, 10) === ss.date);
+                const isLinkedRight = ss.linked_session_id && sessions[ssIdx + 1]?.session_id === ss.linked_session_id;
+                const isLinkedLeft = ss.linked_session_id && sessions[ssIdx - 1]?.session_id === ss.linked_session_id;
+                const isSingleDouble = (ss.period_count ?? 1) >= 2 && ss.check_in_mode !== "double";
                 return (
                   <th key={ss.session_id}
                     className="px-2 py-2 text-[11px] font-medium text-center min-w-[3.5rem] relative cursor-pointer"
-                    style={{ color: "#5F5E5A", backgroundColor: isHoliday ? "#FEF9EC" : undefined }}
+                    style={{
+                      color: "#5F5E5A",
+                      backgroundColor: isHoliday ? "#FEF9EC" : isLinkedRight || isLinkedLeft ? "rgba(24,95,165,0.04)" : undefined,
+                      borderLeft: isLinkedLeft ? "2px solid #185FA5" : undefined,
+                      borderRight: isLinkedRight ? "2px solid #185FA5" : undefined,
+                    }}
                     onMouseEnter={() => setTooltipSession(ss.session_id)}
                     onMouseLeave={() => setTooltipSession(null)}
                   >
@@ -282,6 +310,7 @@ export default function SummaryClient({ courseId }: { courseId: string }) {
                       <>
                         <div className="font-semibold" style={{ color: isHoliday ? "#854F0B" : "#185FA5" }}>
                           {ss.week_label}
+                          {isSingleDouble && " ×2"}
                           {isHoliday && " 🎌"}
                           {isPast && " 📋"}
                         </div>
@@ -298,8 +327,10 @@ export default function SummaryClient({ courseId }: { courseId: string }) {
                       <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1 z-30 rounded-lg shadow-lg text-left p-2 min-w-[140px] text-[11px]"
                         style={{ backgroundColor: "#1e293b", color: "white", pointerEvents: "none" }}>
                         <p className="font-semibold">{ss.date}</p>
-                        <p>Period {ss.period}</p>
+                        <p>Period {ss.period}{ss.period_end ? `–${ss.period_end}` : ""}</p>
                         {ss.week_label && <p>Week {ss.week_label}</p>}
+                        {isSingleDouble && <p style={{ color: "#93C5FD" }}>Double period (×2)</p>}
+                        {ss.check_in_mode === "double" && <p style={{ color: "#93C5FD" }}>Part {ss.part_number} of 2</p>}
                         {isPast && <p style={{ color: "#FBBF24" }}>📋 Past session</p>}
                         {holiday && <p style={{ color: "#FCA5A5" }}>🎌 {holiday.name}</p>}
                       </div>
@@ -316,7 +347,7 @@ export default function SummaryClient({ courseId }: { courseId: string }) {
           <tbody>
             {students.map((stu) => {
               const t = totals[stu.student_id];
-              const pct = t?.percentage ?? 0;
+              const pct = weightedPct(stu.student_id);
               const low = pct < threshold && (t?.total_sessions ?? 0) > 0;
               const warn = pct >= threshold - 10 && pct < threshold && (t?.total_sessions ?? 0) > 0;
               const rowBg = low && !warn ? "#FCEBEB" : warn ? "#FEF9EC" : "white";

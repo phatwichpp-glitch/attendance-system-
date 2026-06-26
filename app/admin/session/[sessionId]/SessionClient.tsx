@@ -8,13 +8,16 @@ import {
   IconScreen, IconStop, IconDownload, IconWarning, IconCheck,
   IconClock, IconChevronDown, IconChevronUp, IconQR,
 } from "@/components/icons";
-import { Session, StudentWithAttendance, DeviceConflict, AttendanceStatus } from "@/types";
+import { Session, StudentWithAttendance, DeviceConflict, AttendanceStatus, AttendanceRecord } from "@/types";
+import { getPeriodLabel } from "@/lib/period-utils";
 
 interface Data {
   session: Session;
   students: StudentWithAttendance[];
   spreadsheetId: string;
   device_conflicts: DeviceConflict[];
+  linked_session?: Session | null;
+  part1_attendance?: AttendanceRecord[] | null;
 }
 
 type EditPopover = {
@@ -56,6 +59,9 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
 
   // Reopen
   const [reopening, setReopening] = useState(false);
+
+  // Activate Part 2
+  const [activatingPart2, setActivatingPart2] = useState(false);
 
   const fetchData = useCallback(async () => {
     try {
@@ -112,6 +118,21 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
       await fetchData();
     } finally {
       setReopening(false);
+    }
+  };
+
+  const handleActivatePart2 = async (linkedSessionId: string) => {
+    setActivatingPart2(true);
+    try {
+      const res = await fetch(`/api/sheets/sessions/${linkedSessionId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ activate: true }),
+      });
+      if (!res.ok) { alert("Failed to open Part 2"); return; }
+      await fetchData();
+    } finally {
+      setActivatingPart2(false);
     }
   };
 
@@ -247,8 +268,20 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
     <div className="card text-center py-10" style={{ color: "#A32D2D" }}>Session not found</div>
   );
 
-  const { session: s, students, spreadsheetId, device_conflicts } = data;
+  const { session: s, students, spreadsheetId, device_conflicts, linked_session, part1_attendance } = data;
   const isClosed = !!s.closed_at;
+
+  // Double period helpers
+  const isDoubleCheckIn = s.check_in_mode === "double";
+  const periodLabel = s.period_count && s.period_count >= 2
+    ? getPeriodLabel(parseInt(s.period), s.period_end)
+    : `Period ${s.period}`;
+  const partBadge = s.part_number === 1 ? "①" : s.part_number === 2 ? "②" : "";
+
+  // Build Part 1 attendance map for comparison (Part 2 only)
+  const part1Map = part1_attendance
+    ? new Map(part1_attendance.map((a) => [a.student_id, a.status]))
+    : null;
   const present  = students.filter((x) => ["present", "late"].includes(x.attendance?.status ?? "")).length;
   const absent   = students.filter((x) => x.attendance?.status === "absent").length;
   const gpsFail  = students.filter((x) => x.attendance?.status === "gps_fail").length;
@@ -311,7 +344,10 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
       <div className="hidden md:flex items-center justify-between py-3 mb-4"
         style={{ borderBottom: "0.5px solid rgba(0,0,0,0.08)" }}>
         <div>
-          <h1 className="text-[18px] font-medium text-gray-900">{s.course_id} — Period {s.period}</h1>
+          <h1 className="text-[18px] font-medium text-gray-900">
+            {s.course_id} — {periodLabel}
+            {partBadge && <span className="ml-2 text-[14px]" style={{ color: "#185FA5" }}>{partBadge}</span>}
+          </h1>
           <p className="text-[11px] mt-0.5" style={{ color: "#5F5E5A" }}>
             {s.date} · Section {s.section}
             {s.week_label && <span className="ml-2">{s.week_label}</span>}
@@ -324,7 +360,10 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
       {/* Mobile header */}
       <div className="md:hidden flex flex-wrap items-start justify-between gap-3 mb-4">
         <div>
-          <h1 className="text-[18px] font-medium text-gray-900">{s.course_id} — Period {s.period}</h1>
+          <h1 className="text-[18px] font-medium text-gray-900">
+            {s.course_id} — {periodLabel}
+            {partBadge && <span className="ml-2 text-[14px]" style={{ color: "#185FA5" }}>{partBadge}</span>}
+          </h1>
           <p className="text-[11px] mt-0.5" style={{ color: "#5F5E5A" }}>{s.date} · Section {s.section}</p>
           {lastUpdated && (
             <p className="text-[11px] text-gray-400 mt-0.5 flex items-center gap-1">
@@ -340,6 +379,61 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
 
         {/* Left col */}
         <div className="space-y-4">
+          {/* Linked session card (two-check-in double period) */}
+          {isDoubleCheckIn && linked_session && (
+            <div className="card" style={{ border: "1px solid #185FA5" }}>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-[12px] font-medium" style={{ color: "#185FA5" }}>
+                  Double Period — Two Check-ins
+                </p>
+              </div>
+              <div className="flex items-center justify-between text-[12px]">
+                <div className="space-y-1">
+                  <p style={{ color: "#374151" }}>
+                    <span className="font-medium">① Part 1</span>{" "}
+                    {s.part_number === 1 ? (
+                      <span className="rounded px-1.5 py-0.5" style={{ backgroundColor: isClosed ? "#FCEBEB" : "#E6F1FB", color: isClosed ? "#A32D2D" : "#185FA5", fontSize: 11 }}>
+                        {isClosed ? "Closed" : "Active"}
+                      </span>
+                    ) : (
+                      <Link href={`/admin/session/${linked_session.session_id}`} className="underline" style={{ color: "#185FA5" }}>
+                        {linked_session.closed_at ? "Closed" : linked_session.opened_at ? "Active" : "Not opened"}
+                      </Link>
+                    )}
+                  </p>
+                  <p style={{ color: "#374151" }}>
+                    <span className="font-medium">② Part 2</span>{" "}
+                    {s.part_number === 2 ? (
+                      <span className="rounded px-1.5 py-0.5" style={{ backgroundColor: isClosed ? "#FCEBEB" : "#E6F1FB", color: isClosed ? "#A32D2D" : "#185FA5", fontSize: 11 }}>
+                        {isClosed ? "Closed" : "Active"}
+                      </span>
+                    ) : (
+                      <span className="rounded px-1.5 py-0.5" style={{ backgroundColor: linked_session.closed_at ? "#FCEBEB" : linked_session.opened_at ? "#EAF3DE" : "#f3f4f6", color: linked_session.closed_at ? "#A32D2D" : linked_session.opened_at ? "#3B6D11" : "#6b7280", fontSize: 11 }}>
+                        {linked_session.closed_at ? "Closed" : linked_session.opened_at ? "Active" : "Not opened"}
+                      </span>
+                    )}
+                  </p>
+                </div>
+                {/* "Open Part 2" button — only on Part 1 when it's closed and Part 2 not yet opened */}
+                {s.part_number === 1 && isClosed && linked_session && !linked_session.opened_at && (
+                  <button
+                    onClick={() => handleActivatePart2(linked_session.session_id)}
+                    disabled={activatingPart2}
+                    className="btn-primary text-[12px]"
+                    style={{ minHeight: 36 }}
+                  >
+                    {activatingPart2 ? <Spinner className="h-3 w-3" /> : "Open Part 2 →"}
+                  </button>
+                )}
+                {s.part_number === 2 && (
+                  <Link href={`/admin/session/${linked_session.session_id}`} className="btn-outline text-[12px]" style={{ minHeight: 36 }}>
+                    ← View Part 1
+                  </Link>
+                )}
+              </div>
+            </div>
+          )}
+
           <div className="grid grid-cols-4 md:grid-cols-2 gap-3">
             <Stat label="Total"    value={total}   bg="#f3f4f6" color="#374151" />
             <Stat label="Present"  value={present} bg="#EAF3DE" color="#3B6D11" />
@@ -382,6 +476,39 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
 
         {/* Right col */}
         <div className="space-y-4">
+          {/* Part 1 → Part 2 comparison panel (Part 2 sessions only) */}
+          {s.part_number === 2 && part1Map && part1Map.size > 0 && (
+            <div className="card" style={{ border: "1px solid rgba(0,0,0,0.08)" }}>
+              <h3 className="font-medium text-gray-900 text-[13px] mb-2">Part 1 → Part 2 Comparison</h3>
+              <div className="space-y-1.5">
+                {students.map((stu) => {
+                  const p1Status = part1Map.get(stu.student_id);
+                  const p2Status = stu.attendance?.status;
+                  if (!p1Status || p1Status === "absent") return null;
+                  if (p1Status === p2Status) return null;
+                  return (
+                    <div key={stu.student_id} className="flex items-center gap-2 text-[12px]">
+                      <span className="font-mono text-gray-400 w-22">{stu.student_id}</span>
+                      <span className="flex-1 truncate">{stu.firstname} {stu.lastname}</span>
+                      <span className="font-medium" style={{ color: "#185FA5" }}>{p1Status}</span>
+                      <span className="text-gray-400">→</span>
+                      <span className="font-medium" style={{ color: p2Status ? "#A32D2D" : "#9ca3af" }}>
+                        {p2Status ?? "Pending"}
+                      </span>
+                    </div>
+                  );
+                }).filter(Boolean)}
+                {students.filter((stu) => {
+                  const p1s = part1Map.get(stu.student_id);
+                  const p2s = stu.attendance?.status;
+                  return p1s && p1s !== "absent" && p1s !== p2s;
+                }).length === 0 && (
+                  <p className="text-[12px] text-gray-400">No status changes between Part 1 and Part 2.</p>
+                )}
+              </div>
+            </div>
+          )}
+
           {device_conflicts.length > 0 && (
             <DeviceConflictBox
               conflicts={device_conflicts}

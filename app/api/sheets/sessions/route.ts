@@ -7,11 +7,14 @@ import {
   closeSessionInSheet,
   markAbsentStudents,
   getAllSessions,
+  deleteSessionById,
+  updateSessionById,
 } from "@/lib/sheets";
 import { registerSession } from "@/lib/session-store";
 import { generateOTP } from "@/lib/otp";
 import { Session } from "@/types";
 import { getWeekLabel } from "@/lib/week-utils";
+import { calcPeriodEnd } from "@/lib/period-utils";
 
 export async function POST(req: NextRequest) {
   const session = await auth();
@@ -35,6 +38,8 @@ export async function POST(req: NextRequest) {
       is_past_session = false,
       semester_start,
       teaching_days,
+      period_count = 1,
+      check_in_mode,
     } = body;
 
     const today = bodyDate ?? new Date().toISOString().split("T")[0];
@@ -43,8 +48,9 @@ export async function POST(req: NextRequest) {
     let resolvedWeekNumber: number | undefined = week_number;
     let resolvedWeekLabel: string | undefined = week_label;
 
+    const spreadsheetId = await initializeSpreadsheet(session.access_token);
+
     if (semester_start && !week_label) {
-      const spreadsheetId = await initializeSpreadsheet(session.access_token);
       const allSessions = await getAllSessions(session.access_token, spreadsheetId);
       const sessionDate = new Date(today);
       const semStart = new Date(semester_start);
@@ -62,11 +68,99 @@ export async function POST(req: NextRequest) {
       resolvedWeekLabel = computed.label;
     }
 
+    const periodNum = parseInt(String(period), 10);
+    const periodCount = parseInt(String(period_count), 10) || 1;
+    const periodEnd = periodCount >= 2 ? calcPeriodEnd(periodNum, periodCount) : undefined;
+
+    // ── Two check-ins (double period, separate check-ins) ──────────────────────
+    if (periodCount >= 2 && check_in_mode === "double") {
+      // Week labels: Part 1 = "W3①", Part 2 = "W3②"
+      const baseLabel = resolvedWeekLabel ?? `W${resolvedWeekNumber ?? 1}`;
+      const label1 = `${baseLabel}①`;
+      const label2 = `${baseLabel}②`;
+      const part2Period = periodEnd ? String(periodEnd) : String(periodNum + 1);
+
+      // Create Part 2 first (inactive — no opened_at)
+      const part2Id = crypto.randomUUID();
+      const part1Id = crypto.randomUUID();
+
+      const part2Data: Session = {
+        session_id: part2Id,
+        course_id,
+        section,
+        period: part2Period,
+        date: today,
+        otp: generateOTP(),
+        lat: is_past_session ? 0 : parseFloat(lat),
+        lng: is_past_session ? 0 : parseFloat(lng),
+        radius_m: parseInt(radius_m, 10),
+        late_after_min: parseInt(late_after_min, 10),
+        otp_expire_min: parseInt(otp_expire_min, 10),
+        opened_at: "",           // inactive until teacher opens it
+        closed_at: is_past_session ? new Date().toISOString() : "",
+        week_number: resolvedWeekNumber,
+        week_label: label2,
+        is_past_session: !!is_past_session,
+        period_count: 1,
+        check_in_mode: "double",
+        linked_session_id: part1Id,
+        part_number: 2,
+      };
+
+      const part1Data: Session = {
+        session_id: part1Id,
+        course_id,
+        section,
+        period: String(periodNum),
+        date: today,
+        otp: generateOTP(),
+        lat: is_past_session ? 0 : parseFloat(lat),
+        lng: is_past_session ? 0 : parseFloat(lng),
+        radius_m: parseInt(radius_m, 10),
+        late_after_min: parseInt(late_after_min, 10),
+        otp_expire_min: parseInt(otp_expire_min, 10),
+        opened_at: new Date().toISOString(),
+        closed_at: is_past_session ? new Date().toISOString() : "",
+        week_number: resolvedWeekNumber,
+        week_label: label1,
+        is_past_session: !!is_past_session,
+        period_count: 1,
+        check_in_mode: "double",
+        linked_session_id: part2Id,
+        part_number: 1,
+      };
+
+      try {
+        await createSession(session.access_token, spreadsheetId, part2Data);
+        await createSession(session.access_token, spreadsheetId, part1Data);
+      } catch (err) {
+        // Attempt cleanup of Part 2 orphan
+        try { await deleteSessionById(session.access_token, spreadsheetId, part2Id); } catch { /* ignore */ }
+        throw err;
+      }
+
+      // Only register Part 1 in session-store (Part 2 opens later)
+      registerSession(part1Data.session_id, spreadsheetId, session.access_token, part1Data.otp);
+
+      return NextResponse.json({
+        session: part1Data,
+        linked_session: part2Data,
+        spreadsheetId,
+        mode: "double",
+      });
+    }
+
+    // ── Single check-in (single or double period) ───────────────────────────────
+    let finalWeekLabel = resolvedWeekLabel;
+    if (periodCount >= 2) {
+      finalWeekLabel = finalWeekLabel ? `${finalWeekLabel} (×2)` : undefined;
+    }
+
     const sessionData: Session = {
       session_id: crypto.randomUUID(),
       course_id,
       section,
-      period,
+      period: String(periodNum),
       date: today,
       otp: generateOTP(),
       lat: is_past_session ? 0 : parseFloat(lat),
@@ -77,14 +171,15 @@ export async function POST(req: NextRequest) {
       opened_at: new Date().toISOString(),
       closed_at: is_past_session ? new Date().toISOString() : "",
       week_number: resolvedWeekNumber,
-      week_label: resolvedWeekLabel,
+      week_label: finalWeekLabel,
       is_past_session: !!is_past_session,
+      period_count: periodCount,
+      period_end: periodEnd,
     };
 
-    const spreadsheetId = await initializeSpreadsheet(session.access_token);
     await createSession(session.access_token, spreadsheetId, sessionData);
 
-    // Register in session-store (with OTP for manual check-in mode)
+    // Register in session-store
     registerSession(sessionData.session_id, spreadsheetId, session.access_token, sessionData.otp);
 
     return NextResponse.json({ session: sessionData, spreadsheetId });

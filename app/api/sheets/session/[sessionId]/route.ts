@@ -29,8 +29,20 @@ export async function GET(
       return NextResponse.json({ error: "Session not found" }, { status: 404 });
     }
 
-    // Keep session-store fresh for ongoing polling; also index by OTP for manual check-in
-    registerSession(sessionId, spreadsheetId, session.access_token, sessionData.otp);
+    // Only register in session-store if the session is active (opened but not closed)
+    if (sessionData.opened_at && !sessionData.closed_at) {
+      registerSession(sessionId, spreadsheetId, session.access_token, sessionData.otp);
+    }
+
+    // Fetch linked session if this is a two-check-in double period
+    let linked_session = null;
+    if (sessionData.linked_session_id) {
+      linked_session = await getSessionById(
+        session.access_token,
+        spreadsheetId,
+        sessionData.linked_session_id
+      );
+    }
 
     const [students, attendance] = await Promise.all([
       getStudents(
@@ -56,8 +68,18 @@ export async function GET(
       fpMap.get(fp)!.push({ student_id: a.student_id, firstname: a.firstname, lastname: a.lastname, checked_at: a.checked_at, status: a.status });
     }
     const device_conflicts: DeviceConflict[] = [];
-    for (const [fingerprint, students] of fpMap) {
-      if (students.length > 1) device_conflicts.push({ fingerprint, students });
+    for (const [fingerprint, studs] of fpMap) {
+      if (studs.length > 1) device_conflicts.push({ fingerprint, students: studs });
+    }
+
+    // For Part 2 sessions: fetch Part 1 attendance for comparison panel
+    let part1_attendance = null;
+    if (sessionData.part_number === 2 && sessionData.linked_session_id) {
+      part1_attendance = await getAttendanceForSession(
+        session.access_token,
+        spreadsheetId,
+        sessionData.linked_session_id
+      );
     }
 
     return NextResponse.json({
@@ -65,6 +87,8 @@ export async function GET(
       students: studentList,
       spreadsheetId,
       device_conflicts,
+      linked_session,
+      part1_attendance,
     });
   } catch (err) {
     console.error("[session GET]", err);

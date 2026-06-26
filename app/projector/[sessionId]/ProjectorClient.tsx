@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import Spinner from "@/components/Spinner";
 import { IconTablet, IconScreen } from "@/components/icons";
 import { Session, StudentWithAttendance } from "@/types";
+import { getPeriodLabel } from "@/lib/period-utils";
 
 type Mode = "projector" | "ipad";
 
@@ -132,6 +133,12 @@ export default function ProjectorClient({ sessionId }: { sessionId: string }) {
 
   const { session: s, students } = data;
   const isClosed = !!s.closed_at;
+
+  // Double period label helpers
+  const periodDisplayLabel = s.period_count && s.period_count >= 2
+    ? getPeriodLabel(parseInt(s.period), s.period_end)
+    : `Period ${s.period}`;
+  const partIndicator = s.part_number === 1 ? " ①" : s.part_number === 2 ? " ②" : "";
   const isExpired = !isClosed && timeLeft === 0 && s.otp_expire_min > 0;
   const present = students.filter((x) => ["present", "late"].includes(x.attendance?.status ?? "")).length;
   const mm = String(Math.floor(timeLeft / 60)).padStart(2, "0");
@@ -177,7 +184,7 @@ export default function ProjectorClient({ sessionId }: { sessionId: string }) {
         style={{ backgroundColor: "#0a0a0a", color: "white" }}
       >
         <p className="text-5xl text-gray-500">{isClosed ? "Session Closed" : "OTP Expired"}</p>
-        <p style={{ color: "#6b7280" }}>{s.course_id} · Section {s.section} · Period {s.period}</p>
+        <p style={{ color: "#6b7280" }}>{s.course_id} · Section {s.section} · {periodDisplayLabel}{partIndicator}</p>
         <p style={{ fontFamily: "ui-monospace, monospace", fontSize: "2.5rem", fontWeight: 700 }}>
           {present}<span style={{ color: "#6b7280" }}>/{students.length}</span>
           <span className="text-xl text-gray-500 ml-2">students</span>
@@ -260,7 +267,7 @@ export default function ProjectorClient({ sessionId }: { sessionId: string }) {
           style={{ height: 48, borderTop: "0.5px solid #1f2937", flexShrink: 0 }}
         >
           <p style={{ color: "#6b7280", fontSize: 12 }}>
-            {s.course_id} · Period {s.period} · Section {s.section}
+            {s.course_id} · {periodDisplayLabel}{partIndicator} · Section {s.section}
           </p>
           {ModeToggle}
         </div>
@@ -280,7 +287,7 @@ export default function ProjectorClient({ sessionId }: { sessionId: string }) {
       {/* TOP ~60% */}
       <div className="flex-[6] flex flex-col items-center justify-center px-16 pt-8 pb-4">
         <p className="text-gray-400 text-base mb-8 text-center">
-          {s.course_id} · Section {s.section} · Period {s.period} · {s.date}
+          {s.course_id} · Section {s.section} · {periodDisplayLabel}{partIndicator} · {s.date}
         </p>
 
         <div className="flex items-center gap-20 mb-8">

@@ -27,8 +27,10 @@ interface ColMapping {
 const DEFAULT_SEMESTER = {
   semester_start: "",
   total_weeks: 15,
-  teaching_days: [] as number[],       // day indices
-  day_periods: {} as Record<number, string>, // day → period
+  teaching_days: [] as number[],
+  day_periods: {} as Record<number, string>,
+  day_period_count: {} as Record<number, 1 | 2>,        // 1 (default) or 2
+  day_check_in_mode: {} as Record<number, "single" | "double">, // for double-period days
   default_gps_radius: 200,
   default_otp_min: 15,
   default_late_min: 15,
@@ -95,6 +97,8 @@ export default function ImportClient() {
       const teaching_schedule: TeachingDay[] = semester.teaching_days.map((d) => ({
         day: d,
         period: semester.day_periods[d] ?? "1",
+        period_count: semester.day_period_count[d] ?? 1,
+        check_in_mode: (semester.day_period_count[d] ?? 1) >= 2 ? (semester.day_check_in_mode[d] ?? "single") : undefined,
       }));
       const body = {
         ...parsed,
@@ -415,25 +419,77 @@ export default function ImportClient() {
             </div>
 
             {semester.teaching_days.length > 0 && (
-              <div className="space-y-2">
-                <label className="block text-[13px] font-medium text-gray-700">Default Period per Teaching Day</label>
-                {semester.teaching_days.sort((a, b) => a - b).map((d) => (
-                  <div key={d} className="flex items-center gap-3">
-                    <span className="text-[13px] w-24" style={{ color: "#5F5E5A" }}>{DAY_NAMES[d]}</span>
-                    <select
-                      className="input text-[13px] flex-1"
-                      value={semester.day_periods[d] ?? "1"}
-                      onChange={(e) => setSemester((s) => ({
-                        ...s,
-                        day_periods: { ...s.day_periods, [d]: e.target.value },
-                      }))}
-                    >
-                      {PERIODS.map((p) => (
-                        <option key={p.value} value={p.value}>Period {p.value} — {p.label}</option>
-                      ))}
-                    </select>
-                  </div>
-                ))}
+              <div className="space-y-3">
+                <label className="block text-[13px] font-medium text-gray-700">Teaching Day Settings</label>
+                {semester.teaching_days.sort((a, b) => a - b).map((d) => {
+                  const pc = semester.day_period_count[d] ?? 1;
+                  const cim = semester.day_check_in_mode[d] ?? "single";
+                  return (
+                    <div key={d} className="rounded-lg p-3 space-y-3" style={{ border: "0.5px solid rgba(0,0,0,0.1)", backgroundColor: "#f9fafb" }}>
+                      <div className="flex items-center gap-3">
+                        <span className="text-[13px] font-medium w-24" style={{ color: "#5F5E5A" }}>{DAY_NAMES[d]}</span>
+                        <select
+                          className="input text-[13px] flex-1"
+                          value={semester.day_periods[d] ?? "1"}
+                          onChange={(e) => setSemester((s) => ({
+                            ...s,
+                            day_periods: { ...s.day_periods, [d]: e.target.value },
+                          }))}
+                        >
+                          {PERIODS.map((p) => (
+                            <option key={p.value} value={p.value}>Period {p.value} — {p.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                      {/* Period duration */}
+                      <div className="flex gap-2">
+                        {([1, 2] as const).map((n) => (
+                          <button
+                            key={n}
+                            type="button"
+                            onClick={() => setSemester((s) => ({
+                              ...s,
+                              day_period_count: { ...s.day_period_count, [d]: n },
+                            }))}
+                            className="flex-1 rounded-lg text-[12px] font-medium transition-colors"
+                            style={{
+                              padding: "6px 0",
+                              border: pc === n ? "2px solid #185FA5" : "1px solid #d1d5db",
+                              backgroundColor: pc === n ? "#E6F1FB" : "white",
+                              color: pc === n ? "#185FA5" : "#374151",
+                            }}
+                          >
+                            {n === 1 ? "Single Period" : "Double Period"}
+                          </button>
+                        ))}
+                      </div>
+                      {/* Check-in mode for double period */}
+                      {pc >= 2 && (
+                        <div className="flex gap-2">
+                          {(["single", "double"] as const).map((m) => (
+                            <button
+                              key={m}
+                              type="button"
+                              onClick={() => setSemester((s) => ({
+                                ...s,
+                                day_check_in_mode: { ...s.day_check_in_mode, [d]: m },
+                              }))}
+                              className="flex-1 rounded-lg text-[12px] transition-colors"
+                              style={{
+                                padding: "4px 0",
+                                border: cim === m ? "2px solid #185FA5" : "1px solid #d1d5db",
+                                backgroundColor: cim === m ? "#E6F1FB" : "white",
+                                color: cim === m ? "#185FA5" : "#374151",
+                              }}
+                            >
+                              {m === "single" ? "1 Check-in" : "2 Check-ins"}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>

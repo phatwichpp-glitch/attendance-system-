@@ -30,10 +30,16 @@ export interface Session {
   otp_expire_min: number;
   opened_at: string;
   closed_at: string;
-  // Part 2 / Part 4 additions
+  // Week labels
   week_number?: number;
   week_label?: string;
   is_past_session?: boolean;
+  // Double period support
+  period_count?: number;          // 1 (default) or 2
+  period_end?: number;            // end period for single-check-in double
+  check_in_mode?: "single" | "double"; // "double" = two separate check-ins
+  linked_session_id?: string;     // links Part 1 ↔ Part 2
+  part_number?: number;           // 1 or 2
 }
 
 export type AttendanceStatus = "present" | "late" | "absent" | "gps_fail";
@@ -118,8 +124,10 @@ export const DEFAULT_SETTINGS: Settings = {
 
 // Part 1 / Part 2 — Semester Config
 export interface TeachingDay {
-  day: number;    // 0 = Sunday … 6 = Saturday
-  period: string; // "1"–"6"
+  day: number;            // 0 = Sunday … 6 = Saturday
+  period: string;         // "1"–"6"
+  period_count?: number;  // 1 (default) or 2
+  check_in_mode?: "single" | "double";
 }
 
 export interface SemesterConfig {

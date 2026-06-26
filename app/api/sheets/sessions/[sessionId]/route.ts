@@ -9,6 +9,7 @@ import {
   getAttendanceForSession,
   appendAuditLog,
 } from "@/lib/sheets";
+import { registerSession } from "@/lib/session-store";
 
 export async function PATCH(
   req: NextRequest,
@@ -18,7 +19,7 @@ export async function PATCH(
   if (!session?.access_token) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   try {
     const { sessionId } = await params;
-    const { week_label, date, period, week_number, reopen } = await req.json();
+    const { week_label, date, period, week_number, reopen, activate } = await req.json();
 
     const spreadsheetId = await initializeSpreadsheet(session.access_token);
     const current = await getSessionById(session.access_token, spreadsheetId, sessionId);
@@ -33,6 +34,21 @@ export async function PATCH(
         note: "Session reopened",
       });
       return NextResponse.json({ success: true, action: "reopened" });
+    }
+
+    // Activate Part 2 (set opened_at = now, register in session-store)
+    if (activate) {
+      if (current.opened_at) return NextResponse.json({ error: "Session already active" }, { status: 400 });
+      const openedAt = new Date().toISOString();
+      const ok = await updateSessionById(session.access_token, spreadsheetId, sessionId, { opened_at: openedAt });
+      if (!ok) return NextResponse.json({ error: "Session not found" }, { status: 404 });
+      registerSession(sessionId, spreadsheetId, session.access_token, current.otp);
+      await appendAuditLog(session.access_token, spreadsheetId, {
+        action: "update", entity_type: "session", entity_id: sessionId,
+        changed_from: { opened_at: "" }, changed_to: { opened_at: openedAt },
+        note: "Part 2 activated",
+      });
+      return NextResponse.json({ success: true, action: "activated", session: { ...current, opened_at: openedAt } });
     }
 
     const updates = { week_label, date, period, week_number };
