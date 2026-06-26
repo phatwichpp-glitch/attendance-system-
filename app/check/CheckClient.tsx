@@ -1,9 +1,9 @@
 "use client";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
-import Spinner from "@/components/Spinner";
 import { CheckInState } from "@/types";
 
+// ── Fingerprint ──────────────────────────────────────────────────────────────
 function generateFingerprint(): string {
   const components = [
     navigator.userAgent,
@@ -36,6 +36,7 @@ function getOrCreateFingerprint(): string {
   }
 }
 
+// ── API ──────────────────────────────────────────────────────────────────────
 interface Result {
   status?: string;
   original_status?: string;
@@ -44,10 +45,10 @@ interface Result {
   distance_m?: number;
   gps_pass?: boolean;
   duplicate?: boolean;
+  error?: string;
 }
 
 const RETRY_DELAYS = [1000, 2000, 4000];
-
 async function fetchCheckin(body: object, retries = 3): Promise<Response> {
   try {
     return await fetch("/api/sheets/checkin", {
@@ -64,380 +65,550 @@ async function fetchCheckin(body: object, retries = 3): Promise<Response> {
   }
 }
 
+// ── Types ────────────────────────────────────────────────────────────────────
+interface SessionInfo { courseId: string; period: string; section: string; }
+type GpsStatus = "loading" | "ready" | "denied";
+
+// ── CSS keyframes & pseudo-class overrides ───────────────────────────────────
+const CSS = `
+  @keyframes gpsPulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+  @keyframes fadeInUp { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+  @keyframes spin { to{transform:rotate(360deg)} }
+  ._ci-btn:active:not(:disabled) { transform: scale(0.98) !important; }
+  ._ci-input:focus { border-color: #185FA5 !important; box-shadow: 0 0 0 3px rgba(24,95,165,0.12) !important; }
+  * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
+`;
+
+// ── Static style objects ─────────────────────────────────────────────────────
+const PAGE: React.CSSProperties = {
+  minHeight: "100vh",
+  backgroundColor: "#f9fafb",
+  display: "flex",
+  flexDirection: "column",
+  alignItems: "center",
+  padding: "28px 16px 32px",
+  fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif",
+  WebkitTapHighlightColor: "transparent",
+};
+const INNER: React.CSSProperties = {
+  width: "100%",
+  maxWidth: 420,
+  display: "flex",
+  flexDirection: "column",
+  gap: 10,
+};
+const CARD: React.CSSProperties = {
+  backgroundColor: "white",
+  border: "0.5px solid rgba(0,0,0,0.12)",
+  borderRadius: 16,
+  padding: 24,
+};
+const LABEL: React.CSSProperties = {
+  display: "block",
+  fontSize: 11,
+  fontWeight: 700,
+  color: "#374151",
+  marginBottom: 6,
+  letterSpacing: "0.06em",
+  textTransform: "uppercase",
+};
+const INPUT_BASE: React.CSSProperties = {
+  width: "100%",
+  border: "1.5px solid #d1d5db",
+  borderRadius: 10,
+  padding: "14px 16px",
+  fontSize: 18,
+  fontFamily: "ui-monospace, 'Cascadia Code', 'Courier New', monospace",
+  letterSpacing: 3,
+  textAlign: "center",
+  outline: "none",
+  backgroundColor: "white",
+  color: "#111827",
+  transition: "border-color 0.15s, box-shadow 0.15s",
+  display: "block",
+};
+const INPUT_SUB: React.CSSProperties = {
+  fontSize: 11,
+  color: "#9ca3af",
+  textAlign: "center",
+  marginTop: 4,
+};
+const BTN: React.CSSProperties = {
+  width: "100%",
+  height: 52,
+  borderRadius: 12,
+  backgroundColor: "#185FA5",
+  color: "white",
+  fontSize: 16,
+  fontWeight: 600,
+  border: "none",
+  cursor: "pointer",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  gap: 8,
+  marginTop: 20,
+  transition: "background-color 0.15s, transform 0.1s",
+};
+const BTN_DISABLED: React.CSSProperties = {
+  backgroundColor: "#d1d5db",
+  cursor: "not-allowed",
+};
+
+function resultCard(variant: "green" | "amber" | "blue" | "red"): React.CSSProperties {
+  const v = {
+    green: ["#EAF3DE", "#97C459"],
+    amber: ["#FAEEDA", "#EF9F27"],
+    blue:  ["#E6F1FB", "#7AB8F5"],
+    red:   ["#FCEBEB", "#F09595"],
+  }[variant];
+  return { ...CARD, backgroundColor: v[0], border: `1px solid ${v[1]}`, animation: "fadeInUp 0.3s ease" };
+}
+
+function rTitle(color: string): React.CSSProperties {
+  return { fontSize: 22, fontWeight: 700, color, margin: "12px 0 0", textAlign: "center" };
+}
+const R_NAME: React.CSSProperties = { fontSize: 16, color: "#374151", margin: "6px 0 0", textAlign: "center" };
+const R_TIME: React.CSSProperties = { fontSize: 14, fontFamily: "ui-monospace, monospace", color: "#6b7280", margin: "6px 0 0", textAlign: "center" };
+const R_DIST: React.CSSProperties = { fontSize: 12, color: "#9ca3af", margin: "4px 0 0", textAlign: "center" };
+const R_SUB:  React.CSSProperties = { fontSize: 13, color: "#6b7280", margin: "8px 0 0", textAlign: "center", lineHeight: 1.6 };
+
+// ── Component ─────────────────────────────────────────────────────────────────
 export default function CheckClient() {
   const sp = useSearchParams();
   const sessionId = sp.get("s") ?? "";
-  const otp = sp.get("o") ?? "";
-  const spreadsheetId = sp.get("sid") ?? "";
+  const otp       = sp.get("o") ?? "";
+  const sid       = sp.get("sid") ?? "";
+  const isManual  = !sessionId && !otp;
 
-  // Manual mode: page loaded without ?s= and ?o= params
-  const isManualMode = !sessionId && !otp;
+  const [state, setState]             = useState<CheckInState>("loading");
+  const [studentId, setStudentId]     = useState("");
+  const [manualOtp, setManualOtp]     = useState("");
+  const [gpsStatus, setGpsStatus]     = useState<GpsStatus>("loading");
+  const [gpsCoords, setGpsCoords]     = useState<{ lat: number; lng: number } | null>(null);
+  const [gpsAccuracy, setGpsAccuracy] = useState<number | null>(null);
+  const [showHelp, setShowHelp]       = useState(false);
+  const [result, setResult]           = useState<Result | null>(null);
+  const [session, setSession]         = useState<SessionInfo | null>(null);
+  const inputRef     = useRef<HTMLInputElement>(null);
+  const fingerprintRef = useRef("");
 
-  const [state, setState] = useState<CheckInState>("loading");
-  const [studentId, setStudentId] = useState("");
-  const [manualOtp, setManualOtp] = useState("");
-  const [gps, setGps] = useState<{ lat: number; lng: number } | null>(null);
-  const [gpsReady, setGpsReady] = useState(false);
-  const [result, setResult] = useState<Result | null>(null);
-  const studentInputRef = useRef<HTMLInputElement>(null);
-  const fingerprintRef = useRef<string>("");
-
-  useEffect(() => {
-    fingerprintRef.current = getOrCreateFingerprint();
+  const requestGps = useCallback(() => {
+    setGpsStatus("loading");
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setGpsCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        setGpsAccuracy(pos.coords.accuracy);
+        setGpsStatus("ready");
+      },
+      () => setGpsStatus("denied"),
+      { enableHighAccuracy: true, timeout: 15000 }
+    );
   }, []);
 
   useEffect(() => {
-    // Always start GPS acquisition
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setGps({ lat: pos.coords.latitude, lng: pos.coords.longitude });
-        setGpsReady(true);
-      },
-      () => setGpsReady(true),
-      { enableHighAccuracy: true, timeout: 15000 }
-    );
+    fingerprintRef.current = getOrCreateFingerprint();
+    requestGps();
 
-    if (isManualMode) {
-      // No pre-check needed — form is available immediately
-      setState("ready");
-      return;
-    }
+    if (isManual) { setState("ready"); return; }
+    if (!sessionId || !otp) { setState("session_invalid"); return; }
 
-    if (!sessionId || !otp) {
-      setState("session_invalid");
-      return;
-    }
-
-    // QR mode: pre-check the session link
-    fetchCheckin({ session_id: sessionId, otp, spreadsheet_id: spreadsheetId })
+    fetchCheckin({ session_id: sessionId, otp, spreadsheet_id: sid })
       .then((r) => r.json())
       .then((d) => {
-        if (d.error === "session_expired") setState("session_expired");
-        else if (d.valid) setState("ready");
-        else setState("session_invalid");
+        if (d.error === "session_expired") { setState("session_expired"); return; }
+        if (d.valid) {
+          if (d.session) setSession({ courseId: d.session.course_id, period: d.session.period, section: d.session.section });
+          setState("ready");
+        } else {
+          setState("session_invalid");
+        }
       })
       .catch(() => setState("session_invalid"));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
-    if (state === "ready") setTimeout(() => studentInputRef.current?.focus(), 100);
+    if (state === "ready") setTimeout(() => inputRef.current?.focus(), 100);
   }, [state]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!/^\d{9}$/.test(studentId)) return;
-    if (isManualMode && !/^\d{6}$/.test(manualOtp)) return;
+    if (isManual && !/^\d{6}$/.test(manualOtp)) return;
     setState("submitting");
-
     try {
-      const body = isManualMode
-        ? {
-            otp: manualOtp,
-            student_id: studentId,
-            lat: gps?.lat ?? null,
-            lng: gps?.lng ?? null,
-            device_fingerprint: fingerprintRef.current,
-          }
-        : {
-            session_id: sessionId,
-            otp,
-            student_id: studentId,
-            lat: gps?.lat ?? null,
-            lng: gps?.lng ?? null,
-            spreadsheet_id: spreadsheetId,
-            device_fingerprint: fingerprintRef.current,
-          };
+      const body = isManual
+        ? { otp: manualOtp, student_id: studentId, lat: gpsCoords?.lat ?? null, lng: gpsCoords?.lng ?? null, device_fingerprint: fingerprintRef.current }
+        : { session_id: sessionId, otp, student_id: studentId, lat: gpsCoords?.lat ?? null, lng: gpsCoords?.lng ?? null, spreadsheet_id: sid, device_fingerprint: fingerprintRef.current };
 
-      const res = await fetchCheckin(body);
-      const data: Result & { error?: string } = await res.json();
+      const res  = await fetchCheckin(body);
+      const data = await res.json() as Result;
 
       if (!res.ok) {
         if (data.error === "session_expired") { setState("session_expired"); return; }
-        if (data.error === "session_invalid" || data.error === "session_not_found") {
-          setState("session_invalid"); return;
-        }
-        if (data.error === "invalid_otp") { setState("session_invalid"); return; }
+        if (data.error && ["session_invalid", "session_not_found", "invalid_otp"].includes(data.error)) { setState("session_invalid"); return; }
         if (data.error === "not_found") { setState("not_found"); return; }
         setState("error"); return;
       }
 
       setResult(data);
-
-      if (data.duplicate) {
-        setState(data.original_status === "gps_fail" ? "already_gps_fail" : "already_present");
-        return;
-      }
-
-      if (data.status === "gps_fail") {
-        setState("gps_fail");
-        return;
-      }
-
+      if (data.duplicate) { setState(data.original_status === "gps_fail" ? "already_gps_fail" : "already_present"); return; }
+      if (data.status === "gps_fail") { setState("gps_fail"); return; }
       setState(data.status === "late" ? "success_late" : "success_present");
-      if (navigator.vibrate) navigator.vibrate(200);
+      if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
     } catch {
       setState("error");
     }
   };
 
-  const reset = () => {
-    setStudentId("");
-    setManualOtp("");
-    setResult(null);
-    setState("ready");
-  };
+  const reset = () => { setStudentId(""); setManualOtp(""); setResult(null); setState("ready"); };
+  const fmt   = (iso: string) => new Date(iso).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
 
-  // ── Screens ──────────────────────────────────────────────────────────────────
+  // Header course line
+  const isTerminal  = state === "session_invalid" || state === "session_expired";
+  const headerText  = isTerminal ? "Session Closed" : session ? `${session.courseId} · Period ${session.period}` : isManual ? "Manual Check-In" : null;
+  const headerColor = isTerminal ? "#A32D2D" : "#374151";
 
-  if (state === "loading") {
-    return (
-      <Screen>
-        <Spinner className="h-8 w-8 text-[#185FA5] mx-auto" />
-        <p className="text-gray-500 text-sm text-center mt-3">กำลังตรวจสอบ...</p>
-      </Screen>
-    );
-  }
+  const submitting  = state === "submitting";
+  const canSubmit   = studentId.length === 9 && (!isManual || manualOtp.length === 6) && gpsStatus !== "loading";
 
-  if (state === "session_invalid") {
-    return (
-      <Screen bg="#FCEBEB">
-        <Icon color="#A32D2D" bg="#FCEBEB">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-        </Icon>
-        <p className="font-bold text-lg text-[#A32D2D]">ไม่พบคาบเรียน</p>
-        <p className="text-sm text-gray-500">
-          {isManualMode ? "OTP ไม่ถูกต้องหรือไม่พบคาบที่เปิดอยู่" : "QR code อาจหมดอายุหรือไม่ถูกต้อง"}
-        </p>
-        {isManualMode && (
-          <button onClick={reset} className="btn-outline">ลองใหม่</button>
-        )}
-      </Screen>
-    );
-  }
+  return (
+    <>
+      <style>{CSS}</style>
+      <div style={PAGE}>
+        <div style={INNER}>
 
-  if (state === "session_expired") {
-    return (
-      <Screen>
-        <Icon color="#854F0B" bg="#FAEEDA">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-        </Icon>
-        <p className="font-bold text-lg text-[#854F0B]">OTP หมดอายุ</p>
-        <p className="text-sm text-gray-500">คาบนี้ปิดการเช็คชื่อแล้ว</p>
-        {isManualMode && (
-          <button onClick={reset} className="btn-outline">ลองใหม่</button>
-        )}
-      </Screen>
-    );
-  }
-
-  if (state === "ready") {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center p-4">
-        <div className="card w-full max-w-sm space-y-6 py-8">
-          <div className="text-center">
-            <div
-              className="w-12 h-12 rounded-xl flex items-center justify-center mx-auto mb-3"
-              style={{ backgroundColor: "#185FA5" }}
-            >
-              <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                  d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </div>
-            <h1 className="text-xl font-bold text-gray-900">เช็คชื่อเข้าเรียน</h1>
-            {isManualMode && (
-              <p className="text-xs text-gray-400 mt-1 tracking-wide">Manual Check-In</p>
+          {/* ── Header ─────────────────────────────────────────────────── */}
+          <div style={{ marginBottom: 4 }}>
+            <span style={{ fontSize: 11, color: "#9ca3af", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em" }}>
+              Attendance
+            </span>
+            {headerText && (
+              <p style={{ fontSize: 15, fontWeight: 600, color: headerColor, margin: "3px 0 0", textAlign: "center" }}>
+                {headerText}
+              </p>
             )}
           </div>
 
-          {!gpsReady && (
-            <div className="flex items-center gap-2 text-xs justify-center" style={{ color: "#854F0B" }}>
-              <Spinner className="h-3 w-3" /> กำลังรับ GPS...
+          {/* ── Loading (pre-check) ─────────────────────────────────────── */}
+          {state === "loading" && (
+            <div style={CARD}>
+              <div style={{ textAlign: "center", padding: "40px 0" }}>
+                <SpinEl size={32} />
+                <p style={{ fontSize: 13, color: "#9ca3af", marginTop: 14 }}>กำลังตรวจสอบ...</p>
+              </div>
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Student ID */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">รหัสนักศึกษา</label>
-              <input
-                ref={studentInputRef}
-                type="tel"
-                inputMode="numeric"
-                pattern="\d{9}"
-                maxLength={9}
-                value={studentId}
-                onChange={(e) => setStudentId(e.target.value.replace(/\D/g, "").slice(0, 9))}
-                placeholder="000000000"
-                className="input text-center py-4"
-                style={{ fontSize: "1.5rem", fontFamily: "monospace", letterSpacing: "0.2em" }}
-                autoComplete="off"
+          {/* ── Terminal: session invalid / expired ─────────────────────── */}
+          {isTerminal && (
+            <div style={resultCard("red")}>
+              <ResultIcon type="x" color="#A32D2D" />
+              <p style={rTitle("#A32D2D")}>Session Closed</p>
+              <p style={R_SUB}>
+                {state === "session_expired"
+                  ? "คาบเรียนนี้ปิดแล้ว หรือ OTP หมดอายุ"
+                  : isManual ? "OTP ไม่ถูกต้องหรือไม่พบคาบที่เปิดอยู่" : "QR code อาจหมดอายุหรือไม่ถูกต้อง"}
+              </p>
+              <p style={{ ...R_SUB, marginTop: 4 }}>กรุณาติดต่ออาจารย์</p>
+              {isManual && <RetryBtn onClick={reset} />}
+            </div>
+          )}
+
+          {/* ── Form (ready + submitting) ────────────────────────────────── */}
+          {(state === "ready" || submitting) && (
+            <div style={CARD}>
+              {/* Manual mode badge */}
+              {isManual && (
+                <div style={{
+                  display: "inline-flex", alignItems: "center", gap: 6,
+                  backgroundColor: "#FAEEDA", border: "1px solid #EF9F27",
+                  borderRadius: 20, padding: "4px 12px",
+                  fontSize: 11, color: "#854F0B", fontWeight: 500, marginBottom: 18,
+                }}>
+                  ● Manual Check-In · กรอก OTP จากกระดาน
+                </div>
+              )}
+
+              {/* GPS status */}
+              <GpsRow
+                status={gpsStatus}
+                accuracy={gpsAccuracy}
+                showHelp={showHelp}
+                onToggleHelp={() => setShowHelp((v) => !v)}
+                onRetry={requestGps}
               />
-              <p className="text-xs text-gray-400 text-center mt-1">{studentId.length}/9 หลัก</p>
+
+              <form onSubmit={handleSubmit}>
+                {/* Student ID */}
+                <div style={{ marginBottom: 16 }}>
+                  <label style={LABEL}>Student ID</label>
+                  <input
+                    ref={inputRef}
+                    type="tel"
+                    inputMode="numeric"
+                    maxLength={9}
+                    value={studentId}
+                    onChange={(e) => setStudentId(e.target.value.replace(/\D/g, "").slice(0, 9))}
+                    placeholder="Enter your 9-digit ID"
+                    className="_ci-input"
+                    style={INPUT_BASE}
+                    autoComplete="off"
+                    disabled={submitting}
+                  />
+                  <p style={INPUT_SUB}>{studentId.length} / 9</p>
+                </div>
+
+                {/* OTP — manual mode only */}
+                {isManual && (
+                  <div style={{ marginBottom: 16 }}>
+                    <label style={LABEL}>OTP</label>
+                    <input
+                      type="tel"
+                      inputMode="numeric"
+                      maxLength={6}
+                      value={manualOtp}
+                      onChange={(e) => setManualOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                      placeholder="Enter 6-digit code from board"
+                      className="_ci-input"
+                      style={{ ...INPUT_BASE, fontSize: 22, letterSpacing: 8, padding: "16px" }}
+                      autoComplete="off"
+                      disabled={submitting}
+                    />
+                    <p style={INPUT_SUB}>{manualOtp.length} / 6</p>
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={!canSubmit || submitting}
+                  className="_ci-btn"
+                  style={{ ...BTN, ...(!canSubmit || submitting ? BTN_DISABLED : {}) }}
+                >
+                  {submitting ? <><SpinEl size={18} white /> Checking...</> : "Check In"}
+                </button>
+              </form>
             </div>
+          )}
 
-            {/* OTP — manual mode only */}
-            {isManualMode && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  OTP
-                  <span className="text-xs font-normal text-gray-400 ml-1">(จากกระดาน/จอโปรเจกเตอร์)</span>
-                </label>
-                <input
-                  type="tel"
-                  inputMode="numeric"
-                  pattern="\d{6}"
-                  maxLength={6}
-                  value={manualOtp}
-                  onChange={(e) => setManualOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                  placeholder="000000"
-                  className="input text-center py-4"
-                  style={{ fontSize: "1.5rem", fontFamily: "monospace", letterSpacing: "0.3em" }}
-                  autoComplete="off"
-                />
-                <p className="text-xs text-gray-400 text-center mt-1">{manualOtp.length}/6 หลัก</p>
-              </div>
-            )}
-
-            {/* GPS indicator */}
-            <div
-              className="flex items-center gap-1.5 text-xs justify-center"
-              style={{ color: gps ? "#3B6D11" : "#854F0B" }}
-            >
-              <div className="w-2 h-2 rounded-full" style={{ backgroundColor: gps ? "#3B6D11" : "#854F0B" }} />
-              {gps ? "GPS พร้อม" : "GPS ไม่พร้อม"}
+          {/* ── Success: Checked In ──────────────────────────────────────── */}
+          {state === "success_present" && (
+            <div style={resultCard("green")}>
+              <ResultIcon type="check" color="#3B6D11" />
+              <p style={rTitle("#3B6D11")}>Checked In</p>
+              {result?.student && <p style={R_NAME}>{result.student.firstname} {result.student.lastname}</p>}
+              {result?.checked_at && <p style={R_TIME}>{fmt(result.checked_at)}</p>}
+              {result?.distance_m !== undefined && (
+                <p style={R_DIST}>📍 {result.distance_m} meters from classroom</p>
+              )}
             </div>
+          )}
 
-            <button
-              type="submit"
-              disabled={
-                studentId.length !== 9 ||
-                (isManualMode && manualOtp.length !== 6)
-              }
-              className="btn-primary w-full py-3 text-base"
-            >
-              เช็คชื่อ
-            </button>
-          </form>
+          {/* ── Success: Late ────────────────────────────────────────────── */}
+          {state === "success_late" && (
+            <div style={resultCard("amber")}>
+              <ResultIcon type="clock" color="#854F0B" />
+              <p style={rTitle("#854F0B")}>Checked In — Late</p>
+              {result?.student && <p style={R_NAME}>{result.student.firstname} {result.student.lastname}</p>}
+              {result?.checked_at && <p style={R_TIME}>{fmt(result.checked_at)}</p>}
+              <p style={{ ...R_SUB, fontSize: 11, color: "#92400E", marginTop: 10 }}>
+                บันทึกเป็นสาย เนื่องจากเข้าเรียนหลังเวลาที่กำหนด
+              </p>
+            </div>
+          )}
+
+          {/* ── GPS Fail ─────────────────────────────────────────────────── */}
+          {state === "gps_fail" && (
+            <div style={resultCard("amber")}>
+              <ResultIcon type="location" color="#854F0B" />
+              <p style={rTitle("#854F0B")}>Location Not Verified</p>
+              {result?.student && <p style={R_NAME}>{result.student.firstname} {result.student.lastname}</p>}
+              <p style={{ ...R_SUB, color: "#92400E" }}>
+                ระบบบันทึกการเช็คชื่อแล้ว แต่ตำแหน่ง GPS อยู่นอกพื้นที่
+              </p>
+              <p style={{ ...R_SUB, color: "#92400E" }}>
+                กรุณาแจ้งอาจารย์เพื่อยืนยันการเข้าเรียน
+              </p>
+              {result?.distance_m !== undefined && (
+                <p style={{ ...R_DIST, color: "#854F0B", fontWeight: 600, marginTop: 8 }}>
+                  You were {result.distance_m} meters away
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* ── Already Checked In ──────────────────────────────────────── */}
+          {state === "already_present" && (
+            <div style={resultCard("blue")}>
+              <ResultIcon type="info" color="#185FA5" />
+              <p style={rTitle("#185FA5")}>Already Checked In</p>
+              {result?.student && <p style={R_NAME}>{result.student.firstname} {result.student.lastname}</p>}
+              {result?.checked_at && (
+                <p style={{ ...R_SUB, color: "#1e3a5f" }}>
+                  คุณเช็คชื่อในคาบนี้แล้ว เมื่อเวลา {fmt(result.checked_at)}
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* ── Already Checked In — GPS Fail ───────────────────────────── */}
+          {state === "already_gps_fail" && (
+            <div style={resultCard("amber")}>
+              <ResultIcon type="info" color="#854F0B" />
+              <p style={rTitle("#854F0B")}>Already Checked In — Pending Approval</p>
+              {result?.student && <p style={R_NAME}>{result.student.firstname} {result.student.lastname}</p>}
+              <p style={{ ...R_SUB, color: "#92400E" }}>
+                ระบบบันทึกไว้แล้ว รออาจารย์พิจารณา GPS fail
+              </p>
+            </div>
+          )}
+
+          {/* ── Not Found ────────────────────────────────────────────────── */}
+          {state === "not_found" && (
+            <div style={resultCard("red")}>
+              <ResultIcon type="user" color="#A32D2D" />
+              <p style={rTitle("#A32D2D")}>Student Not Found</p>
+              <p style={{ ...R_SUB, color: "#7f1d1d" }}>
+                ไม่พบรหัส <span style={{ fontFamily: "monospace" }}>{studentId}</span> ในวิชานี้
+              </p>
+              <p style={{ ...R_SUB, color: "#7f1d1d", marginTop: 4 }}>
+                กรุณาตรวจสอบรหัสนักศึกษา หรือติดต่ออาจารย์
+              </p>
+              <RetryBtn onClick={reset} />
+            </div>
+          )}
+
+          {/* ── Generic Error ────────────────────────────────────────────── */}
+          {state === "error" && (
+            <div style={resultCard("red")}>
+              <ResultIcon type="x" color="#A32D2D" />
+              <p style={rTitle("#A32D2D")}>Something Went Wrong</p>
+              <p style={{ ...R_SUB, color: "#7f1d1d" }}>เกิดข้อผิดพลาด กรุณาลองใหม่</p>
+              <RetryBtn onClick={reset} />
+            </div>
+          )}
+
+          {/* ── Footer ─────────────────────────────────────────────────── */}
+          {(session || isManual) && (
+            <p style={{ textAlign: "center", fontSize: 10, color: "#9ca3af", letterSpacing: "0.04em", margin: 0 }}>
+              Attendance System{session ? ` · ${session.courseId} · Sec.${session.section}` : ""}
+            </p>
+          )}
+
         </div>
       </div>
-    );
-  }
-
-  if (state === "submitting") {
-    return (
-      <Screen>
-        <Spinner className="h-8 w-8 text-[#185FA5] mx-auto" />
-        <p className="text-gray-500 text-sm text-center mt-3">กำลังบันทึก...</p>
-      </Screen>
-    );
-  }
-
-  if (state === "success_present") {
-    return (
-      <Screen bg="#EAF3DE">
-        <Icon color="#3B6D11" bg="#EAF3DE">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-        </Icon>
-        <p className="font-bold text-xl text-[#3B6D11]">เช็คชื่อสำเร็จ!</p>
-        {result?.student && <p className="text-gray-700">{result.student.firstname} {result.student.lastname}</p>}
-        <p className="text-sm text-[#3B6D11]">✓ บันทึกว่า มา</p>
-        {result?.distance_m !== undefined && <p className="text-xs text-gray-500">ระยะทาง {result.distance_m} m</p>}
-      </Screen>
-    );
-  }
-
-  if (state === "success_late") {
-    return (
-      <Screen bg="#E6F1FB">
-        <Icon color="#185FA5" bg="#E6F1FB">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-        </Icon>
-        <p className="font-bold text-xl text-[#185FA5]">เช็คชื่อสำเร็จ</p>
-        {result?.student && <p className="text-gray-700">{result.student.firstname} {result.student.lastname}</p>}
-        <p className="text-sm text-[#185FA5]">บันทึกเป็นสาย</p>
-      </Screen>
-    );
-  }
-
-  if (state === "gps_fail") {
-    return (
-      <Screen bg="#FAEEDA">
-        <Icon color="#854F0B" bg="#FAEEDA">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0zM15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-        </Icon>
-        <p className="font-bold text-xl text-[#854F0B]">GPS ไม่ผ่าน</p>
-        {result?.student && <p className="text-gray-700">{result.student.firstname} {result.student.lastname}</p>}
-        <p className="text-sm" style={{ color: "#854F0B" }}>ระยะทาง {result?.distance_m} m จากห้องเรียน</p>
-        <p className="text-xs text-gray-500">บันทึกแล้ว — แจ้งอาจารย์เพื่อขออนุมัติ</p>
-      </Screen>
-    );
-  }
-
-  if (state === "already_present") {
-    return (
-      <Screen bg="#E6F1FB">
-        <Icon color="#185FA5" bg="#E6F1FB">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-        </Icon>
-        <p className="font-bold text-xl text-[#185FA5]">เช็คชื่อแล้ว</p>
-        {result?.student && <p className="text-gray-700">{result.student.firstname} {result.student.lastname}</p>}
-        {result?.checked_at && <p className="text-xs text-gray-500">เวลา {new Date(result.checked_at).toLocaleTimeString("th-TH")}</p>}
-      </Screen>
-    );
-  }
-
-  if (state === "already_gps_fail") {
-    return (
-      <Screen bg="#FAEEDA">
-        <Icon color="#854F0B" bg="#FAEEDA">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-        </Icon>
-        <p className="font-bold text-xl text-[#854F0B]">เช็คชื่อแล้ว (GPS fail)</p>
-        {result?.student && <p className="text-gray-700">{result.student.firstname} {result.student.lastname}</p>}
-        <p className="text-xs text-gray-500">รออาจารย์อนุมัติ</p>
-      </Screen>
-    );
-  }
-
-  if (state === "not_found") {
-    return (
-      <Screen bg="#FCEBEB">
-        <Icon color="#A32D2D" bg="#FCEBEB">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-        </Icon>
-        <p className="font-bold text-xl text-[#A32D2D]">ไม่พบรหัสนักศึกษา</p>
-        <p className="font-mono text-gray-600">{studentId}</p>
-        <p className="text-sm text-gray-500">รหัสนี้ไม่อยู่ในรายชื่อวิชานี้</p>
-        <button onClick={reset} className="btn-outline">ลองใหม่</button>
-      </Screen>
-    );
-  }
-
-  return (
-    <Screen>
-      <p className="text-[#A32D2D] font-medium">เกิดข้อผิดพลาด</p>
-      <button onClick={reset} className="btn-outline">ลองใหม่</button>
-    </Screen>
+    </>
   );
 }
 
-function Screen({ children, bg = "white" }: { children: React.ReactNode; bg?: string }) {
+// ── Sub-components ────────────────────────────────────────────────────────────
+function GpsRow({ status, accuracy, showHelp, onToggleHelp, onRetry }: {
+  status: GpsStatus;
+  accuracy: number | null;
+  showHelp: boolean;
+  onToggleHelp: () => void;
+  onRetry: () => void;
+}) {
+  const cfg = {
+    loading: { dot: "#854F0B", bg: "#fffbeb", label: "Getting Location...", sub: "กำลังระบุตำแหน่ง กรุณารอสักครู่", pulse: true },
+    ready:   { dot: "#3B6D11", bg: "#f0fdf4", label: `Location Ready${accuracy ? `  ±${Math.round(accuracy)} m` : ""}`, sub: "พร้อมเช็คชื่อแล้ว", pulse: false },
+    denied:  { dot: "#A32D2D", bg: "#fff1f1", label: "Location Denied", sub: "กรุณาอนุญาต Location ใน Browser Settings", pulse: false },
+  }[status];
+
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-4" style={{ backgroundColor: bg }}>
-      <div className="space-y-4 text-center max-w-sm w-full">{children}</div>
+    <div style={{ marginBottom: 20 }}>
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "12px 14px", borderRadius: 10, backgroundColor: cfg.bg }}>
+        <div style={{
+          width: 8, height: 8, borderRadius: "50%",
+          backgroundColor: cfg.dot, flexShrink: 0, marginTop: 5,
+          animation: cfg.pulse ? "gpsPulse 1.2s ease-in-out infinite" : undefined,
+        }} />
+        <div style={{ flex: 1 }}>
+          <p style={{ fontSize: 13, fontWeight: 600, color: cfg.dot, margin: 0 }}>{cfg.label}</p>
+          <p style={{ fontSize: 11, color: "#6b7280", margin: "3px 0 0", lineHeight: 1.5 }}>{cfg.sub}</p>
+          {status === "denied" && (
+            <>
+              <button
+                onClick={onToggleHelp}
+                style={{ fontSize: 11, color: "#185FA5", background: "none", border: "none", cursor: "pointer", padding: 0, marginTop: 6, display: "block" }}
+              >
+                วิธีเปิด Location →
+              </button>
+              {showHelp && (
+                <div style={{ marginTop: 8, padding: "10px 12px", backgroundColor: "white", borderRadius: 8, border: "0.5px solid #e5e7eb", fontSize: 11, color: "#374151", lineHeight: 1.7 }}>
+                  <strong>วิธีเปิด Location Access:</strong><br />
+                  • Chrome: แถบ URL → ไอคอน 🔒 → Site settings → Location → Allow<br />
+                  • Safari: Settings → Safari → Location → Allow<br />
+                  • Firefox: ไอคอน 🔒 → Allow Location Access
+                </div>
+              )}
+              <button
+                onClick={onRetry}
+                style={{ fontSize: 11, color: "#374151", background: "white", border: "0.5px solid #d1d5db", borderRadius: 6, cursor: "pointer", padding: "5px 12px", marginTop: 8, display: "block" }}
+              >
+                Try Again
+              </button>
+            </>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
 
-function Icon({ children, color, bg }: { children: React.ReactNode; color: string; bg: string }) {
+type IconType = "check" | "x" | "clock" | "location" | "info" | "user";
+const ICON_PATHS: Record<IconType, string> = {
+  check:    "M5 13l4 4L19 7",
+  x:        "M6 18L18 6M6 6l12 12",
+  clock:    "M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z",
+  location: "M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0zM15 11a3 3 0 11-6 0 3 3 0 016 0z",
+  info:     "M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z",
+  user:     "M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z",
+};
+
+function ResultIcon({ type, color }: { type: IconType; color: string }) {
   return (
-    <div
-      className="w-16 h-16 rounded-full flex items-center justify-center mx-auto"
-      style={{ backgroundColor: bg, border: `2px solid ${color}22` }}
+    <div style={{ display: "flex", justifyContent: "center", marginBottom: 4 }}>
+      <div style={{
+        width: 56, height: 56, borderRadius: "50%",
+        backgroundColor: `${color}18`, border: `2px solid ${color}35`,
+        display: "flex", alignItems: "center", justifyContent: "center",
+      }}>
+        <svg width={28} height={28} fill="none" stroke={color} strokeWidth={type === "check" ? 2.5 : 2} viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" d={ICON_PATHS[type]} />
+        </svg>
+      </div>
+    </div>
+  );
+}
+
+function SpinEl({ size = 28, white = false }: { size?: number; white?: boolean }) {
+  return (
+    <div style={{
+      width: size, height: size,
+      border: `${size > 20 ? 3 : 2}px solid ${white ? "rgba(255,255,255,0.3)" : "#e5e7eb"}`,
+      borderTopColor: white ? "white" : "#185FA5",
+      borderRadius: "50%",
+      animation: "spin 0.8s linear infinite",
+      flexShrink: 0,
+    }} />
+  );
+}
+
+function RetryBtn({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        display: "block", margin: "16px auto 0",
+        padding: "10px 28px", borderRadius: 10,
+        border: "0.5px solid rgba(0,0,0,0.15)",
+        backgroundColor: "white", fontSize: 13, fontWeight: 500,
+        color: "#374151", cursor: "pointer",
+      }}
     >
-      <svg className="w-9 h-9" fill="none" stroke={color} viewBox="0 0 24 24">{children}</svg>
-    </div>
+      Try Again
+    </button>
   );
 }
