@@ -28,6 +28,7 @@ export default function SetupClient() {
   const [settings, setSettings] = useState<Settings>({ ...DEFAULT_SETTINGS });
   const [gps, setGps] = useState<GpsState>({ lat: 0, lng: 0, accuracy: 0, loading: true, error: "" });
   const [submitting, setSubmitting] = useState(false);
+  const [setupError, setSetupError] = useState("");
   const [showGpsWarn, setShowGpsWarn] = useState(false);
   const [loadingCourses, setLoadingCourses] = useState(true);
   const [semesterConfig, setSemesterConfig] = useState<SemesterConfig | null>(null);
@@ -160,7 +161,7 @@ export default function SetupClient() {
       }));
       router.push(`/admin/session/${data.session.session_id}`);
     } catch (e: unknown) {
-      alert(e instanceof Error ? e.message : "เกิดข้อผิดพลาด");
+      setSetupError(e instanceof Error ? e.message : "Failed to create session");
       setSubmitting(false);
     }
   };
@@ -434,6 +435,12 @@ export default function SetupClient() {
           </div>
         </div>
       </div>
+
+      {setupError && (
+        <div className="rounded-lg px-4 py-3 text-[13px]" style={{ backgroundColor: "#FCEBEB", color: "#A32D2D" }}>
+          {setupError}
+        </div>
+      )}
 
       <button
         onClick={handleSubmit}

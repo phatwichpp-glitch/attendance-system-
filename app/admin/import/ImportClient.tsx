@@ -210,7 +210,7 @@ export default function ImportClient() {
               {n}
             </div>
             <span style={{ color: stepNum === n ? "#185FA5" : "#9ca3af", fontWeight: stepNum === n ? 600 : 400 }}>
-              {n === 1 ? "Upload & Preview" : "Semester Setup"}
+              {n === 1 ? (step === "mapper" || step === "preview" ? "Map Columns" : "Upload") : "Semester Setup"}
             </span>
             {n < 2 && <span className="text-gray-300">→</span>}
           </div>

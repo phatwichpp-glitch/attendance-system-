@@ -20,6 +20,29 @@ async function fetchWithRetry(url: string, opts?: RequestInit, retries = 3): Pro
   }
 }
 
+function MenuItem({
+  href, children, onClick, danger,
+}: {
+  href?: string; children: React.ReactNode; onClick?: () => void; danger?: boolean;
+}) {
+  const cls = "block w-full text-left px-3 py-2 text-[13px] transition-colors hover:bg-gray-50";
+  const style = { color: danger ? "#A32D2D" : "#374151", background: "none", border: "none", cursor: "pointer" };
+
+  if (href) {
+    return (
+      <Link href={href} onClick={onClick} className={cls} style={{ color: style.color }}>
+        {children}
+      </Link>
+    );
+  }
+
+  return (
+    <button onClick={onClick} className={cls} style={style}>
+      {children}
+    </button>
+  );
+}
+
 export default function CourseList() {
   const [courses, setCourses] = useState<Course[]>([]);
   const [stats, setStats] = useState<CourseStatsMap>({});
@@ -29,10 +52,12 @@ export default function CourseList() {
   const [editTarget, setEditTarget] = useState<Course | null>(null);
   const [editForm, setEditForm] = useState({ title: "", lecturer: "" });
   const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<Course | null>(null);
   const [deleteStep, setDeleteStep] = useState<1 | 2>(1);
   const [deleteConfirm, setDeleteConfirm] = useState("");
   const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
   const menuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -63,6 +88,7 @@ export default function CourseList() {
   const submitEdit = async () => {
     if (!editTarget) return;
     setEditSaving(true);
+    setEditError("");
     try {
       const res = await fetch(`/api/sheets/courses/${editTarget.course_id}`, {
         method: "PATCH",
@@ -73,7 +99,7 @@ export default function CourseList() {
           lecturer: editForm.lecturer,
         }),
       });
-      if (!res.ok) { const d = await res.json(); alert(d.error ?? "Error"); return; }
+      if (!res.ok) { const d = await res.json(); setEditError(d.error ?? "Edit failed"); return; }
       setCourses((prev) => prev.map((c) =>
         c.course_id === editTarget.course_id && c.section === editTarget.section
           ? { ...c, ...editForm }
@@ -89,6 +115,7 @@ export default function CourseList() {
     setDeleteTarget(c);
     setDeleteStep(1);
     setDeleteConfirm("");
+    setDeleteError("");
     setMenuOpen(null);
   };
 
@@ -96,12 +123,13 @@ export default function CourseList() {
     if (!deleteTarget) return;
     if (deleteConfirm !== deleteTarget.course_id) return;
     setDeleting(true);
+    setDeleteError("");
     try {
       const res = await fetch(
         `/api/sheets/courses/${deleteTarget.course_id}?section=${deleteTarget.section}`,
         { method: "DELETE" }
       );
-      if (!res.ok) { const d = await res.json(); alert(d.error ?? "Error"); return; }
+      if (!res.ok) { const d = await res.json(); setDeleteError(d.error ?? "Delete failed"); return; }
       setCourses((prev) => prev.filter(
         (c) => !(c.course_id === deleteTarget.course_id && c.section === deleteTarget.section)
       ));
@@ -250,6 +278,11 @@ export default function CourseList() {
               <p>Course ID: <strong className="font-mono text-gray-800">{editTarget.course_id}</strong></p>
               <p>Section: <strong className="text-gray-800">{editTarget.section}</strong></p>
             </div>
+            {editError && (
+              <div className="rounded-lg px-3 py-2 text-[13px]" style={{ backgroundColor: "#FCEBEB", color: "#A32D2D" }}>
+                {editError}
+              </div>
+            )}
             <div className="space-y-3">
               {(["title", "lecturer"] as const).map((f) => (
                 <div key={f}>
@@ -284,6 +317,11 @@ export default function CourseList() {
                     และ <strong>{stats[`${deleteTarget.course_id}__${deleteTarget.section}`]?.session_count ?? "?"} session</strong> บันทึกไว้</p>
                   <p className="mt-1 text-[11px]">ข้อมูลทั้งหมดจะถูกลบ — ไม่สามารถย้อนกลับได้</p>
                 </div>
+                {deleteError && (
+                  <div className="rounded-lg px-3 py-2 text-[13px]" style={{ backgroundColor: "#FCEBEB", color: "#A32D2D" }}>
+                    {deleteError}
+                  </div>
+                )}
                 <div className="flex gap-3">
                   <button onClick={() => setDeleteTarget(null)} className="btn-outline flex-1">Cancel</button>
                   <button onClick={() => setDeleteStep(2)} className="btn-danger flex-1">Continue →</button>
@@ -331,7 +369,6 @@ function MenuItem({
   const style = { color: danger ? "#A32D2D" : "#374151", background: "none", border: "none", cursor: "pointer" };
 
   if (href) {
-    const { default: Link } = require("next/link");
     return (
       <Link href={href} onClick={onClick} className={cls} style={{ color: style.color }}>
         {children}

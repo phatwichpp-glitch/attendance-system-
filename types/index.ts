@@ -205,4 +205,5 @@ export interface AuditLog {
   changed_from: string;
   changed_to: string;
   note: string;
+  actor?: string;
 }

@@ -9,7 +9,44 @@ import { lookupSession, lookupByOTP } from "@/lib/session-store";
 import { calculateDistance } from "@/lib/haversine";
 import { AttendanceRecord } from "@/types";
 
+// ── Simple in-process rate limiter (10 requests per IP per 60 s) ─────────────
+// Replace with Redis/KV for multi-instance deployments.
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const RATE_LIMIT_MAX = 10;
+const ipHits = new Map<string, { count: number; windowStart: number }>();
+
+function checkRateLimit(ip: string): boolean {
+  const now = Date.now();
+  const hit = ipHits.get(ip);
+  if (!hit || now - hit.windowStart >= RATE_LIMIT_WINDOW_MS) {
+    ipHits.set(ip, { count: 1, windowStart: now });
+    return true;
+  }
+  if (hit.count >= RATE_LIMIT_MAX) return false;
+  hit.count++;
+  return true;
+}
+
+// Periodically purge stale entries to prevent unbounded growth
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, hit] of ipHits) {
+    if (now - hit.windowStart >= RATE_LIMIT_WINDOW_MS) ipHits.delete(ip);
+  }
+}, 5 * 60_000);
+
 export async function POST(req: NextRequest) {
+  // Rate limiting
+  const ip = req.headers.get("x-forwarded-for")?.split(",")[0].trim()
+    ?? req.headers.get("x-real-ip")
+    ?? "unknown";
+  if (!checkRateLimit(ip)) {
+    return NextResponse.json(
+      { error: "rate_limited", message: "Too many requests — please wait before retrying" },
+      { status: 429 }
+    );
+  }
+
   try {
     const body = await req.json();
     const {
@@ -75,6 +112,11 @@ export async function POST(req: NextRequest) {
     // Pre-check only (no student_id) — QR mode validates the link on page load
     if (!student_id) {
       return NextResponse.json({ valid: true, session: sessionData });
+    }
+
+    // Server-side validate student_id format (9 digits, no injection)
+    if (typeof student_id !== "string" || !/^\d{9}$/.test(student_id)) {
+      return NextResponse.json({ error: "not_found" }, { status: 404 });
     }
 
     // 5. Find student

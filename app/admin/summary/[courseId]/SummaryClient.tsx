@@ -45,6 +45,7 @@ export default function SummaryClient({ courseId }: { courseId: string }) {
   const [editTarget, setEditTarget] = useState<EditTarget | null>(null);
   const [editStatus, setEditStatus] = useState<AttendanceStatus>("present");
   const [editNote, setEditNote] = useState("");
+  const [editError, setEditError] = useState("");
   const [editSubmitting, setEditSubmitting] = useState(false);
   const [holidays, setHolidays] = useState<Holiday[]>([]);
   const [tooltipSession, setTooltipSession] = useState<string | null>(null);
@@ -99,6 +100,7 @@ export default function SummaryClient({ courseId }: { courseId: string }) {
   const submitEdit = async () => {
     if (!editTarget) return;
     setEditSubmitting(true);
+    setEditError("");
     try {
       const res = await fetch(`/api/sheets/attendance/${editTarget.attendanceId}`, {
         method: "PATCH",
@@ -112,21 +114,26 @@ export default function SummaryClient({ courseId }: { courseId: string }) {
         const newGrid = { ...d.grid };
         newGrid[editTarget.studentId] = { ...newGrid[editTarget.studentId], [editTarget.sessionId]: editStatus };
 
-        // Recompute totals for that student
+        // Recompute totals for that student using weighted period_count (matches weightedPct)
         const newTotals = { ...d.totals };
         const sessions = d.sessions;
         const t = { ...newTotals[editTarget.studentId] };
         let present = 0, late = 0, absent = 0, gps_fail = 0;
+        let wAttended = 0, wTotal = 0;
         for (const ss of sessions) {
+          const w = ss.period_count ?? 1;
           const st = newGrid[editTarget.studentId]?.[ss.session_id];
           if (st === "present") present++;
           else if (st === "late") late++;
           else if (st === "absent") absent++;
           else if (st === "gps_fail") gps_fail++;
+          if (st !== undefined) {
+            wTotal += w;
+            if (st === "present" || st === "late") wAttended += w;
+          }
         }
         t.present_count = present; t.late_count = late; t.absent_count = absent; t.gps_fail_count = gps_fail;
-        t.percentage = t.total_sessions > 0
-          ? Math.round(((present + late) / t.total_sessions) * 100) : 0;
+        t.percentage = wTotal > 0 ? Math.round((wAttended / wTotal) * 100) : 0;
         newTotals[editTarget.studentId] = t;
 
         // Also update attendance records
@@ -139,7 +146,7 @@ export default function SummaryClient({ courseId }: { courseId: string }) {
       });
       setEditTarget(null);
     } catch {
-      alert("บันทึกไม่สำเร็จ");
+      setEditError("Save failed — please try again");
     } finally {
       setEditSubmitting(false);
     }
@@ -371,7 +378,7 @@ export default function SummaryClient({ courseId }: { courseId: string }) {
                     return (
                       <td
                         key={ss.session_id}
-                        className="px-2 py-2 text-center cursor-pointer hover:bg-gray-50 transition-colors"
+                        className={`px-2 py-2 text-center transition-colors ${hasRecord ? "cursor-pointer hover:bg-gray-50" : ""}`}
                         onClick={(e) => hasRecord ? openEdit(e, stu.student_id, ss.session_id) : undefined}
                         title={hasRecord ? "Click to edit" : undefined}
                       >
@@ -456,6 +463,9 @@ export default function SummaryClient({ courseId }: { courseId: string }) {
                 placeholder="Reason for change..."
               />
             </div>
+            {editError && (
+              <p className="text-[12px]" style={{ color: "#A32D2D" }}>{editError}</p>
+            )}
             <div className="flex gap-2 pt-1">
               <button onClick={() => setEditTarget(null)} className="btn-outline flex-1 text-[13px]" style={{ minHeight: 36 }}>
                 Cancel

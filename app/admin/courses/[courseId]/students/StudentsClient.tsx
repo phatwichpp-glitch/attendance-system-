@@ -17,12 +17,14 @@ export default function StudentsClient({ courseId }: { courseId: string }) {
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<{ field: SortField; dir: SortDir }>({ field: "order_num", dir: "asc" });
   const [inlineEdit, setInlineEdit] = useState<InlineEdit | null>(null);
+  const [editError, setEditError] = useState("");
   const [saving, setSaving] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
   const [addForm, setAddForm] = useState({ student_id: "", firstname: "", lastname: "" });
   const [addError, setAddError] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<Student | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState("");
+  const [deleteError, setDeleteError] = useState("");
   const [deleting, setDeleting] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
   const [showImport, setShowImport] = useState(false);
@@ -77,6 +79,7 @@ export default function StudentsClient({ courseId }: { courseId: string }) {
     if (!s) { setInlineEdit(null); return; }
     if (inlineEdit.value === s[inlineEdit.field]) { setInlineEdit(null); return; }
     setSaving(true);
+    setEditError("");
     try {
       const res = await fetch(`/api/sheets/students/${inlineEdit.studentId}`, {
         method: "PATCH",
@@ -87,7 +90,7 @@ export default function StudentsClient({ courseId }: { courseId: string }) {
           [inlineEdit.field]: inlineEdit.value,
         }),
       });
-      if (!res.ok) { const d = await res.json(); alert(d.error ?? "Error"); return; }
+      if (!res.ok) { const d = await res.json(); setEditError(d.error ?? "Edit failed"); return; }
       setStudents((prev) => prev.map((x) =>
         x.student_id === inlineEdit.studentId
           ? { ...x, [inlineEdit.field]: inlineEdit.value, ...(inlineEdit.field === "student_id" ? { student_id: inlineEdit.value } : {}) }
@@ -125,12 +128,13 @@ export default function StudentsClient({ courseId }: { courseId: string }) {
     if (!deleteTarget || !course) return;
     if (deleteConfirm !== deleteTarget.student_id) return;
     setDeleting(true);
+    setDeleteError("");
     try {
       const res = await fetch(
         `/api/sheets/students/${deleteTarget.student_id}?course_id=${courseId}&section=${course.section}`,
         { method: "DELETE" }
       );
-      if (!res.ok) { const d = await res.json(); alert(d.error ?? "Error"); return; }
+      if (!res.ok) { const d = await res.json(); setDeleteError(d.error ?? "Delete failed"); return; }
       setStudents((prev) => prev.filter((s) => s.student_id !== deleteTarget.student_id));
       setDeleteTarget(null);
       setDeleteConfirm("");
@@ -320,6 +324,11 @@ export default function StudentsClient({ courseId }: { courseId: string }) {
               </p>
               <p className="mt-1 text-[11px]" style={{ color: "#A32D2D" }}>การดำเนินการนี้ไม่สามารถย้อนกลับได้</p>
             </div>
+            {deleteError && (
+              <div className="rounded-lg px-3 py-2 text-[13px]" style={{ backgroundColor: "#FCEBEB", color: "#A32D2D" }}>
+                {deleteError}
+              </div>
+            )}
             <div>
               <label className="block text-[13px] font-medium text-gray-700 mb-1">
                 พิมพ์รหัสนักศึกษา <strong>{deleteTarget.student_id}</strong> เพื่อยืนยัน
@@ -332,7 +341,7 @@ export default function StudentsClient({ courseId }: { courseId: string }) {
               />
             </div>
             <div className="flex gap-3">
-              <button onClick={() => { setDeleteTarget(null); setDeleteConfirm(""); }} className="btn-outline flex-1">Cancel</button>
+              <button onClick={() => { setDeleteTarget(null); setDeleteConfirm(""); setDeleteError(""); }} className="btn-outline flex-1">Cancel</button>
               <button
                 onClick={handleDelete}
                 disabled={deleting || deleteConfirm !== deleteTarget.student_id}

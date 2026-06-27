@@ -76,7 +76,11 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [showClose, setShowClose]   = useState(false);
   const [closing, setClosing]       = useState(false);
+  const [closeError, setCloseError] = useState("");
   const [actioning, setActioning]   = useState<string | null>(null);
+  const [actionError, setActionError] = useState("");
+  const [editError, setEditError]   = useState("");
+  const [deleteError, setDeleteError] = useState("");
   const [undoToast, setUndoToast]   = useState<UndoState | null>(null);
   const [conflictDismissed, setConflictDismissed] = useState(false);
   const [conflictsExpanded, setConflictsExpanded] = useState(false);
@@ -179,13 +183,18 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
   const handleClose = async () => {
     if (!data) return;
     setClosing(true);
+    setCloseError("");
     try {
-      await fetch("/api/sheets/sessions", {
+      const res = await fetch("/api/sheets/sessions", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ session_id: sessionId, course_id: data.session.course_id, section: data.session.section }),
       });
-      localStorage.removeItem("active_session");
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        setCloseError(d.error ?? "Failed to close session");
+        return;
+      }
       router.push("/admin");
     } finally {
       setClosing(false);
@@ -214,7 +223,7 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ activate: true }),
       });
-      if (!res.ok) { alert("Failed to open Part 2"); return; }
+      if (!res.ok) { setActionError("Failed to open Part 2"); return; }
       await fetchData();
     } finally {
       setActivatingPart2(false);
@@ -230,7 +239,7 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
         body: JSON.stringify({ action }),
       });
       const d = await res.json();
-      if (!res.ok) { alert("Action failed"); return; }
+      if (!res.ok) { setActionError("Action failed"); return; }
       if (action === "mark_absent") {
         setUndoToast({ attendanceId, studentName, previousStatus: d.previousStatus ?? "present" });
       }
@@ -290,7 +299,7 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: editStatus, edit_note: editNote }),
       });
-      if (!res.ok) { alert("Edit failed"); return; }
+      if (!res.ok) { setEditError("Edit failed"); return; }
       await fetchData();
       setEditPopover(null);
     } finally {
@@ -303,7 +312,7 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
     setDeletingAtt(true);
     try {
       const res = await fetch(`/api/sheets/attendance/${deleteAttId}`, { method: "DELETE" });
-      if (!res.ok) { alert("Delete failed"); return; }
+      if (!res.ok) { setDeleteError("Delete failed"); return; }
       await fetchData();
       setDeleteAttId(null);
     } finally {
@@ -926,10 +935,9 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
       {/* Close session modal */}
       {showClose && (
         <div className="fixed inset-0 flex items-center justify-center z-50 p-4" style={{ backgroundColor: "rgba(0,0,0,0.5)" }}>
-          <div className="card max-w-sm w-full space-y-4">
-            <h3 className="font-medium text-gray-900">Close Session?</h3>
+          <div className="card max-w-sm w-full space-y-4" role="dialog" aria-modal="true" aria-labelledby="close-session-title"></h3>
             <p className="text-[13px] text-gray-600">
-              <strong>{total - present - gpsFail} students</strong> who haven&apos;t checked in will be marked <em>Absent</em>.
+              <strong>{total - present - gpsFail - absent} students</strong> who haven&apos;t checked in will be marked <em>Absent</em>.
             </p>
             <div className="flex gap-3">
               <button onClick={() => setShowClose(false)} className="btn-outline flex-1">Cancel</button>

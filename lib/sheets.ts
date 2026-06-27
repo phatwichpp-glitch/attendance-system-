@@ -502,6 +502,8 @@ export async function overrideAttendanceRecord(
   const idx = rows.findIndex((r) => r[0] === attendanceId);
   if (idx === -1) throw new Error("Attendance record not found");
 
+  const currentStatus = rows[idx][6] ?? "gps_fail";
+
   await sheets.spreadsheets.values.batchUpdate({
     spreadsheetId,
     requestBody: {
@@ -511,7 +513,7 @@ export async function overrideAttendanceRecord(
         { range: `attendance!K${idx + 2}`, values: [["TRUE"]] },
         { range: `attendance!L${idx + 2}`, values: [[overriddenAt]] },
         { range: `attendance!N${idx + 2}`, values: [[overriddenAt]] },
-        { range: `attendance!O${idx + 2}`, values: [["gps_fail"]] },
+        { range: `attendance!O${idx + 2}`, values: [[currentStatus]] },
         { range: `attendance!P${idx + 2}`, values: [["present"]] },
       ],
     },
@@ -562,28 +564,48 @@ export async function markAbsentStudents(
   section: string,
   closedAt: string
 ): Promise<void> {
-  const students = await getStudents(accessToken, spreadsheetId, courseId, section);
-  const existing = await getAttendanceForSession(accessToken, spreadsheetId, sessionId);
+  const [students, existing] = await Promise.all([
+    getStudents(accessToken, spreadsheetId, courseId, section),
+    getAttendanceForSession(accessToken, spreadsheetId, sessionId),
+  ]);
   const checkedIds = new Set(existing.map((a) => a.student_id));
 
-  for (const s of students) {
-    if (!checkedIds.has(s.student_id)) {
-      await addAttendance(accessToken, spreadsheetId, {
-        attendance_id: `${sessionId}_${s.student_id}`,
-        session_id: sessionId,
-        course_id: courseId,
-        student_id: s.student_id,
-        firstname: s.firstname,
-        lastname: s.lastname,
-        status: "absent",
-        gps_pass: false,
-        distance_m: 0,
-        checked_at: closedAt,
-        overridden: false,
-        overridden_at: "",
-      });
-    }
-  }
+  const absentStudents = students.filter((s) => !checkedIds.has(s.student_id));
+  if (absentStudents.length === 0) return;
+
+  const sheets = getSheetsClient(accessToken);
+  // Batch all absent rows into a single append call
+  await sheets.spreadsheets.values.append({
+    spreadsheetId,
+    range: "attendance!A:V",
+    valueInputOption: "RAW",
+    requestBody: {
+      values: absentStudents.map((s) => [
+        crypto.randomUUID(),
+        sessionId,
+        courseId,
+        s.student_id,
+        s.firstname,
+        s.lastname,
+        "absent",
+        "FALSE",
+        0,
+        closedAt,
+        "FALSE",
+        "",
+        "", // device_fingerprint
+        "", // edited_at
+        "", // edited_from
+        "", // edited_to
+        "", // edit_note
+        "FALSE", // is_manual_entry
+        "FALSE", // flagged
+        "", // flagged_at
+        "", // action_taken
+        "", // action_taken_at
+      ]),
+    },
+  });
 }
 
 function rowToAttendance(r: string[]): AttendanceRecord {
@@ -715,10 +737,10 @@ async function ensureAuditLogSheet(
     });
     await sheets.spreadsheets.values.update({
       spreadsheetId,
-      range: "audit_log!A1:H1",
+      range: "audit_log!A1:I1",
       valueInputOption: "RAW",
       requestBody: {
-        values: [["log_id", "timestamp", "action", "entity_type", "entity_id", "changed_from", "changed_to", "note"]],
+        values: [["log_id", "timestamp", "action", "entity_type", "entity_id", "changed_from", "changed_to", "note", "actor"]],
       },
     });
   }
@@ -728,6 +750,7 @@ export async function appendAuditLog(
   accessToken: string,
   spreadsheetId: string,
   entry: Omit<AuditLog, "log_id" | "timestamp" | "changed_from" | "changed_to"> & {
+    actor?: string;
     changed_from?: unknown;
     changed_to?: unknown;
   }
@@ -737,7 +760,7 @@ export async function appendAuditLog(
     const sheets = getSheetsClient(accessToken);
     await sheets.spreadsheets.values.append({
       spreadsheetId,
-      range: "audit_log!A:H",
+      range: "audit_log!A:I",
       valueInputOption: "RAW",
       requestBody: {
         values: [[
@@ -749,6 +772,7 @@ export async function appendAuditLog(
           typeof entry.changed_from === "string" ? entry.changed_from : JSON.stringify(entry.changed_from ?? {}),
           typeof entry.changed_to === "string" ? entry.changed_to : JSON.stringify(entry.changed_to ?? {}),
           entry.note ?? "",
+          entry.actor ?? "",
         ]],
       },
     });
@@ -777,6 +801,7 @@ export async function getAuditLog(
     changed_from: r[5] ?? "",
     changed_to: r[6] ?? "",
     note: r[7] ?? "",
+    actor: r[8] ?? "",
   }));
 
   if (filters?.entity_type) entries = entries.filter((e) => e.entity_type === filters.entity_type);
@@ -934,11 +959,13 @@ export async function deleteCourseById(
   courseId: string,
   section: string
 ): Promise<void> {
-  // Delete in safe order: attendance → sessions → students → semester_config → course
+  // Attendance must be deleted first (references sessions/students); the rest can run in parallel.
   await deleteMatchingRows(accessToken, spreadsheetId, "attendance!A2:V", (r) => r[2] === courseId);
-  await deleteMatchingRows(accessToken, spreadsheetId, "sessions!A2:U", (r) => r[1] === courseId && r[2] === section);
-  await deleteMatchingRows(accessToken, spreadsheetId, "students!A2:F", (r) => r[3] === courseId && r[4] === section);
-  await deleteMatchingRows(accessToken, spreadsheetId, "courses!A2:F", (r) => r[0] === courseId && r[2] === section);
+  await Promise.all([
+    deleteMatchingRows(accessToken, spreadsheetId, "sessions!A2:U", (r) => r[1] === courseId && r[2] === section),
+    deleteMatchingRows(accessToken, spreadsheetId, "students!A2:F", (r) => r[3] === courseId && r[4] === section),
+    deleteMatchingRows(accessToken, spreadsheetId, "courses!A2:F", (r) => r[0] === courseId && r[2] === section),
+  ]);
 
   // Semester config
   try {
@@ -1061,35 +1088,36 @@ export async function getCourseStats(
     stats[k].student_count++;
   }
 
-  const closedSessions: string[] = [];
   for (const r of sessRes.data.values ?? []) {
     const k = key(r[1] ?? "", r[2] ?? "");
     if (!stats[k]) stats[k] = { student_count: 0, session_count: 0, last_session_date: "", avg_attendance_pct: 0 };
     if (r[12]) { // closed_at
       stats[k].session_count++;
-      closedSessions.push(r[0]);
       if (!stats[k].last_session_date || r[4] > stats[k].last_session_date) {
         stats[k].last_session_date = r[4];
       }
     }
   }
 
-  // Per-course attendance % aggregation: count present+late / total records for closed sessions
-  const attCounts: Record<string, { attended: number; total: number }> = {};
-  for (const r of attRes.data.values ?? []) {
-    if (!closedSessions.includes(r[1])) continue;
-    const k = key(r[2] ?? "", ""); // no section in attendance
-    // We'll match by course_id only
-    const cid = r[2] ?? "";
-    if (!attCounts[cid]) attCounts[cid] = { attended: 0, total: 0 };
-    attCounts[cid].total++;
-    if (r[6] === "present" || r[6] === "late") attCounts[cid].attended++;
+  // Map sessionId → courseKey (course_id + section) for accurate per-section aggregation
+  const sessionKeyMap = new Map<string, string>();
+  for (const r of sessRes.data.values ?? []) {
+    if (r[12]) sessionKeyMap.set(r[0], key(r[1] ?? "", r[2] ?? ""));
   }
 
-  // Attach avg % to stats (course_id level, not course+section)
+  // Per-section attendance % aggregation
+  const attCounts: Record<string, { attended: number; total: number }> = {};
+  for (const r of attRes.data.values ?? []) {
+    const sessionKey = sessionKeyMap.get(r[1]);
+    if (!sessionKey) continue; // session not closed or not found
+    if (!attCounts[sessionKey]) attCounts[sessionKey] = { attended: 0, total: 0 };
+    attCounts[sessionKey].total++;
+    if (r[6] === "present" || r[6] === "late") attCounts[sessionKey].attended++;
+  }
+
+  // Attach avg % to stats (course+section level)
   for (const k of Object.keys(stats)) {
-    const cid = k.split("__")[0];
-    const ac = attCounts[cid];
+    const ac = attCounts[k];
     if (ac && ac.total > 0) {
       stats[k].avg_attendance_pct = Math.round((ac.attended / ac.total) * 100);
     }

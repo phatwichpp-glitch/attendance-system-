@@ -58,8 +58,8 @@ async function fetchCheckin(body: object, retries = 3): Promise<Response> {
       body: JSON.stringify(body),
     });
   } catch (e) {
-    if (retries > 1) {
-      await new Promise((r) => setTimeout(r, RETRY_DELAYS[3 - retries]));
+    if (retries > 0) {
+      await new Promise((r) => setTimeout(r, RETRY_DELAYS[RETRY_DELAYS.length - retries]));
       return fetchCheckin(body, retries - 1);
     }
     throw e;
@@ -227,8 +227,7 @@ export default function CheckClient() {
         }
       })
       .catch(() => setState("session_invalid"));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps -- intentionally runs once on mount; sessionId/otp are URL params that don't change
 
   useEffect(() => {
     if (state === "ready") setTimeout(() => inputRef.current?.focus(), 100);
@@ -303,7 +302,7 @@ export default function CheckClient() {
             <div style={CARD}>
               <div style={{ textAlign: "center", padding: "40px 0" }}>
                 <SpinEl size={32} />
-                <p style={{ fontSize: 13, color: "#9ca3af", marginTop: 14 }}>กำลังตรวจสอบ...</p>
+                <p style={{ fontSize: 13, color: "#9ca3af", marginTop: 14 }}>Verifying session...</p>
               </div>
             </div>
           )}
@@ -315,10 +314,11 @@ export default function CheckClient() {
               <p style={rTitle("#A32D2D")}>Session Closed</p>
               <p style={R_SUB}>
                 {state === "session_expired"
-                  ? "คาบเรียนนี้ปิดแล้ว หรือ OTP หมดอายุ"
-                  : isManual ? "OTP ไม่ถูกต้องหรือไม่พบคาบที่เปิดอยู่" : "QR code อาจหมดอายุหรือไม่ถูกต้อง"}
+                  ? "This session is closed or the OTP has expired."
+                  : isManual ? "OTP not found or no open session."
+                  : "QR code may have expired or is invalid."}
               </p>
-              <p style={{ ...R_SUB, marginTop: 4 }}>กรุณาติดต่ออาจารย์</p>
+              <p style={{ ...R_SUB, marginTop: 4 }}>Please contact your instructor.</p>
               {isManual && <RetryBtn onClick={reset} />}
             </div>
           )}
@@ -334,7 +334,7 @@ export default function CheckClient() {
                   borderRadius: 20, padding: "4px 12px",
                   fontSize: 11, color: "#854F0B", fontWeight: 500, marginBottom: 18,
                 }}>
-                  ● Manual Check-In · กรอก OTP จากกระดาน
+                  ● Manual Check-In · Enter OTP from the board
                 </div>
               )}
 
@@ -420,7 +420,7 @@ export default function CheckClient() {
               {result?.student && <p style={R_NAME}>{result.student.firstname} {result.student.lastname}</p>}
               {result?.checked_at && <p style={R_TIME}>{fmt(result.checked_at)}</p>}
               <p style={{ ...R_SUB, fontSize: 11, color: "#92400E", marginTop: 10 }}>
-                บันทึกเป็นสาย เนื่องจากเข้าเรียนหลังเวลาที่กำหนด
+                Marked as late — checked in after the allowed window.
               </p>
             </div>
           )}
@@ -432,10 +432,10 @@ export default function CheckClient() {
               <p style={rTitle("#854F0B")}>Location Not Verified</p>
               {result?.student && <p style={R_NAME}>{result.student.firstname} {result.student.lastname}</p>}
               <p style={{ ...R_SUB, color: "#92400E" }}>
-                ระบบบันทึกการเช็คชื่อแล้ว แต่ตำแหน่ง GPS อยู่นอกพื้นที่
+                Your check-in was recorded but your GPS location is outside the classroom zone.
               </p>
               <p style={{ ...R_SUB, color: "#92400E" }}>
-                กรุณาแจ้งอาจารย์เพื่อยืนยันการเข้าเรียน
+                Please inform your instructor to verify your attendance.
               </p>
               {result?.distance_m !== undefined && (
                 <p style={{ ...R_DIST, color: "#854F0B", fontWeight: 600, marginTop: 8 }}>
@@ -453,7 +453,7 @@ export default function CheckClient() {
               {result?.student && <p style={R_NAME}>{result.student.firstname} {result.student.lastname}</p>}
               {result?.checked_at && (
                 <p style={{ ...R_SUB, color: "#1e3a5f" }}>
-                  คุณเช็คชื่อในคาบนี้แล้ว เมื่อเวลา {fmt(result.checked_at)}
+                  You already checked in for this session at {fmt(result.checked_at)}
                 </p>
               )}
             </div>
@@ -466,7 +466,7 @@ export default function CheckClient() {
               <p style={rTitle("#854F0B")}>Already Checked In — Pending Approval</p>
               {result?.student && <p style={R_NAME}>{result.student.firstname} {result.student.lastname}</p>}
               <p style={{ ...R_SUB, color: "#92400E" }}>
-                ระบบบันทึกไว้แล้ว รออาจารย์พิจารณา GPS fail
+                Check-in recorded — awaiting instructor review for GPS fail.
               </p>
             </div>
           )}
@@ -477,10 +477,10 @@ export default function CheckClient() {
               <ResultIcon type="user" color="#A32D2D" />
               <p style={rTitle("#A32D2D")}>Student Not Found</p>
               <p style={{ ...R_SUB, color: "#7f1d1d" }}>
-                ไม่พบรหัส <span style={{ fontFamily: "monospace" }}>{studentId}</span> ในวิชานี้
+                Student ID <span style={{ fontFamily: "monospace" }}>{studentId}</span> is not enrolled in this course.
               </p>
               <p style={{ ...R_SUB, color: "#7f1d1d", marginTop: 4 }}>
-                กรุณาตรวจสอบรหัสนักศึกษา หรือติดต่ออาจารย์
+                Please double-check your ID or contact your instructor.
               </p>
               <RetryBtn onClick={reset} />
             </div>
@@ -491,7 +491,7 @@ export default function CheckClient() {
             <div style={resultCard("red")}>
               <ResultIcon type="x" color="#A32D2D" />
               <p style={rTitle("#A32D2D")}>Something Went Wrong</p>
-              <p style={{ ...R_SUB, color: "#7f1d1d" }}>เกิดข้อผิดพลาด กรุณาลองใหม่</p>
+              <p style={{ ...R_SUB, color: "#7f1d1d" }}>An error occurred. Please try again.</p>
               <RetryBtn onClick={reset} />
             </div>
           )}
@@ -518,9 +518,9 @@ function GpsRow({ status, accuracy, showHelp, onToggleHelp, onRetry }: {
   onRetry: () => void;
 }) {
   const cfg = {
-    loading: { dot: "#854F0B", bg: "#fffbeb", label: "Getting Location...", sub: "กำลังระบุตำแหน่ง กรุณารอสักครู่", pulse: true },
-    ready:   { dot: "#3B6D11", bg: "#f0fdf4", label: `Location Ready${accuracy ? `  ±${Math.round(accuracy)} m` : ""}`, sub: "พร้อมเช็คชื่อแล้ว", pulse: false },
-    denied:  { dot: "#A32D2D", bg: "#fff1f1", label: "Location Denied", sub: "กรุณาอนุญาต Location ใน Browser Settings", pulse: false },
+    loading: { dot: "#854F0B", bg: "#fffbeb", label: "Getting Location...", sub: "Locating your position, please wait", pulse: true },
+    ready:   { dot: "#3B6D11", bg: "#f0fdf4", label: `Location Ready${accuracy ? `  \u00b1${Math.round(accuracy)} m` : ""}`, sub: "Ready to check in", pulse: false },
+    denied:  { dot: "#A32D2D", bg: "#fff1f1", label: "Location Denied", sub: "Please allow Location in your browser settings", pulse: false },
   }[status];
 
   return (
@@ -540,14 +540,14 @@ function GpsRow({ status, accuracy, showHelp, onToggleHelp, onRetry }: {
                 onClick={onToggleHelp}
                 style={{ fontSize: 11, color: "#185FA5", background: "none", border: "none", cursor: "pointer", padding: 0, marginTop: 6, display: "block" }}
               >
-                วิธีเปิด Location →
+                How to enable location access →
               </button>
               {showHelp && (
                 <div style={{ marginTop: 8, padding: "10px 12px", backgroundColor: "white", borderRadius: 8, border: "0.5px solid #e5e7eb", fontSize: 11, color: "#374151", lineHeight: 1.7 }}>
-                  <strong>วิธีเปิด Location Access:</strong><br />
-                  • Chrome: แถบ URL → ไอคอน 🔒 → Site settings → Location → Allow<br />
+                  <strong>How to allow location access:</strong><br />
+                  • Chrome: Address bar → 🔒 icon → Site settings → Location → Allow<br />
                   • Safari: Settings → Safari → Location → Allow<br />
-                  • Firefox: ไอคอน 🔒 → Allow Location Access
+                  • Firefox: 🔒 icon → Allow Location Access
                 </div>
               )}
               <button
