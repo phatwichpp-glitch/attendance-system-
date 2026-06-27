@@ -12,6 +12,11 @@ export default auth((req) => {
     return NextResponse.redirect(new URL("/login", req.url));
   }
 
+  // refresh_token หมดอายุหรือถูก revoke → บังคับ re-login
+  if (isLoggedIn && (req.auth as { error?: string })?.error === "RefreshTokenError" && !isPublic) {
+    return NextResponse.redirect(new URL("/login", req.url));
+  }
+
   return NextResponse.next();
 });
 
