@@ -2,7 +2,7 @@
 import { useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Spinner from "@/components/Spinner";
-import { IconUpload, IconCheck, IconChevronDown } from "@/components/icons";
+import { IconUpload, IconCheck } from "@/components/icons";
 import {
   parseAttendanceXlsx,
   parseGenericFile,
@@ -11,9 +11,34 @@ import {
   ParsedImport,
   GenericFileData,
 } from "@/lib/xlsx-parser";
-import { PERIODS, DAY_NAMES, TeachingDay } from "@/types";
+import { DAY_NAMES, TeachingDay } from "@/types";
 
 const DAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+// Time helpers for period scheduling
+const PERIOD_STARTS: Record<string, string> = {
+  "1": "08:00", "2": "09:30", "3": "11:00",
+  "4": "13:00", "5": "14:30", "6": "16:00",
+};
+
+function addMinutes(hhmm: string, minutes: number): string {
+  const [h, m] = hhmm.split(":").map(Number);
+  const total = h * 60 + m + minutes;
+  return `${String(Math.floor(total / 60) % 24).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+}
+
+function nearestPeriod(hhmm: string): string {
+  const [h, m] = hhmm.split(":").map(Number);
+  const totalMin = h * 60 + m;
+  let best = "1";
+  let bestDiff = Infinity;
+  for (const [p, t] of Object.entries(PERIOD_STARTS)) {
+    const [ph, pm] = t.split(":").map(Number);
+    const diff = Math.abs(ph * 60 + pm - totalMin);
+    if (diff < bestDiff) { bestDiff = diff; best = p; }
+  }
+  return best;
+}
 
 type WizardStep = "upload" | "mapper" | "preview" | "semester" | "done" | "error";
 
@@ -28,8 +53,8 @@ const DEFAULT_SEMESTER = {
   semester_start: "",
   total_weeks: 15,
   teaching_days: [] as number[],
-  day_periods: {} as Record<number, string>,
-  day_period_end: {} as Record<number, string>,
+  day_start_time: {} as Record<number, string>,         // HH:MM actual class start
+  day_end_time:   {} as Record<number, string>,         // HH:MM actual class end (auto or override)
   day_period_count: {} as Record<number, 1 | 2>,        // 1 (default) or 2
   day_check_in_mode: {} as Record<number, "single" | "double">, // for double-period days
   default_gps_radius: 200,
@@ -97,15 +122,17 @@ export default function ImportClient() {
     try {
       const teaching_schedule: TeachingDay[] = semester.teaching_days.map((d) => {
         const pc = semester.day_period_count[d] ?? 1;
-        const startNum = parseInt(semester.day_periods[d] ?? "1", 10);
-        const endNum = pc >= 2
-          ? parseInt(semester.day_period_end[d] ?? String(Math.min(startNum + 1, 6)), 10)
-          : undefined;
+        const startTime = semester.day_start_time[d] ?? PERIOD_STARTS["2"];
+        const endTime = semester.day_end_time[d] ?? addMinutes(startTime, pc >= 2 ? 180 : 90);
+        const derivedPeriod = nearestPeriod(startTime);
+        const derivedPeriodEnd = pc >= 2 ? parseInt(nearestPeriod(endTime), 10) : undefined;
         return {
           day: d,
-          period: semester.day_periods[d] ?? "1",
-          period_end: endNum,
+          period: derivedPeriod,
+          period_end: derivedPeriodEnd,
           period_count: pc,
+          start_time: startTime,
+          end_time: endTime,
           check_in_mode: pc >= 2 ? (semester.day_check_in_mode[d] ?? "single") : undefined,
         };
       });
@@ -435,60 +462,33 @@ export default function ImportClient() {
                   const cim = semester.day_check_in_mode[d] ?? "single";
                   return (
                     <div key={d} className="rounded-lg p-3 space-y-3" style={{ border: "0.5px solid rgba(0,0,0,0.1)", backgroundColor: "#f9fafb" }}>
-                      <div className="flex items-center gap-3">
+                      {/* Time range inputs */}
+                      <div className="flex items-center gap-2">
                         <span className="text-[13px] font-medium w-24 flex-shrink-0" style={{ color: "#5F5E5A" }}>{DAY_NAMES[d]}</span>
-                        {pc === 1 ? (
-                          <select
-                            className="input text-[13px] flex-1"
-                            value={semester.day_periods[d] ?? "1"}
-                            onChange={(e) => setSemester((s) => ({
+                        <input
+                          type="time"
+                          className="input text-[13px] flex-1"
+                          value={semester.day_start_time[d] ?? PERIOD_STARTS["2"]}
+                          onChange={(e) => {
+                            const startTime = e.target.value;
+                            const endTime = addMinutes(startTime, pc === 1 ? 90 : 180);
+                            setSemester((s) => ({
                               ...s,
-                              day_periods: { ...s.day_periods, [d]: e.target.value },
-                            }))}
-                          >
-                            {PERIODS.map((p) => (
-                              <option key={p.value} value={p.value}>Period {p.value} — {p.label}</option>
-                            ))}
-                          </select>
-                        ) : (
-                          <>
-                            <select
-                              className="input text-[13px] flex-1"
-                              value={semester.day_periods[d] ?? "1"}
-                              onChange={(e) => {
-                                const newStart = e.target.value;
-                                const startNum = parseInt(newStart, 10);
-                                const currentEnd = semester.day_period_end[d];
-                                const endNum = parseInt(currentEnd ?? String(startNum + 1), 10);
-                                const newEnd = endNum <= startNum
-                                  ? String(Math.min(startNum + 1, 6))
-                                  : String(endNum);
-                                setSemester((s) => ({
-                                  ...s,
-                                  day_periods: { ...s.day_periods, [d]: newStart },
-                                  day_period_end: { ...s.day_period_end, [d]: newEnd },
-                                }));
-                              }}
-                            >
-                              {PERIODS.filter((p) => parseInt(p.value, 10) <= 5).map((p) => (
-                                <option key={p.value} value={p.value}>คาบ {p.value} ({p.label.split("(")[1].replace(")", "").split("–")[0].trim()})</option>
-                              ))}
-                            </select>
-                            <span className="text-[13px] flex-shrink-0" style={{ color: "#9ca3af" }}>–</span>
-                            <select
-                              className="input text-[13px] flex-1"
-                              value={semester.day_period_end[d] ?? String(Math.min(parseInt(semester.day_periods[d] ?? "1", 10) + 1, 6))}
-                              onChange={(e) => setSemester((s) => ({
-                                ...s,
-                                day_period_end: { ...s.day_period_end, [d]: e.target.value },
-                              }))}
-                            >
-                              {PERIODS.filter((p) => parseInt(p.value, 10) > parseInt(semester.day_periods[d] ?? "1", 10)).map((p) => (
-                                <option key={p.value} value={p.value}>คาบ {p.value} ({p.label.split("(")[1].replace(")", "").split("–")[1].trim()})</option>
-                              ))}
-                            </select>
-                          </>
-                        )}
+                              day_start_time: { ...s.day_start_time, [d]: startTime },
+                              day_end_time:   { ...s.day_end_time,   [d]: endTime },
+                            }));
+                          }}
+                        />
+                        <span className="text-[13px] flex-shrink-0" style={{ color: "#9ca3af" }}>–</span>
+                        <input
+                          type="time"
+                          className="input text-[13px] flex-1"
+                          value={semester.day_end_time[d] ?? addMinutes(semester.day_start_time[d] ?? PERIOD_STARTS["2"], pc === 1 ? 90 : 180)}
+                          onChange={(e) => setSemester((s) => ({
+                            ...s,
+                            day_end_time: { ...s.day_end_time, [d]: e.target.value },
+                          }))}
+                        />
                       </div>
                       {/* Period duration */}
                       <div className="flex gap-2">
@@ -496,10 +496,15 @@ export default function ImportClient() {
                           <button
                             key={n}
                             type="button"
-                            onClick={() => setSemester((s) => ({
-                              ...s,
-                              day_period_count: { ...s.day_period_count, [d]: n },
-                            }))}
+                            onClick={() => {
+                              const startTime = semester.day_start_time[d] ?? PERIOD_STARTS["2"];
+                              const newEndTime = addMinutes(startTime, n === 1 ? 90 : 180);
+                              setSemester((s) => ({
+                                ...s,
+                                day_period_count: { ...s.day_period_count, [d]: n },
+                                day_end_time:     { ...s.day_end_time, [d]: newEndTime },
+                              }));
+                            }}
                             className="flex-1 rounded-lg text-[12px] font-medium transition-colors"
                             style={{
                               padding: "6px 0",
@@ -629,6 +634,3 @@ function SemesterSlider({ label, value, min, max, step, unit, onChange }: {
   );
 }
 
-// Suppress unused import warning
-const _unused = IconChevronDown;
-void _unused;

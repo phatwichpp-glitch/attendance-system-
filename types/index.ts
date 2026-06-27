@@ -130,10 +130,12 @@ export const DEFAULT_SETTINGS: Settings = {
 // Part 1 / Part 2 — Semester Config
 export interface TeachingDay {
   day: number;            // 0 = Sunday … 6 = Saturday
-  period: string;         // "1"–"6" start period
-  period_end?: number;    // end period for double periods (single check-in mode)
+  period: string;         // "1"–"6" nearest period label (derived from start_time)
+  period_end?: number;    // end period for double periods
   period_count?: number;  // 1 (default) or 2
   check_in_mode?: "single" | "double";
+  start_time?: string;    // "HH:MM" actual class start (may differ from standard period)
+  end_time?: string;      // "HH:MM" actual class end
 }
 
 export interface SemesterConfig {
