@@ -29,6 +29,7 @@ const DEFAULT_SEMESTER = {
   total_weeks: 15,
   teaching_days: [] as number[],
   day_periods: {} as Record<number, string>,
+  day_period_end: {} as Record<number, string>,
   day_period_count: {} as Record<number, 1 | 2>,        // 1 (default) or 2
   day_check_in_mode: {} as Record<number, "single" | "double">, // for double-period days
   default_gps_radius: 200,
@@ -94,12 +95,20 @@ export default function ImportClient() {
     if (!parsed) return;
     setSubmitting(true);
     try {
-      const teaching_schedule: TeachingDay[] = semester.teaching_days.map((d) => ({
-        day: d,
-        period: semester.day_periods[d] ?? "1",
-        period_count: semester.day_period_count[d] ?? 1,
-        check_in_mode: (semester.day_period_count[d] ?? 1) >= 2 ? (semester.day_check_in_mode[d] ?? "single") : undefined,
-      }));
+      const teaching_schedule: TeachingDay[] = semester.teaching_days.map((d) => {
+        const pc = semester.day_period_count[d] ?? 1;
+        const startNum = parseInt(semester.day_periods[d] ?? "1", 10);
+        const endNum = pc >= 2
+          ? parseInt(semester.day_period_end[d] ?? String(Math.min(startNum + 1, 6)), 10)
+          : undefined;
+        return {
+          day: d,
+          period: semester.day_periods[d] ?? "1",
+          period_end: endNum,
+          period_count: pc,
+          check_in_mode: pc >= 2 ? (semester.day_check_in_mode[d] ?? "single") : undefined,
+        };
+      });
       const body = {
         ...parsed,
         semester_config: semester.semester_start ? {
@@ -427,19 +436,59 @@ export default function ImportClient() {
                   return (
                     <div key={d} className="rounded-lg p-3 space-y-3" style={{ border: "0.5px solid rgba(0,0,0,0.1)", backgroundColor: "#f9fafb" }}>
                       <div className="flex items-center gap-3">
-                        <span className="text-[13px] font-medium w-24" style={{ color: "#5F5E5A" }}>{DAY_NAMES[d]}</span>
-                        <select
-                          className="input text-[13px] flex-1"
-                          value={semester.day_periods[d] ?? "1"}
-                          onChange={(e) => setSemester((s) => ({
-                            ...s,
-                            day_periods: { ...s.day_periods, [d]: e.target.value },
-                          }))}
-                        >
-                          {PERIODS.map((p) => (
-                            <option key={p.value} value={p.value}>Period {p.value} — {p.label}</option>
-                          ))}
-                        </select>
+                        <span className="text-[13px] font-medium w-24 flex-shrink-0" style={{ color: "#5F5E5A" }}>{DAY_NAMES[d]}</span>
+                        {pc === 1 ? (
+                          <select
+                            className="input text-[13px] flex-1"
+                            value={semester.day_periods[d] ?? "1"}
+                            onChange={(e) => setSemester((s) => ({
+                              ...s,
+                              day_periods: { ...s.day_periods, [d]: e.target.value },
+                            }))}
+                          >
+                            {PERIODS.map((p) => (
+                              <option key={p.value} value={p.value}>Period {p.value} — {p.label}</option>
+                            ))}
+                          </select>
+                        ) : (
+                          <>
+                            <select
+                              className="input text-[13px] flex-1"
+                              value={semester.day_periods[d] ?? "1"}
+                              onChange={(e) => {
+                                const newStart = e.target.value;
+                                const startNum = parseInt(newStart, 10);
+                                const currentEnd = semester.day_period_end[d];
+                                const endNum = parseInt(currentEnd ?? String(startNum + 1), 10);
+                                const newEnd = endNum <= startNum
+                                  ? String(Math.min(startNum + 1, 6))
+                                  : String(endNum);
+                                setSemester((s) => ({
+                                  ...s,
+                                  day_periods: { ...s.day_periods, [d]: newStart },
+                                  day_period_end: { ...s.day_period_end, [d]: newEnd },
+                                }));
+                              }}
+                            >
+                              {PERIODS.filter((p) => parseInt(p.value, 10) <= 5).map((p) => (
+                                <option key={p.value} value={p.value}>คาบ {p.value} ({p.label.split("(")[1].replace(")", "").split("–")[0].trim()})</option>
+                              ))}
+                            </select>
+                            <span className="text-[13px] flex-shrink-0" style={{ color: "#9ca3af" }}>–</span>
+                            <select
+                              className="input text-[13px] flex-1"
+                              value={semester.day_period_end[d] ?? String(Math.min(parseInt(semester.day_periods[d] ?? "1", 10) + 1, 6))}
+                              onChange={(e) => setSemester((s) => ({
+                                ...s,
+                                day_period_end: { ...s.day_period_end, [d]: e.target.value },
+                              }))}
+                            >
+                              {PERIODS.filter((p) => parseInt(p.value, 10) > parseInt(semester.day_periods[d] ?? "1", 10)).map((p) => (
+                                <option key={p.value} value={p.value}>คาบ {p.value} ({p.label.split("(")[1].replace(")", "").split("–")[1].trim()})</option>
+                              ))}
+                            </select>
+                          </>
+                        )}
                       </div>
                       {/* Period duration */}
                       <div className="flex gap-2">

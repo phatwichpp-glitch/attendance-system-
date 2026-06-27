@@ -130,7 +130,8 @@ export const DEFAULT_SETTINGS: Settings = {
 // Part 1 / Part 2 — Semester Config
 export interface TeachingDay {
   day: number;            // 0 = Sunday … 6 = Saturday
-  period: string;         // "1"–"6"
+  period: string;         // "1"–"6" start period
+  period_end?: number;    // end period for double periods (single check-in mode)
   period_count?: number;  // 1 (default) or 2
   check_in_mode?: "single" | "double";
 }
