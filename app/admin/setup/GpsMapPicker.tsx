@@ -123,8 +123,8 @@ export default function GpsMapPicker({ lat, lng, radiusM, disabled, onUseCurrent
   };
 
   return (
-    <div className="space-y-2">
-      <form onSubmit={handleSearch} className="flex gap-2">
+    <div className="space-y-3">
+      <form onSubmit={handleSearch} className="grid grid-cols-1 md:grid-cols-[1fr_auto_auto] gap-2">
         <input
           className="input text-[12px]"
           value={query}
@@ -135,30 +135,30 @@ export default function GpsMapPicker({ lat, lng, radiusM, disabled, onUseCurrent
         <button type="submit" className="btn-outline text-[12px] px-3" disabled={disabled || searching}>
           {searching ? "Searching..." : "Search"}
         </button>
-      </form>
 
-      {onUseCurrentLocation && (
-        <button
-          type="button"
-          className="btn-outline text-[12px] px-3"
-          onClick={onUseCurrentLocation}
-          disabled={disabled || searching}
-        >
-          Use Current Location
-        </button>
-      )}
+        {onUseCurrentLocation && (
+          <button
+            type="button"
+            className="btn-outline text-[12px] px-3"
+            onClick={onUseCurrentLocation}
+            disabled={disabled || searching}
+          >
+            Use Current Location
+          </button>
+        )}
+      </form>
 
       {searchError && (
         <p className="text-[11px]" style={{ color: "#854F0B" }}>{searchError}</p>
       )}
 
       {results.length > 0 && (
-        <div className="rounded-lg" style={{ border: "0.5px solid rgba(0,0,0,0.08)", maxHeight: 140, overflowY: "auto" }}>
+        <div className="rounded-lg" style={{ border: "0.5px solid rgba(0,0,0,0.08)", maxHeight: 150, overflowY: "auto" }}>
           {results.map((r, idx) => (
             <button
               key={`${r.lat}-${r.lon}-${idx}`}
               type="button"
-              className="w-full text-left px-3 py-2 text-[11px] hover:bg-gray-50"
+              className="w-full text-left px-3 py-2 text-[11px] transition-colors hover:bg-gray-50"
               style={{ borderTop: idx === 0 ? "none" : "0.5px solid rgba(0,0,0,0.06)" }}
               onClick={() => {
                 setResults([]);
@@ -176,7 +176,7 @@ export default function GpsMapPicker({ lat, lng, radiusM, disabled, onUseCurrent
         center={[center.lat, center.lng]}
         zoom={hasValidCoords ? 18 : 13}
         scrollWheelZoom
-        className="h-64 w-full rounded-lg"
+        className="h-56 md:h-64 w-full rounded-lg"
         style={{ border: "0.5px solid rgba(0,0,0,0.1)", zIndex: 0 }}
       >
         <TileLayer
@@ -199,12 +199,12 @@ export default function GpsMapPicker({ lat, lng, radiusM, disabled, onUseCurrent
         />
       </MapContainer>
 
-      <p className="text-[11px] text-gray-500">
+      <p className="text-[11px] leading-relaxed text-gray-500">
         Search in Thailand, use current location, or click directly on map to set classroom point.
       </p>
 
       {hasValidCoords && (
-        <div className="rounded-lg px-3 py-2 text-[11px]" style={{ backgroundColor: "#f9fafb", border: "0.5px solid rgba(0,0,0,0.08)" }}>
+        <div className="rounded-lg px-3 py-2 text-[11px]" style={{ backgroundColor: "#f8fafc", border: "0.5px solid rgba(0,0,0,0.08)" }}>
           <p className="font-medium text-gray-700 mb-1">Selected Address</p>
           {addressLoading ? (
             <p className="text-gray-500">Resolving address...</p>

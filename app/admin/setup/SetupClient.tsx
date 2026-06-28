@@ -199,7 +199,7 @@ export default function SetupClient() {
         </div>
       )}
 
-      <div className="md:grid md:grid-cols-2 md:gap-4 space-y-4 md:space-y-0">
+      <div className="grid grid-cols-1 xl:grid-cols-[minmax(360px,430px)_minmax(420px,1fr)] gap-4 items-start">
         {/* Left: Course + Date + Week */}
         <div className="space-y-4">
           <div className="card space-y-4">
@@ -395,9 +395,9 @@ export default function SetupClient() {
         {/* Right: GPS + Settings (hidden for past session) */}
         <div className="space-y-4">
           {!isPast && (
-            <div className="card space-y-3">
+            <div className="card space-y-4">
               <div className="flex items-center justify-between">
-                <h3 className="font-medium text-gray-900 flex items-center gap-2">
+                <h3 className="font-semibold text-gray-900 flex items-center gap-2">
                   <IconLocation size={14} className="text-[#185FA5]" /> GPS Location
                 </h3>
                 <button onClick={detectGps} className="btn-outline text-[13px] px-3" style={{ minHeight: 36 }}>
@@ -411,12 +411,16 @@ export default function SetupClient() {
               ) : gps.error ? (
                 <p className="text-[13px]" style={{ color: "#A32D2D" }}>ไม่สามารถรับ GPS: {gps.error}</p>
               ) : (
-                <div className="space-y-2">
-                  <p className="text-[11px] font-mono text-gray-600">{gps.lat.toFixed(6)}, {gps.lng.toFixed(6)}</p>
-                  <p className="text-[11px]" style={{ color: gpsSource === "map" ? "#185FA5" : "#5F5E5A" }}>
-                    Source: {gpsSource === "map" ? "Map selection" : "Device GPS"}
-                  </p>
-                  <div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  <div className="rounded-lg px-3 py-2" style={{ backgroundColor: "#f8fafc", border: "0.5px solid rgba(0,0,0,0.08)" }}>
+                    <p className="text-[10px] uppercase tracking-wide text-gray-500 mb-1">Coordinates</p>
+                    <p className="text-[11px] font-mono text-gray-700 leading-relaxed">{gps.lat.toFixed(6)}, {gps.lng.toFixed(6)}</p>
+                    <p className="text-[11px] mt-1" style={{ color: gpsSource === "map" ? "#185FA5" : "#5F5E5A" }}>
+                      Source: {gpsSource === "map" ? "Map selection" : "Device GPS"}
+                    </p>
+                  </div>
+
+                  <div className="rounded-lg px-3 py-2" style={{ backgroundColor: "#f8fafc", border: "0.5px solid rgba(0,0,0,0.08)" }}>
                     <div className="flex justify-between text-[11px] mb-1" style={{ color: "#5F5E5A" }}>
                       <span>Accuracy</span>
                       <span style={{ color: accColor }}>{Math.round(gps.accuracy)} m</span>
@@ -440,17 +444,21 @@ export default function SetupClient() {
           )}
 
           <div className="card space-y-4">
-            <h3 className="font-medium text-gray-900">Settings</h3>
+            <h3 className="font-semibold text-gray-900">Settings</h3>
             {semesterConfig && (
               <p className="text-[11px]" style={{ color: "#185FA5" }}>Auto-filled from semester config</p>
             )}
-            <Slider label="GPS Radius" value={settings.radius_m} min={50} max={500} step={10} unit="m"
-              onChange={(v) => setSettings((s) => ({ ...s, radius_m: v }))} />
-            <Slider label="OTP Expires After" value={settings.otp_expire_min} min={5} max={60} step={5} unit="min"
-              onChange={(v) => setSettings((s) => ({ ...s, otp_expire_min: v }))} />
-            <Slider label="Late After" value={settings.late_after_min} min={5} max={30} step={5} unit="min"
-              onChange={(v) => setSettings((s) => ({ ...s, late_after_min: v }))} />
-            <div className="space-y-3 pt-3 border-t border-gray-100">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <Slider label="GPS Radius" value={settings.radius_m} min={50} max={500} step={10} unit="m"
+                onChange={(v) => setSettings((s) => ({ ...s, radius_m: v }))} />
+              <Slider label="OTP Expires After" value={settings.otp_expire_min} min={5} max={60} step={5} unit="min"
+                onChange={(v) => setSettings((s) => ({ ...s, otp_expire_min: v }))} />
+              <div className="md:col-span-2">
+                <Slider label="Late After" value={settings.late_after_min} min={5} max={30} step={5} unit="min"
+                  onChange={(v) => setSettings((s) => ({ ...s, late_after_min: v }))} />
+              </div>
+            </div>
+            <div className="space-y-2 pt-3 border-t border-gray-100">
               <Toggle label="Save GPS fail check-ins" checked={settings.save_gps_fail}
                 onChange={(v) => setSettings((s) => ({ ...s, save_gps_fail: v }))} />
               <Toggle label="Warn on low GPS accuracy (>100m)" checked={settings.warn_low_accuracy}
