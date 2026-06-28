@@ -392,71 +392,63 @@ export default function SetupClient() {
           </div>
         </div>
 
-        {/* Right: GPS + Settings (hidden for past session) */}
+        {/* Right: GPS + Settings */}
         <div className="space-y-4">
-          {!isPast && (
-            <div className="card space-y-4">
-              <div className="flex items-center justify-between">
-                <h3 className="font-semibold text-gray-900 flex items-center gap-2">
-                  <IconLocation size={14} className="text-[#185FA5]" /> GPS Location
-                </h3>
-                <button onClick={detectGps} className="btn-outline text-[13px] px-3" style={{ minHeight: 36 }}>
-                  <IconRefresh size={13} /> Refresh
-                </button>
-              </div>
-              {gps.loading ? (
-                <div className="flex items-center gap-2 text-[13px] text-gray-500">
-                  <Spinner className="h-4 w-4" /> กำลังหาตำแหน่ง...
+          <div className="card space-y-4 h-full">
+            {!isPast && (
+              <>
+                <div className="flex items-center justify-between">
+                  <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+                    <IconLocation size={14} className="text-[#185FA5]" /> GPS Location
+                  </h3>
+                  <button onClick={detectGps} className="btn-outline text-[13px] px-3" style={{ minHeight: 36 }}>
+                    <IconRefresh size={13} /> Refresh
+                  </button>
                 </div>
-              ) : gps.error ? (
-                <p className="text-[13px]" style={{ color: "#A32D2D" }}>ไม่สามารถรับ GPS: {gps.error}</p>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                  <div className="rounded-lg px-3 py-2" style={{ backgroundColor: "#f8fafc", border: "0.5px solid rgba(0,0,0,0.08)" }}>
-                    <p className="text-[10px] uppercase tracking-wide text-gray-500 mb-1">Coordinates</p>
-                    <p className="text-[11px] font-mono text-gray-700 leading-relaxed">{gps.lat.toFixed(6)}, {gps.lng.toFixed(6)}</p>
-                    <p className="text-[11px] mt-1" style={{ color: gpsSource === "map" ? "#185FA5" : "#5F5E5A" }}>
-                      Source: {gpsSource === "map" ? "Map selection" : "Device GPS"}
-                    </p>
+                {gps.loading ? (
+                  <div className="flex items-center gap-2 text-[13px] text-gray-500">
+                    <Spinner className="h-4 w-4" /> กำลังหาตำแหน่ง...
                   </div>
-
-                  <div className="rounded-lg px-3 py-2" style={{ backgroundColor: "#f8fafc", border: "0.5px solid rgba(0,0,0,0.08)" }}>
-                    <div className="flex justify-between text-[11px] mb-1" style={{ color: "#5F5E5A" }}>
-                      <span>Accuracy</span>
-                      <span style={{ color: accColor }}>{Math.round(gps.accuracy)} m</span>
+                ) : gps.error ? (
+                  <p className="text-[13px]" style={{ color: "#A32D2D" }}>ไม่สามารถรับ GPS: {gps.error}</p>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    <div className="rounded-lg px-3 py-2" style={{ backgroundColor: "#f8fafc", border: "0.5px solid rgba(0,0,0,0.08)" }}>
+                      <p className="text-[10px] uppercase tracking-wide text-gray-500 mb-1">Coordinates</p>
+                      <p className="text-[11px] font-mono text-gray-700 leading-relaxed">{gps.lat.toFixed(6)}, {gps.lng.toFixed(6)}</p>
+                      <p className="text-[11px] mt-1" style={{ color: gpsSource === "map" ? "#185FA5" : "#5F5E5A" }}>
+                        Source: {gpsSource === "map" ? "Map selection" : "Device GPS"}
+                      </p>
                     </div>
-                    <div className="h-2 rounded-full" style={{ backgroundColor: "#e5e7eb" }}>
-                      <div className="h-full rounded-full transition-all" style={{ width: `${accWidth}%`, backgroundColor: accColor }} />
+
+                    <div className="rounded-lg px-3 py-2" style={{ backgroundColor: "#f8fafc", border: "0.5px solid rgba(0,0,0,0.08)" }}>
+                      <div className="flex justify-between text-[11px] mb-1" style={{ color: "#5F5E5A" }}>
+                        <span>Accuracy</span>
+                        <span style={{ color: accColor }}>{Math.round(gps.accuracy)} m</span>
+                      </div>
+                      <div className="h-2 rounded-full" style={{ backgroundColor: "#e5e7eb" }}>
+                        <div className="h-full rounded-full transition-all" style={{ width: `${accWidth}%`, backgroundColor: accColor }} />
+                      </div>
                     </div>
                   </div>
-                </div>
-              )}
+                )}
+                <div className="h-px" style={{ backgroundColor: "rgba(0,0,0,0.08)" }} />
+              </>
+            )}
 
-              <GpsMapPicker
-                lat={gps.lat}
-                lng={gps.lng}
-                radiusM={settings.radius_m}
-                disabled={gps.loading}
-                onUseCurrentLocation={detectGps}
-                onPick={handleMapPick}
-              />
-            </div>
-          )}
-
-          <div className="card space-y-4">
             <h3 className="font-semibold text-gray-900">Settings</h3>
             {semesterConfig && (
               <p className="text-[11px]" style={{ color: "#185FA5" }}>Auto-filled from semester config</p>
             )}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="space-y-3">
               <Slider label="GPS Radius" value={settings.radius_m} min={50} max={500} step={10} unit="m"
                 onChange={(v) => setSettings((s) => ({ ...s, radius_m: v }))} />
+              <div className="h-px" style={{ backgroundColor: "rgba(0,0,0,0.08)" }} />
               <Slider label="OTP Expires After" value={settings.otp_expire_min} min={5} max={60} step={5} unit="min"
                 onChange={(v) => setSettings((s) => ({ ...s, otp_expire_min: v }))} />
-              <div className="md:col-span-2">
-                <Slider label="Late After" value={settings.late_after_min} min={5} max={30} step={5} unit="min"
-                  onChange={(v) => setSettings((s) => ({ ...s, late_after_min: v }))} />
-              </div>
+              <div className="h-px" style={{ backgroundColor: "rgba(0,0,0,0.08)" }} />
+              <Slider label="Late After" value={settings.late_after_min} min={5} max={30} step={5} unit="min"
+                onChange={(v) => setSettings((s) => ({ ...s, late_after_min: v }))} />
             </div>
             <div className="space-y-2 pt-3 border-t border-gray-100">
               <Toggle label="Save GPS fail check-ins" checked={settings.save_gps_fail}
@@ -469,6 +461,20 @@ export default function SetupClient() {
           </div>
         </div>
       </div>
+
+      {!isPast && (
+        <div className="card space-y-4">
+          <h3 className="font-semibold text-gray-900">Classroom Map</h3>
+          <GpsMapPicker
+            lat={gps.lat}
+            lng={gps.lng}
+            radiusM={settings.radius_m}
+            disabled={gps.loading}
+            onUseCurrentLocation={detectGps}
+            onPick={handleMapPick}
+          />
+        </div>
+      )}
 
       {setupError && (
         <div className="rounded-lg px-4 py-3 text-[13px]" style={{ backgroundColor: "#FCEBEB", color: "#A32D2D" }}>
