@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
+import dynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
 import Spinner from "@/components/Spinner";
 import { IconLocation, IconRefresh, IconWarning } from "@/components/icons";
@@ -7,6 +8,11 @@ import { Course, Settings, PERIODS, DEFAULT_SETTINGS, SemesterConfig } from "@/t
 import { loadSettings, saveSettings } from "@/lib/settings";
 import { getWeekLabel } from "@/lib/week-utils";
 import { getPeriodLabel, calcPeriodEnd } from "@/lib/period-utils";
+
+const GpsMapPicker = dynamic(() => import("./GpsMapPicker"), {
+  ssr: false,
+  loading: () => <div className="h-64 rounded-lg" style={{ backgroundColor: "#f3f4f6" }} />,
+});
 
 interface GpsState {
   lat: number; lng: number; accuracy: number; loading: boolean; error: string;
@@ -27,6 +33,7 @@ export default function SetupClient() {
   const [checkInMode, setCheckInMode] = useState<"single" | "double">("single");
   const [settings, setSettings] = useState<Settings>({ ...DEFAULT_SETTINGS });
   const [gps, setGps] = useState<GpsState>({ lat: 0, lng: 0, accuracy: 0, loading: true, error: "" });
+  const [gpsSource, setGpsSource] = useState<"device" | "map">("device");
   const [submitting, setSubmitting] = useState(false);
   const [setupError, setSetupError] = useState("");
   const [showGpsWarn, setShowGpsWarn] = useState(false);
@@ -97,6 +104,7 @@ export default function SetupClient() {
   }, [sessionDate, semesterConfig]);
 
   const detectGps = useCallback(() => {
+    setGpsSource("device");
     setGps((g) => ({ ...g, loading: true, error: "" }));
     navigator.geolocation.getCurrentPosition(
       (pos) => setGps({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy, loading: false, error: "" }),
@@ -176,6 +184,12 @@ export default function SetupClient() {
   const periodEnd = periodCount >= 2 ? calcPeriodEnd(periodNum, periodCount) : undefined;
   const periodRangeLabel = getPeriodLabel(periodNum, periodEnd);
   const periodEndWarning = periodCount >= 2 && !periodEnd;
+  const hasValidGps = Number.isFinite(gps.lat) && Number.isFinite(gps.lng) && (gps.lat !== 0 || gps.lng !== 0);
+
+  const handleMapPick = ({ lat, lng }: { lat: number; lng: number }) => {
+    setGpsSource("map");
+    setGps({ lat, lng, accuracy: 0, loading: false, error: "" });
+  };
 
   return (
     <div className="space-y-4">
@@ -399,6 +413,9 @@ export default function SetupClient() {
               ) : (
                 <div className="space-y-2">
                   <p className="text-[11px] font-mono text-gray-600">{gps.lat.toFixed(6)}, {gps.lng.toFixed(6)}</p>
+                  <p className="text-[11px]" style={{ color: gpsSource === "map" ? "#185FA5" : "#5F5E5A" }}>
+                    Source: {gpsSource === "map" ? "Map selection" : "Device GPS"}
+                  </p>
                   <div>
                     <div className="flex justify-between text-[11px] mb-1" style={{ color: "#5F5E5A" }}>
                       <span>Accuracy</span>
@@ -410,6 +427,15 @@ export default function SetupClient() {
                   </div>
                 </div>
               )}
+
+              <GpsMapPicker
+                lat={gps.lat}
+                lng={gps.lng}
+                radiusM={settings.radius_m}
+                disabled={gps.loading}
+                onUseCurrentLocation={detectGps}
+                onPick={handleMapPick}
+              />
             </div>
           )}
 
@@ -444,7 +470,12 @@ export default function SetupClient() {
 
       <button
         onClick={handleSubmit}
-        disabled={submitting || !courseKey || (!isPast && gps.loading) || (periodCount >= 2 && !!periodEndWarning)}
+        disabled={
+          submitting ||
+          !courseKey ||
+          (!isPast && (gps.loading || !hasValidGps)) ||
+          (periodCount >= 2 && !!periodEndWarning)
+        }
         className="btn-primary w-full py-3 text-[13px]"
       >
         {submitting
@@ -455,6 +486,12 @@ export default function SetupClient() {
               ? "Open Double Period (Part 1) & Generate OTP"
               : "Open Session & Generate OTP"}
       </button>
+
+      {!isPast && !gps.loading && !hasValidGps && (
+        <div className="rounded-lg px-4 py-3 text-[12px]" style={{ backgroundColor: "#FEF9EC", color: "#854F0B" }}>
+          Please pick a classroom location on map or refresh device GPS before opening session.
+        </div>
+      )}
 
       {showGpsWarn && (
         <div className="fixed inset-0 flex items-center justify-center z-50 p-4" style={{ backgroundColor: "rgba(0,0,0,0.5)" }}>
