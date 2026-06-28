@@ -199,10 +199,9 @@ export default function SetupClient() {
         </div>
       )}
 
-      <div className={`grid grid-cols-1 ${isPast ? "" : "xl:grid-cols-2"} gap-4 items-start`}>
-        {/* Left: Course + Date + Week */}
-        <div className="space-y-4">
-          <div className="card space-y-4">
+      <div className="space-y-4">
+        {/* Course + Date + Week */}
+        <div className="card space-y-4">
             <div>
               <label className="block text-[13px] font-medium text-gray-700 mb-1">Course</label>
               {loadingCourses ? (
@@ -389,60 +388,57 @@ export default function SetupClient() {
                 )}
               </div>
             )}
-          </div>
         </div>
 
-        {/* Right: GPS + Map (keep together) */}
+        {/* GPS + Map (keep together) */}
         {!isPast && (
-          <div className="space-y-4">
-            <div className="card space-y-4 h-full">
-              <div className="flex items-center justify-between">
-                <h3 className="font-semibold text-gray-900 flex items-center gap-2">
-                  <IconLocation size={14} className="text-[#185FA5]" /> GPS Location
-                </h3>
-                <button onClick={detectGps} className="btn-outline text-[13px] px-3" style={{ minHeight: 36 }}>
-                  <IconRefresh size={13} /> Refresh
-                </button>
-              </div>
-              {gps.loading ? (
-                <div className="flex items-center gap-2 text-[13px] text-gray-500">
-                  <Spinner className="h-4 w-4" /> กำลังหาตำแหน่ง...
-                </div>
-              ) : gps.error ? (
-                <p className="text-[13px]" style={{ color: "#A32D2D" }}>ไม่สามารถรับ GPS: {gps.error}</p>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                  <div className="rounded-lg px-3 py-2" style={{ backgroundColor: "#f8fafc", border: "0.5px solid rgba(0,0,0,0.08)" }}>
-                    <p className="text-[10px] uppercase tracking-wide text-gray-500 mb-1">Coordinates</p>
-                    <p className="text-[11px] font-mono text-gray-700 leading-relaxed">{gps.lat.toFixed(6)}, {gps.lng.toFixed(6)}</p>
-                    <p className="text-[11px] mt-1" style={{ color: gpsSource === "map" ? "#185FA5" : "#5F5E5A" }}>
-                      Source: {gpsSource === "map" ? "Map selection" : "Device GPS"}
-                    </p>
-                  </div>
-
-                  <div className="rounded-lg px-3 py-2" style={{ backgroundColor: "#f8fafc", border: "0.5px solid rgba(0,0,0,0.08)" }}>
-                    <div className="flex justify-between text-[11px] mb-1" style={{ color: "#5F5E5A" }}>
-                      <span>Accuracy</span>
-                      <span style={{ color: accColor }}>{Math.round(gps.accuracy)} m</span>
-                    </div>
-                    <div className="h-2 rounded-full" style={{ backgroundColor: "#e5e7eb" }}>
-                      <div className="h-full rounded-full transition-all" style={{ width: `${accWidth}%`, backgroundColor: accColor }} />
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              <div className="h-px" style={{ backgroundColor: "rgba(0,0,0,0.08)" }} />
-
-              <GpsMapPicker
-                lat={gps.lat}
-                lng={gps.lng}
-                radiusM={settings.radius_m}
-                disabled={gps.loading}
-                onUseCurrentLocation={detectGps}
-                onPick={handleMapPick}
-              />
+          <div className="card space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+                <IconLocation size={14} className="text-[#185FA5]" /> GPS Location
+              </h3>
+              <button onClick={detectGps} className="btn-outline text-[13px] px-3" style={{ minHeight: 36 }}>
+                <IconRefresh size={13} /> Refresh
+              </button>
             </div>
+            {gps.loading ? (
+              <div className="flex items-center gap-2 text-[13px] text-gray-500">
+                <Spinner className="h-4 w-4" /> กำลังหาตำแหน่ง...
+              </div>
+            ) : gps.error ? (
+              <p className="text-[13px]" style={{ color: "#A32D2D" }}>ไม่สามารถรับ GPS: {gps.error}</p>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                <div className="rounded-lg px-3 py-2" style={{ backgroundColor: "#f8fafc", border: "0.5px solid rgba(0,0,0,0.08)" }}>
+                  <p className="text-[10px] uppercase tracking-wide text-gray-500 mb-1">Coordinates</p>
+                  <p className="text-[11px] font-mono text-gray-700 leading-relaxed">{gps.lat.toFixed(6)}, {gps.lng.toFixed(6)}</p>
+                  <p className="text-[11px] mt-1" style={{ color: gpsSource === "map" ? "#185FA5" : "#5F5E5A" }}>
+                    Source: {gpsSource === "map" ? "Map selection" : "Device GPS"}
+                  </p>
+                </div>
+
+                <div className="rounded-lg px-3 py-2" style={{ backgroundColor: "#f8fafc", border: "0.5px solid rgba(0,0,0,0.08)" }}>
+                  <div className="flex justify-between text-[11px] mb-1" style={{ color: "#5F5E5A" }}>
+                    <span>Accuracy</span>
+                    <span style={{ color: accColor }}>{Math.round(gps.accuracy)} m</span>
+                  </div>
+                  <div className="h-2 rounded-full" style={{ backgroundColor: "#e5e7eb" }}>
+                    <div className="h-full rounded-full transition-all" style={{ width: `${accWidth}%`, backgroundColor: accColor }} />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="h-px" style={{ backgroundColor: "rgba(0,0,0,0.08)" }} />
+
+            <GpsMapPicker
+              lat={gps.lat}
+              lng={gps.lng}
+              radiusM={settings.radius_m}
+              disabled={gps.loading}
+              onUseCurrentLocation={detectGps}
+              onPick={handleMapPick}
+            />
           </div>
         )}
       </div>
