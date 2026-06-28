@@ -935,7 +935,8 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
       {/* Close session modal */}
       {showClose && (
         <div className="fixed inset-0 flex items-center justify-center z-50 p-4" style={{ backgroundColor: "rgba(0,0,0,0.5)" }}>
-          <div className="card max-w-sm w-full space-y-4" role="dialog" aria-modal="true" aria-labelledby="close-session-title"></h3>
+          <div className="card max-w-sm w-full space-y-4" role="dialog" aria-modal="true" aria-labelledby="close-session-title">
+            <h3 id="close-session-title" className="font-medium text-gray-900">Close Session?</h3>
             <p className="text-[13px] text-gray-600">
               <strong>{total - present - gpsFail - absent} students</strong> who haven&apos;t checked in will be marked <em>Absent</em>.
             </p>

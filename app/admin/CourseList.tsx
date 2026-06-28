@@ -359,25 +359,3 @@ export default function CourseList() {
     </>
   );
 }
-
-function MenuItem({
-  href, children, onClick, danger,
-}: {
-  href?: string; children: React.ReactNode; onClick?: () => void; danger?: boolean;
-}) {
-  const cls = "block w-full text-left px-3 py-2 text-[13px] transition-colors hover:bg-gray-50";
-  const style = { color: danger ? "#A32D2D" : "#374151", background: "none", border: "none", cursor: "pointer" };
-
-  if (href) {
-    return (
-      <Link href={href} onClick={onClick} className={cls} style={{ color: style.color }}>
-        {children}
-      </Link>
-    );
-  }
-  return (
-    <button onClick={onClick} className={cls} style={style}>
-      {children}
-    </button>
-  );
-}
