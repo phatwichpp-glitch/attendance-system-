@@ -455,42 +455,46 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
   const flaggedCount        = students.filter((x) => x.attendance?.flagged).length;
   const totalIssues        = gpsFailCount + deviceConflictCount + lateCount + flaggedCount;
 
-  // Action buttons with optimized sizing
+  // Action buttons with optimized sizing - 2 rows
   const ActionButtons = (
-    <div className="flex gap-2 flex-wrap">
-      {!isClosed && (
-        <>
-          <Link href={`/projector/${sessionId}`} target="_blank" className="btn-outline text-[14px]" style={{ minHeight: 36, padding: "8px 14px" }}>
-            <IconScreen size={14} /> Projector View
-          </Link>
-          <button onClick={openManualQR} className="btn-outline text-[14px]" style={{ minHeight: 36, padding: "8px 14px" }}>
-            <IconQR size={14} /> Manual QR
-          </button>
-          <button
-            onClick={() => { setShowManual(true); setManualError(""); }}
-            className="btn-outline text-[14px]"
-            style={{ minHeight: 36, padding: "8px 14px" }}
-          >
-            + Manual Record
-          </button>
-          <button onClick={() => setShowClose(true)} className="btn-danger text-[14px]" style={{ minHeight: 36, padding: "8px 14px" }}>
-            <IconStop size={14} /> Close Session
-          </button>
-        </>
-      )}
-      {isClosed && (
-        <>
-          <span className="badge-absent px-3 py-1.5 text-[14px]">Closed</span>
-          {isToday && (
-            <button onClick={handleReopen} disabled={reopening} className="btn-outline text-[14px]" style={{ minHeight: 36, padding: "8px 14px" }}>
-              {reopening ? <Spinner className="h-4 w-4" /> : "Re-Generate OTP"}
+    <div className="flex flex-col gap-2">
+      <div className="flex gap-2 flex-wrap">
+        {!isClosed && (
+          <>
+            <Link href={`/projector/${sessionId}`} target="_blank" className="btn-outline text-[14px]" style={{ minHeight: 36, padding: "8px 14px" }}>
+              <IconScreen size={14} /> Projector View
+            </Link>
+            <button onClick={openManualQR} className="btn-outline text-[14px]" style={{ minHeight: 36, padding: "8px 14px" }}>
+              <IconQR size={14} /> Manual QR
             </button>
-          )}
-        </>
-      )}
-      <button onClick={exportCsv} className="btn-outline text-[14px]" style={{ minHeight: 36, padding: "8px 14px" }}>
-        <IconDownload size={14} /> Export CSV
-      </button>
+            <button
+              onClick={() => { setShowManual(true); setManualError(""); }}
+              className="btn-outline text-[14px]"
+              style={{ minHeight: 36, padding: "8px 14px" }}
+            >
+              + Manual Record
+            </button>
+            <button onClick={() => setShowClose(true)} className="btn-danger text-[14px]" style={{ minHeight: 36, padding: "8px 14px" }}>
+              <IconStop size={14} /> Close Session
+            </button>
+          </>
+        )}
+        {isClosed && (
+          <>
+            <span className="badge-absent px-3 py-1.5 text-[14px]">Closed</span>
+            {isToday && (
+              <button onClick={handleReopen} disabled={reopening} className="btn-outline text-[14px]" style={{ minHeight: 36, padding: "8px 14px" }}>
+                {reopening ? <Spinner className="h-4 w-4" /> : "Re-Generate OTP"}
+              </button>
+            )}
+          </>
+        )}
+      </div>
+      <div className="flex gap-2 flex-wrap">
+        <button onClick={exportCsv} className="btn-outline text-[14px]" style={{ minHeight: 36, padding: "8px 14px" }}>
+          <IconDownload size={14} /> Export CSV
+        </button>
+      </div>
     </div>
   );
 
