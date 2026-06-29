@@ -552,115 +552,109 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
         {ActionButtons}
       </div>
 
-      {/* 2-column grid */}
-      <div className="md:grid md:grid-cols-[35%_1fr] md:gap-4 md:items-start space-y-4 md:space-y-0">
+      {/* Single column layout */}
+      <div className="space-y-4">
 
-        {/* Left col */}
-        <div className="space-y-4">
-          {/* Linked session card */}
-          {isDoubleCheckIn && linked_session && (
-            <div className="card" style={{ border: "1px solid #185FA5" }}>
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-[12px] font-medium" style={{ color: "#185FA5" }}>
-                  Double Period — Two Check-ins
-                </p>
-              </div>
-              <div className="flex items-center justify-between text-[12px]">
-                <div className="space-y-1">
-                  <p style={{ color: "#374151" }}>
-                    <span className="font-medium">① Part 1</span>{" "}
-                    {s.part_number === 1 ? (
-                      <span className="rounded px-1.5 py-0.5" style={{ backgroundColor: isClosed ? "#FCEBEB" : "#E6F1FB", color: isClosed ? "#A32D2D" : "#185FA5", fontSize: 11 }}>
-                        {isClosed ? "Closed" : "Active"}
-                      </span>
-                    ) : (
-                      <Link href={`/admin/session/${linked_session.session_id}`} className="underline" style={{ color: "#185FA5" }}>
-                        {linked_session.closed_at ? "Closed" : linked_session.opened_at ? "Active" : "Not opened"}
-                      </Link>
-                    )}
-                  </p>
-                  <p style={{ color: "#374151" }}>
-                    <span className="font-medium">② Part 2</span>{" "}
-                    {s.part_number === 2 ? (
-                      <span className="rounded px-1.5 py-0.5" style={{ backgroundColor: isClosed ? "#FCEBEB" : "#E6F1FB", color: isClosed ? "#A32D2D" : "#185FA5", fontSize: 11 }}>
-                        {isClosed ? "Closed" : "Active"}
-                      </span>
-                    ) : (
-                      <span className="rounded px-1.5 py-0.5" style={{ backgroundColor: linked_session.closed_at ? "#FCEBEB" : linked_session.opened_at ? "#EAF3DE" : "#f3f4f6", color: linked_session.closed_at ? "#A32D2D" : linked_session.opened_at ? "#3B6D11" : "#6b7280", fontSize: 11 }}>
-                        {linked_session.closed_at ? "Closed" : linked_session.opened_at ? "Active" : "Not opened"}
-                      </span>
-                    )}
-                  </p>
-                </div>
-                {s.part_number === 1 && isClosed && !linked_session.opened_at && (
-                  <button
-                    onClick={() => handleActivatePart2(linked_session.session_id)}
-                    disabled={activatingPart2}
-                    className="btn-primary text-[12px]"
-                    style={{ minHeight: 36 }}
-                  >
-                    {activatingPart2 ? <Spinner className="h-3 w-3" /> : "Open Part 2 →"}
-                  </button>
-                )}
-                {s.part_number === 2 && (
-                  <Link href={`/admin/session/${linked_session.session_id}`} className="btn-outline text-[12px]" style={{ minHeight: 36 }}>
-                    ← View Part 1
-                  </Link>
-                )}
-              </div>
+        {/* Linked session card */}
+        {isDoubleCheckIn && linked_session && (
+          <div className="card" style={{ border: "1px solid #185FA5" }}>
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-[12px] font-medium" style={{ color: "#185FA5" }}>
+                Double Period — Two Check-ins
+              </p>
             </div>
-          )}
-
-          <div className="grid grid-cols-4 md:grid-cols-2 gap-3">
-            <Stat label="Total"    value={total}   bg="#f3f4f6" color="#374151" />
-            <Stat label="Present"  value={present} bg="#EAF3DE" color="#3B6D11" />
-            <Stat label="Absent"   value={absent}  bg="#FCEBEB" color="#A32D2D" />
-            <Stat label="GPS fail" value={gpsFail} bg="#FAEEDA" color="#854F0B" />
-          </div>
-
-          {!isClosed && (
-            <div className="card flex items-center justify-between gap-4">
-              <div>
-                <p className="text-[11px] mb-0.5 flex items-center gap-1.5"
-                  style={{ color: otpSecondsLeft !== null && otpSecondsLeft < 60 ? "#A32D2D" : "#5F5E5A" }}>
-                  OTP
-                  {otpSecondsLeft !== null && (
-                    <span className="font-mono font-semibold text-[12px]">
-                      {otpSecondsLeft > 0
-                        ? `${String(Math.floor(otpSecondsLeft / 60)).padStart(2, "0")}:${String(otpSecondsLeft % 60).padStart(2, "0")}`
-                        : "หมดอายุ..."}
+            <div className="flex items-center justify-between text-[12px]">
+              <div className="space-y-1">
+                <p style={{ color: "#374151" }}>
+                  <span className="font-medium">① Part 1</span>{" "}
+                  {s.part_number === 1 ? (
+                    <span className="rounded px-1.5 py-0.5" style={{ backgroundColor: isClosed ? "#FCEBEB" : "#E6F1FB", color: isClosed ? "#A32D2D" : "#185FA5", fontSize: 11 }}>
+                      {isClosed ? "Closed" : "Active"}
+                    </span>
+                  ) : (
+                    <Link href={`/admin/session/${linked_session.session_id}`} className="underline" style={{ color: "#185FA5" }}>
+                      {linked_session.closed_at ? "Closed" : linked_session.opened_at ? "Active" : "Not opened"}
+                    </Link>
+                  )}
+                </p>
+                <p style={{ color: "#374151" }}>
+                  <span className="font-medium">② Part 2</span>{" "}
+                  {s.part_number === 2 ? (
+                    <span className="rounded px-1.5 py-0.5" style={{ backgroundColor: isClosed ? "#FCEBEB" : "#E6F1FB", color: isClosed ? "#A32D2D" : "#185FA5", fontSize: 11 }}>
+                      {isClosed ? "Closed" : "Active"}
+                    </span>
+                  ) : (
+                    <span className="rounded px-1.5 py-0.5" style={{ backgroundColor: linked_session.closed_at ? "#FCEBEB" : linked_session.opened_at ? "#EAF3DE" : "#f3f4f6", color: linked_session.closed_at ? "#A32D2D" : linked_session.opened_at ? "#3B6D11" : "#6b7280", fontSize: 11 }}>
+                      {linked_session.closed_at ? "Closed" : linked_session.opened_at ? "Active" : "Not opened"}
                     </span>
                   )}
                 </p>
-                <p className="text-4xl font-bold tracking-widest"
-                  style={{ fontFamily: "ui-monospace, monospace", color: "#185FA5" }}>
-                  {s.otp}
-                </p>
               </div>
-              <div className="text-right text-[11px] space-y-1" style={{ color: "#5F5E5A" }}>
-                <p>Radius {s.radius_m} m</p>
-                <p>Late &gt;{s.late_after_min} min</p>
-                <a href={checkUrl} target="_blank" className="text-[#185FA5] underline text-[11px]">
-                  Check-in link ↗
-                </a>
-              </div>
-            </div>
-          )}
-
-          <div className="card">
-            <div className="flex justify-between text-[13px] text-gray-600 mb-2">
-              <span>Checked In</span>
-              <span className="font-medium">{present}/{total} students</span>
-            </div>
-            <div className="h-2 rounded-full" style={{ backgroundColor: "#e5e7eb" }}>
-              <div className="h-full rounded-full transition-all"
-                style={{ width: total > 0 ? `${(present / total) * 100}%` : "0%", backgroundColor: "#3B6D11" }} />
+              {s.part_number === 1 && isClosed && !linked_session.opened_at && (
+                <button
+                  onClick={() => handleActivatePart2(linked_session.session_id)}
+                  disabled={activatingPart2}
+                  className="btn-primary text-[12px]"
+                  style={{ minHeight: 36 }}
+                >
+                  {activatingPart2 ? <Spinner className="h-3 w-3" /> : "Open Part 2 →"}
+                </button>
+              )}
+              {s.part_number === 2 && (
+                <Link href={`/admin/session/${linked_session.session_id}`} className="btn-outline text-[12px]" style={{ minHeight: 36 }}>
+                  ← View Part 1
+                </Link>
+              )}
             </div>
           </div>
+        )}
+
+        <div className="grid grid-cols-4 md:grid-cols-2 gap-3">
+          <Stat label="Total"    value={total}   bg="#f3f4f6" color="#374151" />
+          <Stat label="Present"  value={present} bg="#EAF3DE" color="#3B6D11" />
+          <Stat label="Absent"   value={absent}  bg="#FCEBEB" color="#A32D2D" />
+          <Stat label="GPS fail" value={gpsFail} bg="#FAEEDA" color="#854F0B" />
         </div>
 
-        {/* Right col */}
-        <div className="space-y-4">
+        {!isClosed && (
+          <div className="card flex items-center justify-between gap-4">
+            <div>
+              <p className="text-[11px] mb-0.5 flex items-center gap-1.5"
+                style={{ color: otpSecondsLeft !== null && otpSecondsLeft < 60 ? "#A32D2D" : "#5F5E5A" }}>
+                OTP
+                {otpSecondsLeft !== null && (
+                  <span className="font-mono font-semibold text-[12px]">
+                    {otpSecondsLeft > 0
+                      ? `${String(Math.floor(otpSecondsLeft / 60)).padStart(2, "0")}:${String(otpSecondsLeft % 60).padStart(2, "0")}`
+                      : "หมดอายุ..."}
+                  </span>
+                )}
+              </p>
+              <p className="text-4xl font-bold tracking-widest"
+                style={{ fontFamily: "ui-monospace, monospace", color: "#185FA5" }}>
+                {s.otp}
+              </p>
+            </div>
+            <div className="text-right text-[11px] space-y-1" style={{ color: "#5F5E5A" }}>
+              <p>Radius {s.radius_m} m</p>
+              <p>Late &gt;{s.late_after_min} min</p>
+              <a href={checkUrl} target="_blank" className="text-[#185FA5] underline text-[11px]">
+                Check-in link ↗
+              </a>
+            </div>
+          </div>
+        )}
+
+        <div className="card">
+          <div className="flex justify-between text-[13px] text-gray-600 mb-2">
+            <span>Checked In</span>
+            <span className="font-medium">{present}/{total} students</span>
+          </div>
+          <div className="h-2 rounded-full" style={{ backgroundColor: "#e5e7eb" }}>
+            <div className="h-full rounded-full transition-all"
+              style={{ width: total > 0 ? `${(present / total) * 100}%` : "0%", backgroundColor: "#3B6D11" }} />
+          </div>
+        </div>
           {/* Part 1 → Part 2 comparison panel */}
           {s.part_number === 2 && part1Map && part1Map.size > 0 && (
             <div className="card" style={{ border: "1px solid rgba(0,0,0,0.08)" }}>
@@ -840,7 +834,6 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
               })}
             </div>
           </div>
-        </div>
       </div>
 
       {/* Edit status modal */}
