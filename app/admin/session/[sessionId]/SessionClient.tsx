@@ -532,26 +532,31 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
       </div>
 
       {/* Mobile header */}
-      <div className="md:hidden flex flex-wrap items-start justify-between gap-3 mb-4">
-        <div>
-          <h1 className="text-[18px] font-medium text-gray-900 flex items-center gap-2">
-            {s.course_id} — {periodLabel}
-            {partBadge && <span className="text-[14px]" style={{ color: "#185FA5" }}>{partBadge}</span>}
-            {!isClosed && <span className="text-[11px] font-normal" style={{ color: "#3B6D11" }}>● Live</span>}
-          </h1>
-          <p className="text-[11px] mt-0.5" style={{ color: "#5F5E5A" }}>{s.date} · Section {s.section}</p>
-          {clock.time && (
-            <p className="text-[12px] mt-1 font-medium" style={{ fontFamily: "ui-monospace, monospace", color: "#374151" }}>
-              {clock.time}
-            </p>
-          )}
-          {lastUpdated && (
-            <p className="text-[11px] text-gray-400 mt-0.5 flex items-center gap-1">
-              <IconClock size={11} /> {lastUpdated.toLocaleTimeString("th-TH")}
-            </p>
-          )}
+      <div className="md:hidden flex flex-col gap-3 mb-4">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div>
+              <h1 className="text-[18px] font-medium text-gray-900 flex items-center gap-2">
+                {s.course_id} — {periodLabel}
+                {partBadge && <span className="text-[14px]" style={{ color: "#185FA5" }}>{partBadge}</span>}
+                {!isClosed && <span className="text-[11px] font-normal" style={{ color: "#3B6D11" }}>● Live</span>}
+              </h1>
+              <p className="text-[11px] mt-0.5" style={{ color: "#5F5E5A" }}>{s.date} · Section {s.section}</p>
+            </div>
+            {clock.time && (
+              <div className="text-right leading-tight shrink-0">
+                <p className="text-[11px]" style={{ color: "#5F5E5A" }}>{clock.date}</p>
+                <p className="text-[16px] font-medium" style={{ fontFamily: "ui-monospace, monospace" }}>{clock.time}</p>
+              </div>
+            )}
+          </div>
         </div>
         {ActionButtons}
+        {lastUpdated && (
+          <p className="text-[11px] text-gray-400 flex items-center gap-1">
+            <IconClock size={11} /> Updated {lastUpdated.toLocaleTimeString("th-TH")}
+          </p>
+        )}
       </div>
 
       {/* Single column layout */}
