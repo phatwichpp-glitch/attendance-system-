@@ -459,35 +459,35 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
     <div className="flex gap-2 flex-wrap">
       {!isClosed && (
         <>
-          <Link href={`/projector/${sessionId}`} target="_blank" className="btn-outline text-[13px]" style={{ minHeight: 40 }}>
+          <Link href={`/projector/${sessionId}`} target="_blank" className="btn-outline text-[14px]" style={{ minHeight: 36, padding: "8px 14px" }}>
             <IconScreen size={14} /> Projector View
           </Link>
-          <button onClick={openManualQR} className="btn-outline text-[13px]" style={{ minHeight: 40 }}>
+          <button onClick={openManualQR} className="btn-outline text-[14px]" style={{ minHeight: 36, padding: "8px 14px" }}>
             <IconQR size={14} /> Manual QR
           </button>
           <button
             onClick={() => { setShowManual(true); setManualError(""); }}
-            className="btn-outline text-[13px]"
-            style={{ minHeight: 40 }}
+            className="btn-outline text-[14px]"
+            style={{ minHeight: 36, padding: "8px 14px" }}
           >
             + Manual Record
           </button>
-          <button onClick={() => setShowClose(true)} className="btn-danger text-[13px]" style={{ minHeight: 40 }}>
+          <button onClick={() => setShowClose(true)} className="btn-danger text-[14px]" style={{ minHeight: 36, padding: "8px 14px" }}>
             <IconStop size={14} /> Close Session
           </button>
         </>
       )}
       {isClosed && (
         <>
-          <span className="badge-absent px-3 py-2 text-[13px]">Closed</span>
+          <span className="badge-absent px-3 py-1.5 text-[14px]">Closed</span>
           {isToday && (
-            <button onClick={handleReopen} disabled={reopening} className="btn-outline text-[13px]" style={{ minHeight: 40 }}>
+            <button onClick={handleReopen} disabled={reopening} className="btn-outline text-[14px]" style={{ minHeight: 36, padding: "8px 14px" }}>
               {reopening ? <Spinner className="h-4 w-4" /> : "Re-Generate OTP"}
             </button>
           )}
         </>
       )}
-      <button onClick={exportCsv} className="btn-outline text-[13px]" style={{ minHeight: 40 }}>
+      <button onClick={exportCsv} className="btn-outline text-[14px]" style={{ minHeight: 36, padding: "8px 14px" }}>
         <IconDownload size={14} /> Export CSV
       </button>
     </div>
@@ -503,28 +503,30 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
   return (
     <div>
       {/* Desktop header */}
-      <div className="hidden md:flex items-center justify-between py-3 mb-4"
+      <div className="hidden md:flex items-center justify-between py-3 mb-4 gap-4"
         style={{ borderBottom: "0.5px solid rgba(0,0,0,0.08)" }}>
-        <div>
-          <h1 className="text-[18px] font-medium text-gray-900 flex items-center gap-2">
-            {s.course_id} — {periodLabel}
-            {partBadge && <span className="text-[14px]" style={{ color: "#185FA5" }}>{partBadge}</span>}
-            {!isClosed && <span className="text-[12px] font-normal" style={{ color: "#3B6D11" }}>● Live</span>}
-          </h1>
-          <p className="text-[11px] mt-0.5" style={{ color: "#5F5E5A" }}>
-            {s.date} · Section {s.section}
-            {s.week_label && <span className="ml-2">{s.week_label}</span>}
-            {lastUpdated && <span className="ml-2">· Updated {lastUpdated.toLocaleTimeString("th-TH")}</span>}
-          </p>
-        </div>
-
-        {/* Live clock */}
-        {clock.time && (
-          <div className="text-right leading-tight mx-4 shrink-0">
-            <p className="text-[13px]" style={{ color: "#5F5E5A" }}>{clock.date}</p>
-            <p className="text-[22px] font-medium" style={{ fontFamily: "ui-monospace, monospace" }}>{clock.time}</p>
+        <div className="flex items-center gap-6">
+          <div>
+            <h1 className="text-[18px] font-medium text-gray-900 flex items-center gap-2">
+              {s.course_id} — {periodLabel}
+              {partBadge && <span className="text-[14px]" style={{ color: "#185FA5" }}>{partBadge}</span>}
+              {!isClosed && <span className="text-[12px] font-normal" style={{ color: "#3B6D11" }}>● Live</span>}
+            </h1>
+            <p className="text-[11px] mt-0.5" style={{ color: "#5F5E5A" }}>
+              {s.date} · Section {s.section}
+              {s.week_label && <span className="ml-2">{s.week_label}</span>}
+              {lastUpdated && <span className="ml-2">· Updated {lastUpdated.toLocaleTimeString("th-TH")}</span>}
+            </p>
           </div>
-        )}
+
+          {/* Live clock */}
+          {clock.time && (
+            <div className="text-right leading-tight shrink-0">
+              <p className="text-[13px]" style={{ color: "#5F5E5A" }}>{clock.date}</p>
+              <p className="text-[22px] font-medium" style={{ fontFamily: "ui-monospace, monospace" }}>{clock.time}</p>
+            </div>
+          )}
+        </div>
 
         {ActionButtons}
       </div>
