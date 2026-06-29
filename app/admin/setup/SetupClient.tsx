@@ -226,6 +226,14 @@ export default function SetupClient() {
   const course = getCourse();
   const period = nearestPeriod(classStartTime);
   const periodNum = parseInt(period, 10);
+
+  // Class duration in minutes — used as max range for OTP and Late sliders
+  const classDurationMin = (() => {
+    const [sh, sm] = classStartTime.split(":").map(Number);
+    const [eh, em] = classEndTime.split(":").map(Number);
+    const d = (eh * 60 + em) - (sh * 60 + sm);
+    return d > 0 ? d : 90;
+  })();
   const periodEnd = periodCount >= 2 ? calcPeriodEnd(periodNum, periodCount) : undefined;
   const periodRangeLabel = getPeriodLabel(periodNum, periodEnd, classStartTime, classEndTime);
   const periodEndWarning = periodCount >= 2 && !periodEnd;
@@ -518,10 +526,10 @@ export default function SetupClient() {
           <Slider label="GPS Radius" value={settings.radius_m} min={50} max={500} step={10} unit="m"
             onChange={(v) => setSettings((s) => ({ ...s, radius_m: v }))} />
           <div className="h-px" style={{ backgroundColor: "rgba(0,0,0,0.08)" }} />
-          <Slider label="OTP Expires After" value={settings.otp_expire_min} min={5} max={60} step={5} unit="min"
+          <MinuteSlider label="OTP Expires After" value={settings.otp_expire_min} min={1} max={classDurationMin} unit="min"
             onChange={(v) => setSettings((s) => ({ ...s, otp_expire_min: v }))} />
           <div className="h-px" style={{ backgroundColor: "rgba(0,0,0,0.08)" }} />
-          <Slider label="Late After" value={settings.late_after_min} min={5} max={30} step={5} unit="min"
+          <MinuteSlider label="Late After" value={settings.late_after_min} min={1} max={classDurationMin} unit="min"
             onChange={(v) => setSettings((s) => ({ ...s, late_after_min: v }))} />
         </div>
         <div className="space-y-2 pt-3 border-t border-gray-100">
@@ -602,6 +610,47 @@ function Slider({ label, value, min, max, step, unit, onChange }: {
         className="w-full"
         style={{ accentColor: "#185FA5", touchAction: "none" }}
       />
+    </div>
+  );
+}
+
+// Slider + number input combo — supports manual typing with minute precision
+function MinuteSlider({ label, value, min, max, unit, onChange }: {
+  label: string; value: number; min: number; max: number; unit: string;
+  onChange: (v: number) => void;
+}) {
+  return (
+    <div>
+      <div className="flex items-center justify-between text-[13px] mb-1.5">
+        <label className="text-gray-700">{label}</label>
+        <div className="flex items-center gap-1.5">
+          <input
+            type="number"
+            min={min}
+            max={max}
+            step={1}
+            value={value}
+            onChange={(e) => {
+              const v = parseInt(e.target.value, 10);
+              if (!isNaN(v)) onChange(Math.min(max, Math.max(min, v)));
+            }}
+            className="w-14 text-center rounded-lg text-[13px] font-medium py-0.5 px-1"
+            style={{ color: "#185FA5", border: "1px solid #d1d5db" }}
+          />
+          <span className="text-[12px] text-gray-500">{unit}</span>
+        </div>
+      </div>
+      <input
+        type="range" min={min} max={max} step={1}
+        value={Math.min(value, max)}
+        onChange={(e) => onChange(parseInt(e.target.value, 10))}
+        className="w-full"
+        style={{ accentColor: "#185FA5", touchAction: "none" }}
+      />
+      <div className="flex justify-between text-[10px] text-gray-400 mt-0.5">
+        <span>{min}</span>
+        <span style={{ color: "#185FA5" }}>{max} {unit} (class duration)</span>
+      </div>
     </div>
   );
 }

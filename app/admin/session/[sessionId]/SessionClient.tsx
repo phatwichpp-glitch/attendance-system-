@@ -108,6 +108,12 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
   const [manualSaving, setManualSaving] = useState(false);
   const [manualError, setManualError]   = useState("");
 
+  // OTP countdown + auto-close
+  const [otpSecondsLeft, setOtpSecondsLeft] = useState<number | null>(null);
+  const autoClosedRef = useRef(false);
+  const dataRef = useRef<Data | null>(null);
+  dataRef.current = data;
+
   // Reopen / Activate Part 2
   const [reopening, setReopening]         = useState(false);
   const [activatingPart2, setActivatingPart2] = useState(false);
@@ -134,6 +140,44 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
   useEffect(() => {
     setConflictDismissed(sessionStorage.getItem(`conflict_dismissed_${sessionId}`) === "1");
   }, [sessionId]);
+
+  // OTP countdown — auto-closes session when timer hits zero
+  const openedAt   = data?.session.opened_at;
+  const expireMin  = data?.session.otp_expire_min;
+  const sessionClosed = !!data?.session.closed_at;
+
+  useEffect(() => {
+    if (!openedAt || !expireMin || sessionClosed) {
+      setOtpSecondsLeft(null);
+      return;
+    }
+    const expireAt = new Date(openedAt).getTime() + expireMin * 60 * 1000;
+    autoClosedRef.current = false;
+
+    const tick = () => {
+      const remaining = Math.floor((expireAt - Date.now()) / 1000);
+      setOtpSecondsLeft(Math.max(0, remaining));
+      if (remaining <= 0 && !autoClosedRef.current) {
+        autoClosedRef.current = true;
+        const d = dataRef.current;
+        if (!d || d.session.closed_at) return;
+        // Auto-close without redirecting so teacher sees Re-Generate option
+        fetch("/api/sheets/sessions", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            session_id: d.session.session_id,
+            course_id: d.session.course_id,
+            section: d.session.section,
+          }),
+        }).then(() => fetchData()).catch(() => {});
+      }
+    };
+
+    tick();
+    const t = setInterval(tick, 1000);
+    return () => clearInterval(t);
+  }, [openedAt, expireMin, sessionClosed, fetchData]);
 
   // Close edit popover on outside click
   useEffect(() => {
@@ -378,6 +422,7 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
 
   const { session: s, students, spreadsheetId, device_conflicts, linked_session, part1_attendance } = data;
   const isClosed = !!s.closed_at;
+  const isToday  = s.date === new Date().toISOString().split("T")[0];
 
   // Conflict set
   const conflictSet = new Set<string>(
@@ -435,9 +480,11 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
       {isClosed && (
         <>
           <span className="badge-absent px-3 py-2 text-[13px]">Closed</span>
-          <button onClick={handleReopen} disabled={reopening} className="btn-outline text-[13px]" style={{ minHeight: 40 }}>
-            {reopening ? <Spinner className="h-4 w-4" /> : "Reopen Session"}
-          </button>
+          {isToday && (
+            <button onClick={handleReopen} disabled={reopening} className="btn-outline text-[13px]" style={{ minHeight: 40 }}>
+              {reopening ? <Spinner className="h-4 w-4" /> : "Re-Generate OTP"}
+            </button>
+          )}
         </>
       )}
       <button onClick={exportCsv} className="btn-outline text-[13px]" style={{ minHeight: 40 }}>
@@ -574,8 +621,16 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
           {!isClosed && (
             <div className="card flex items-center justify-between gap-4">
               <div>
-                <p className="text-[11px] mb-0.5" style={{ color: "#5F5E5A" }}>
-                  OTP (expires in {s.otp_expire_min} min)
+                <p className="text-[11px] mb-0.5 flex items-center gap-1.5"
+                  style={{ color: otpSecondsLeft !== null && otpSecondsLeft < 60 ? "#A32D2D" : "#5F5E5A" }}>
+                  OTP
+                  {otpSecondsLeft !== null && (
+                    <span className="font-mono font-semibold text-[12px]">
+                      {otpSecondsLeft > 0
+                        ? `${String(Math.floor(otpSecondsLeft / 60)).padStart(2, "0")}:${String(otpSecondsLeft % 60).padStart(2, "0")}`
+                        : "หมดอายุ..."}
+                    </span>
+                  )}
                 </p>
                 <p className="text-4xl font-bold tracking-widest"
                   style={{ fontFamily: "ui-monospace, monospace", color: "#185FA5" }}>

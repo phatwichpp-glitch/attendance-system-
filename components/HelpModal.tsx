@@ -119,12 +119,15 @@ export default function HelpModal({ onClose }: { onClose: () => void }) {
                 <Li>กรอกเวลาเรียนจริง (HH:MM) — auto-fill จาก semester config ถ้ามี</Li>
                 <Li>Single period (90 นาที) หรือ Double period (180 นาที)</Li>
                 <Li>Double period มี 2 โหมด: OTP เดียว หรือ แยก OTP ต่อคาบ</Li>
+                <Li>OTP duration และ Late threshold — พิมพ์ตัวเลขได้โดยตรง, max = ความยาวคาบนั้น</Li>
                 <Li>เลือก GPS จากอุปกรณ์ หรือปักหมุดบนแผนที่เอง</Li>
                 <Li>บันทึกย้อนหลัง — ไม่ต้องการ GPS/OTP กรอกสถานะด้วยมือ</Li>
               </FeatureGroup>
 
               <FeatureGroup icon="📡" title="ระหว่างคาบ (Session Dashboard)" color="#185FA5">
-                <Li>OTP 6 หลัก — สร้างใหม่ได้ไม่จำกัดครั้ง</Li>
+                <Li>OTP 6 หลัก — แสดง countdown MM:SS แบบ real-time บนหน้าจอ</Li>
+                <Li>OTP หมดอายุ → session ปิดอัตโนมัติ ไม่ต้องกลับมากด</Li>
+                <Li>Re-Generate OTP — เปิด session ใหม่ได้ถ้ายังเป็นวันเดิม</Li>
                 <Li>Projector View — แสดงเต็มจอ พร้อม QR code และ countdown</Li>
                 <Li>Real-time list — เห็นว่าใครเช็คชื่อแล้วบ้าง</Li>
                 <Li>Manual override — แก้สถานะนักศึกษารายคนได้ทันที</Li>
@@ -253,12 +256,22 @@ export default function HelpModal({ onClose }: { onClose: () => void }) {
               </Section>
 
               <Section title="3. ระหว่างคาบเรียน" color="#185FA5">
-                <Step n="1">แสดง OTP 6 หลักบน Dashboard — กด <Chip>Projector View</Chip> เพื่อฉายบนหน้าจอ</Step>
-                <Step n="2">นักศึกษาเปิดลิงก์เช็คชื่อ (QR บนกระดาน หรือพิมพ์ URL) กรอก OTP + ยืนยัน GPS</Step>
-                <Step n="3">ดูรายชื่อแบบ real-time — Present / Late / Absent</Step>
-                <Step n="4">กด <Chip>Manual Override</Chip> เพื่อแก้สถานะรายคน หรือตรวจ conflict อุปกรณ์</Step>
-                <Step n="5">กด <Chip color="#A32D2D">Close Session</Chip> เมื่อจบคาบ</Step>
-                <Note>นักศึกษาที่ยังไม่ได้เช็คชื่อตอนปิดคาบ จะถูก mark เป็น Absent อัตโนมัติ</Note>
+                <Step n="1">แสดง OTP 6 หลักบน Dashboard — countdown MM:SS บอกเวลาที่เหลือแบบ real-time</Step>
+                <Step n="2">กด <Chip>Projector View</Chip> เพื่อฉาย OTP + QR code บนหน้าจอห้องเรียน</Step>
+                <Step n="3">นักศึกษาเปิดลิงก์เช็คชื่อ (QR หรือพิมพ์ URL) กรอก OTP + ยืนยัน GPS</Step>
+                <Step n="4">ดูรายชื่อแบบ real-time — Present / Late / Absent</Step>
+                <Step n="5">กด <Chip>Manual Override</Chip> เพื่อแก้สถานะรายคน หรือตรวจ conflict อุปกรณ์</Step>
+                <Step n="6">OTP หมดอายุ → session <strong>ปิดอัตโนมัติ</strong> — ไม่จำเป็นต้องกลับมากด Close</Step>
+                <Note>
+                  ถ้าต้องการให้นักศึกษาเช็คชื่อเพิ่ม กด <strong>Re-Generate OTP</strong> ได้ตราบใดที่ยังเป็นวันเดิม
+                  — ระบบจะออก OTP ใหม่และเปิด session ต่อ
+                </Note>
+              </Section>
+
+              <Section title="3b. OTP Duration &amp; Late Threshold" color="#185FA5">
+                <Row label="พิมพ์ตัวเลขได้">กรอกตัวเลขในช่องขวาโดยตรง (ความละเอียด 1 นาที) หรือลาก slider</Row>
+                <Row label="Max = ความยาวคาบ">ถ้าเรียน 90 นาที → max = 90 | ถ้า Double (180 นาที) → max = 180</Row>
+                <Row label="OTP หมดแล้ว Re-Gen">countdown ใน dashboard แสดง MM:SS — เมื่อถึง 00:00 ปิดอัตโนมัติ</Row>
               </Section>
 
               <Section title="4. คาบ Double Period" color="#185FA5">
@@ -296,9 +309,14 @@ export default function HelpModal({ onClose }: { onClose: () => void }) {
                 ตรวจสอบว่า GPS Radius เพียงพอ (แนะนำ 100–200 m ในอาคาร) หรือใช้ Manual Override
                 เพื่อแก้สถานะให้นักศึกษารายคน
               </FAQ>
-              <FAQ q="OTP หมดอายุก่อนนักศึกษาเข้าห้องครบ?">
-                ใน Session Dashboard กด <em>Regenerate OTP</em> เพื่อออก OTP ใหม่ได้ตลอดเวลา
-                ไม่จำกัดจำนวนครั้ง
+              <FAQ q="OTP หมดอายุแล้ว จะเกิดอะไรขึ้น?">
+                session จะ<strong>ปิดอัตโนมัติ</strong>เมื่อ countdown ถึง 00:00
+                — ถ้ายังเป็นวันเดิมจะมีปุ่ม <em>Re-Generate OTP</em> ให้กดเพื่อเปิด session ใหม่พร้อม OTP ชุดใหม่
+                ข้ามวันแล้วปุ่มนี้จะไม่แสดง
+              </FAQ>
+              <FAQ q="ต้องการเพิ่มเวลา OTP ให้นานขึ้น?">
+                ในหน้า Open Session — ช่อง OTP Expires After พิมพ์ตัวเลขได้โดยตรง (1–N นาที
+                โดย N = ความยาวคาบ) หรือลาก slider ความละเอียด 1 นาที
               </FAQ>
               <FAQ q="เวลาเปิด Session แสดงผิด ไม่ตรงกับที่ตั้งไว้ใน semester?">
                 ระบบจะ auto-fill เวลาจาก semester config เฉพาะครั้งแรก — หลังจากนั้นจะจำเวลา
