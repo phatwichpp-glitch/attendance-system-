@@ -396,7 +396,7 @@ export default function SetupClient() {
                     className="input text-[13px] font-mono"
                     value={weekLabel}
                     onChange={(e) => setWeekLabel(e.target.value)}
-                    placeholder="e.g. W3, W3a"
+                    placeholder="e.g. W3m, W3th"
                   />
                 </div>
               </div>

@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from "react";
 import Spinner from "@/components/Spinner";
 import { IconDownload } from "@/components/icons";
 import { Course, Session, Student, AttendanceStatus, AttendanceRecord, SemesterConfig } from "@/types";
+import { compareWeekLabels } from "@/lib/week-utils";
 
 interface SummaryData {
   course: Course;
@@ -49,6 +50,7 @@ export default function SummaryClient({ courseId }: { courseId: string }) {
   const [editSubmitting, setEditSubmitting] = useState(false);
   const [holidays, setHolidays] = useState<Holiday[]>([]);
   const [tooltipSession, setTooltipSession] = useState<string | null>(null);
+  const [hiddenSessions, setHiddenSessions] = useState<Set<string>>(new Set());
   const popoverRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -154,15 +156,23 @@ export default function SummaryClient({ courseId }: { courseId: string }) {
 
   const exportCsv = () => {
     if (!data) return;
-    const { course, sessions, students, grid, totals } = data;
+    const { course, sessions: rawSessions, students, grid, totals } = data;
+    const exportSessions = [...rawSessions]
+      .sort((a, b) => {
+        if (a.week_label && b.week_label) return compareWeekLabels(a.week_label, b.week_label);
+        if (a.week_label) return -1;
+        if (b.week_label) return 1;
+        return a.date.localeCompare(b.date);
+      })
+      .filter((ss) => !hiddenSessions.has(ss.session_id));
     const header = [
       "#", "Student ID", "First Name", "Last Name",
-      ...sessions.map((s) => s.week_label ? `W${s.week_label} ${s.date}` : `${s.date} P${s.period}`),
+      ...exportSessions.map((s) => s.week_label ? `${s.week_label} ${s.date}` : `${s.date} P${s.period}`),
       "Att", "Abs", "Late", "%",
     ];
     const rows = students.map((s) => {
       const t = totals[s.student_id];
-      const cells = sessions.map((sess) => {
+      const cells = exportSessions.map((sess) => {
         const st = grid[s.student_id]?.[sess.session_id];
         if (!st) return "-";
         return st === "present" ? "✓" : st === "late" ? "L" : st === "absent" ? "—" : "⚠";
@@ -192,7 +202,18 @@ export default function SummaryClient({ courseId }: { courseId: string }) {
     <div className="card text-center py-10" style={{ color: "#A32D2D" }}>ไม่พบข้อมูลรายวิชา</div>
   );
 
-  const { course, sessions, students, grid, totals, semester_config } = data;
+  const { course, sessions: rawSessions, students, grid, totals, semester_config } = data;
+
+  // Sort sessions by week label (W1m < W1t < … < W2m), fall back to date
+  const sessions = [...rawSessions].sort((a, b) => {
+    if (a.week_label && b.week_label) return compareWeekLabels(a.week_label, b.week_label);
+    if (a.week_label) return -1;
+    if (b.week_label) return 1;
+    return a.date.localeCompare(b.date);
+  });
+
+  const visibleSessions = sessions.filter((ss) => !hiddenSessions.has(ss.session_id));
+  const hiddenCount = hiddenSessions.size;
   const holidayDates = new Set(holidays.map((h) => h.date.slice(0, 10)));
 
   // Weighted % calculation: sum(period_count for attended) / sum(period_count for all)
@@ -230,8 +251,8 @@ export default function SummaryClient({ courseId }: { courseId: string }) {
     return t && weightedPct(s.student_id) < threshold && t.total_sessions > 0;
   }).length;
 
-  // Session column summary (count of present+late per session)
-  const sessionAttCounts = sessions.map((ss) => {
+  // Session column summary (count of present+late per visible session)
+  const sessionAttCounts = visibleSessions.map((ss) => {
     let count = 0;
     for (const s of students) {
       const st = grid[s.student_id]?.[ss.session_id];
@@ -253,7 +274,7 @@ export default function SummaryClient({ courseId }: { courseId: string }) {
             {sessions.length} sessions · {students.length} students
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2">
           <label className="text-[13px] text-gray-600 flex items-center gap-2">
             Threshold
             <input
@@ -264,6 +285,15 @@ export default function SummaryClient({ courseId }: { courseId: string }) {
             />
             %
           </label>
+          {hiddenCount > 0 && (
+            <button
+              onClick={() => setHiddenSessions(new Set())}
+              className="text-[12px] px-2.5 py-1.5 rounded-lg transition-colors hover:bg-gray-200"
+              style={{ backgroundColor: "#F1EFE8", color: "#5F5E5A", border: "0.5px solid rgba(0,0,0,0.1)" }}
+            >
+              {hiddenCount} column{hiddenCount > 1 ? "s" : ""} hidden · Restore all
+            </button>
+          )}
           <button onClick={exportCsv} className="btn-outline text-[13px]" style={{ minHeight: 36 }}>
             <IconDownload size={14} /> Export CSV
           </button>
@@ -299,13 +329,14 @@ export default function SummaryClient({ courseId }: { courseId: string }) {
               <th className="sticky left-8 z-10 bg-gray-50 text-left px-3 py-2.5 text-[11px] font-medium min-w-[7rem]" style={{ color: "#5F5E5A", boxShadow: "2px 0 4px rgba(0,0,0,0.05)" }}>
                 Student
               </th>
-              {sessions.map((ss, ssIdx) => {
+              {visibleSessions.map((ss, ssIdx) => {
                 const isHoliday = holidayDates.has(ss.date);
                 const isPast = !!ss.is_past_session;
                 const holiday = holidays.find((h) => h.date.slice(0, 10) === ss.date);
-                const isLinkedRight = ss.linked_session_id && sessions[ssIdx + 1]?.session_id === ss.linked_session_id;
-                const isLinkedLeft = ss.linked_session_id && sessions[ssIdx - 1]?.session_id === ss.linked_session_id;
+                const isLinkedRight = ss.linked_session_id && visibleSessions[ssIdx + 1]?.session_id === ss.linked_session_id;
+                const isLinkedLeft = ss.linked_session_id && visibleSessions[ssIdx - 1]?.session_id === ss.linked_session_id;
                 const isSingleDouble = (ss.period_count ?? 1) >= 2 && ss.check_in_mode !== "double";
+                const isHovered = tooltipSession === ss.session_id;
                 return (
                   <th key={ss.session_id}
                     className="px-2 py-2 text-[11px] font-medium text-center min-w-[3.5rem] relative cursor-pointer"
@@ -318,6 +349,22 @@ export default function SummaryClient({ courseId }: { courseId: string }) {
                     onMouseEnter={() => setTooltipSession(ss.session_id)}
                     onMouseLeave={() => setTooltipSession(null)}
                   >
+                    {/* Hide button — appears on hover */}
+                    {isHovered && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setHiddenSessions((prev) => { const n = new Set(prev); n.add(ss.session_id); return n; });
+                          setTooltipSession(null);
+                        }}
+                        className="absolute top-0.5 right-0.5 rounded flex items-center justify-center text-[10px] leading-none"
+                        style={{ width: 14, height: 14, backgroundColor: "#fee2e2", color: "#A32D2D" }}
+                        title="Hide column"
+                      >
+                        ×
+                      </button>
+                    )}
                     {ss.week_label ? (
                       <>
                         <div className="font-semibold" style={{ color: isHoliday ? "#854F0B" : "#185FA5" }}>
@@ -335,7 +382,7 @@ export default function SummaryClient({ courseId }: { courseId: string }) {
                       </>
                     )}
                     {/* Tooltip */}
-                    {tooltipSession === ss.session_id && (
+                    {isHovered && (
                       <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1 z-30 rounded-lg shadow-lg text-left p-2 min-w-[140px] text-[11px]"
                         style={{ backgroundColor: "#1e293b", color: "white", pointerEvents: "none" }}>
                         <p className="font-semibold">{ss.date}</p>
@@ -345,6 +392,7 @@ export default function SummaryClient({ courseId }: { courseId: string }) {
                         {ss.check_in_mode === "double" && <p style={{ color: "#93C5FD" }}>Part {ss.part_number} of 2</p>}
                         {isPast && <p style={{ color: "#FBBF24" }}>📋 Past session</p>}
                         {holiday && <p style={{ color: "#FCA5A5" }}>🎌 {holiday.name}</p>}
+                        <p className="mt-1 pt-1" style={{ borderTop: "0.5px solid rgba(255,255,255,0.2)", color: "#94a3b8" }}>Hover × to hide</p>
                       </div>
                     )}
                   </th>
@@ -370,7 +418,7 @@ export default function SummaryClient({ courseId }: { courseId: string }) {
                     <p className="font-medium text-gray-900">{stu.firstname} {stu.lastname}</p>
                     <p className="font-mono text-[10px]" style={{ color: "#5F5E5A" }}>{stu.student_id}</p>
                   </td>
-                  {sessions.map((ss) => {
+                  {visibleSessions.map((ss) => {
                     const st = grid[stu.student_id]?.[ss.session_id] as AttendanceStatus | "overridden" | undefined;
                     const hasRecord = data.attendance.some(
                       (a) => a.student_id === stu.student_id && a.session_id === ss.session_id
@@ -405,13 +453,13 @@ export default function SummaryClient({ courseId }: { courseId: string }) {
               );
             })}
             {/* Summary row */}
-            {sessions.length > 0 && (
+            {visibleSessions.length > 0 && (
               <tr style={{ borderTop: "1px solid rgba(0,0,0,0.1)", backgroundColor: "#f9fafb" }}>
                 <td className="sticky left-0 z-10 px-2 py-2 bg-gray-50" />
                 <td className="sticky left-8 z-10 px-3 py-2 text-[11px] font-medium bg-gray-50" style={{ color: "#5F5E5A", boxShadow: "2px 0 4px rgba(0,0,0,0.05)" }}>
                   Total Attended
                 </td>
-                {sessions.map((ss, i) => (
+                {visibleSessions.map((ss, i) => (
                   <td key={ss.session_id} className="px-2 py-2 text-center text-[11px] font-medium" style={{ color: "#185FA5" }}>
                     {sessionAttCounts[i]}
                   </td>
