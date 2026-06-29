@@ -552,9 +552,9 @@ export default function ImportClient() {
             <h2 className="font-medium text-gray-900">Default Attendance Settings</h2>
             <SemesterSlider label="GPS Radius" value={semester.default_gps_radius} min={50} max={500} step={10} unit="m"
               onChange={(v) => setSemester((s) => ({ ...s, default_gps_radius: v }))} />
-            <SemesterSlider label="OTP Duration" value={semester.default_otp_min} min={5} max={60} step={5} unit="min"
+            <SemesterSlider label="OTP Duration" value={semester.default_otp_min} min={1} max={180} step={1} unit="min"
               onChange={(v) => setSemester((s) => ({ ...s, default_otp_min: v }))} />
-            <SemesterSlider label="Late After" value={semester.default_late_min} min={5} max={30} step={5} unit="min"
+            <SemesterSlider label="Late After" value={semester.default_late_min} min={1} max={90} step={1} unit="min"
               onChange={(v) => setSemester((s) => ({ ...s, default_late_min: v }))} />
             <div>
               <div className="flex justify-between text-[13px] mb-1">
@@ -620,9 +620,22 @@ function SemesterSlider({ label, value, min, max, step, unit, onChange }: {
 }) {
   return (
     <div>
-      <div className="flex justify-between text-[13px] mb-1">
-        <label className="text-gray-700">{label}</label>
-        <span className="font-medium" style={{ color: "#185FA5" }}>{value} {unit}</span>
+      <div className="flex items-center justify-between gap-2 mb-1">
+        <label className="text-[13px] text-gray-700">{label}</label>
+        <div className="flex items-center gap-1">
+          <input
+            type="number"
+            min={min} max={max} step={step}
+            value={value}
+            onChange={(e) => {
+              const v = parseInt(e.target.value, 10);
+              if (!isNaN(v)) onChange(Math.min(max, Math.max(min, v)));
+            }}
+            className="input text-center text-[13px] font-medium"
+            style={{ width: 64, minHeight: 32, color: "#185FA5" }}
+          />
+          <span className="text-[12px]" style={{ color: "#5F5E5A" }}>{unit}</span>
+        </div>
       </div>
       <input
         type="range" min={min} max={max} step={step} value={value}

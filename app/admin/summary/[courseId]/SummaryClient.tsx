@@ -439,12 +439,12 @@ export default function SummaryClient({ courseId }: { courseId: string }) {
       )}
 
       {/* Grid */}
-      <div className="overflow-x-auto rounded-xl relative" style={{ border: "0.5px solid rgba(0,0,0,0.1)" }}>
+      <div className="overflow-auto rounded-xl relative" style={{ border: "0.5px solid rgba(0,0,0,0.1)", maxHeight: "calc(100vh - 240px)" }}>
         <table className="min-w-full text-[13px] border-collapse bg-white">
           <thead>
             <tr style={{ borderBottom: "0.5px solid rgba(0,0,0,0.10)" }}>
-              <th className="sticky left-0 top-16 z-20 bg-gray-50 text-left px-2 py-2.5 text-[11px] font-medium w-8" style={{ color: "#5F5E5A" }}>#</th>
-              <th className="sticky left-8 top-16 z-20 bg-gray-50 text-left px-3 py-2.5 text-[11px] font-medium min-w-[7rem]" style={{ color: "#5F5E5A", boxShadow: "2px 0 4px rgba(0,0,0,0.05)" }}>
+              <th className="sticky left-0 top-0 z-20 bg-gray-50 text-left px-2 py-2.5 text-[11px] font-medium w-8" style={{ color: "#5F5E5A" }}>#</th>
+              <th className="sticky left-8 top-0 z-20 bg-gray-50 text-left px-3 py-2.5 text-[11px] font-medium min-w-[8rem]" style={{ color: "#5F5E5A", boxShadow: "3px 0 6px rgba(0,0,0,0.08)" }}>
                 Student
               </th>
               {visibleSessions.map((ss, ssIdx) => {
@@ -457,7 +457,7 @@ export default function SummaryClient({ courseId }: { courseId: string }) {
                 const isHovered = tooltipSession === ss.session_id;
                 return (
                   <th key={ss.session_id}
-                    className="sticky top-16 z-10 px-2 py-2 text-[11px] font-medium text-center min-w-[3.5rem] relative cursor-pointer"
+                    className="sticky top-0 z-10 px-2 py-2 text-[11px] font-medium text-center min-w-[3.5rem] relative cursor-pointer"
                     style={{
                       color: "#5F5E5A",
                       backgroundColor: isHoliday ? "#FEF9EC" : isLinkedRight || isLinkedLeft ? "rgba(24,95,165,0.04)" : "white",
@@ -517,10 +517,10 @@ export default function SummaryClient({ courseId }: { courseId: string }) {
                   </th>
                 );
               })}
-              <th className="sticky top-16 z-10 bg-gray-50 px-2 py-2.5 text-[11px] font-medium text-center min-w-[2.5rem]" style={{ color: "#3B6D11" }}>Att.</th>
-              <th className="sticky top-16 z-10 bg-gray-50 px-2 py-2.5 text-[11px] font-medium text-center min-w-[2.5rem]" style={{ color: "#A32D2D" }}>Abs.</th>
-              <th className="sticky top-16 z-10 bg-gray-50 px-2 py-2.5 text-[11px] font-medium text-center min-w-[2.5rem]" style={{ color: "#185FA5" }}>Late</th>
-              <th className="sticky top-16 z-10 bg-gray-50 px-2 py-2.5 text-[11px] font-medium text-gray-700 text-center min-w-[3rem]">%</th>
+              <th className="sticky top-0 z-10 bg-gray-50 px-2 py-2.5 text-[11px] font-medium text-center min-w-[2.5rem]" style={{ color: "#3B6D11" }}>Att.</th>
+              <th className="sticky top-0 z-10 bg-gray-50 px-2 py-2.5 text-[11px] font-medium text-center min-w-[2.5rem]" style={{ color: "#A32D2D" }}>Abs.</th>
+              <th className="sticky top-0 z-10 bg-gray-50 px-2 py-2.5 text-[11px] font-medium text-center min-w-[2.5rem]" style={{ color: "#185FA5" }}>Late</th>
+              <th className="sticky top-0 z-10 bg-gray-50 px-2 py-2.5 text-[11px] font-medium text-gray-700 text-center min-w-[3rem]">%</th>
             </tr>
           </thead>
           <tbody>
@@ -555,9 +555,9 @@ export default function SummaryClient({ courseId }: { courseId: string }) {
                         style={{ padding: 0, height: 1, backgroundColor: "#E9D5FF" }} />
                     </tr>
                   )}
-                <tr key={stu.student_id} style={{ borderBottom: "0.5px solid rgba(0,0,0,0.06)", backgroundColor: rowBg, borderLeft: leftBorder }}>
-                  <td className="sticky left-0 z-10 px-2 py-2 text-[11px] text-gray-400" style={{ backgroundColor: rowBg }}>{stu.order_num}</td>
-                  <td className="sticky left-8 z-10 px-3 py-2 whitespace-nowrap text-[12px]" style={{ backgroundColor: rowBg, boxShadow: "2px 0 4px rgba(0,0,0,0.05)" }}>
+                <tr key={stu.student_id} style={{ borderBottom: "0.5px solid rgba(0,0,0,0.06)", backgroundColor: rowBg }}>
+                  <td className="sticky left-0 z-10 px-2 py-2 text-[11px] text-gray-400" style={{ backgroundColor: rowBg, borderLeft: leftBorder }}>{stu.order_num}</td>
+                  <td className="sticky left-8 z-10 px-3 py-2 whitespace-nowrap text-[12px]" style={{ backgroundColor: rowBg, boxShadow: "3px 0 6px rgba(0,0,0,0.08)" }}>
                     <p className="font-medium text-gray-900">
                       {isConflict && <span className="mr-1 text-[10px]" style={{ color: "#a855f7" }}>⚠</span>}
                       {stu.firstname} {stu.lastname}
@@ -603,7 +603,7 @@ export default function SummaryClient({ courseId }: { courseId: string }) {
             {visibleSessions.length > 0 && (
               <tr style={{ borderTop: "1px solid rgba(0,0,0,0.1)", backgroundColor: "#f9fafb" }}>
                 <td className="sticky left-0 z-10 px-2 py-2 bg-gray-50" />
-                <td className="sticky left-8 z-10 px-3 py-2 text-[11px] font-medium bg-gray-50" style={{ color: "#5F5E5A", boxShadow: "2px 0 4px rgba(0,0,0,0.05)" }}>
+                <td className="sticky left-8 z-10 px-3 py-2 text-[11px] font-medium bg-gray-50" style={{ color: "#5F5E5A", boxShadow: "3px 0 6px rgba(0,0,0,0.08)" }}>
                   Total Attended
                 </td>
                 {visibleSessions.map((ss, i) => (

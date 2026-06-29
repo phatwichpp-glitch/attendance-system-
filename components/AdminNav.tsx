@@ -32,7 +32,7 @@ export default function AdminNav({ email }: { email?: string | null }) {
   return (
     <>
       <header
-        className="bg-white sticky top-0 z-10"
+        className="bg-white sticky top-0 z-30"
         style={{ borderBottom: "0.5px solid rgba(0,0,0,0.12)" }}
       >
         <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between gap-4">
