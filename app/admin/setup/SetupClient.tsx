@@ -129,6 +129,26 @@ export default function SetupClient() {
     const course = getCourse();
     if (!course) { setSubmitting(false); return; }
     saveSettings(course.course_id, settings);
+
+    // Adjust late_after_min so the threshold is anchored to the configured class start_time,
+    // not to when the teacher opened the session. Works in both directions:
+    // opened early → inflate; opened late → deflate (clamped to 0).
+    let effectiveLateAfterMin = settings.late_after_min;
+    if (!isPast) {
+      const sessionDayOfWeek = new Date(sessionDate + "T00:00:00").getDay();
+      const scheduleForDay = semesterConfig?.teaching_schedule.find(
+        (t) => t.day === sessionDayOfWeek
+      );
+      if (scheduleForDay?.start_time) {
+        const [sh, sm] = scheduleForDay.start_time.split(":").map(Number);
+        if (!isNaN(sh) && !isNaN(sm)) {
+          const now = new Date();
+          const minutesUntilStart = (sh * 60 + sm) - (now.getHours() * 60 + now.getMinutes());
+          effectiveLateAfterMin = Math.max(0, settings.late_after_min + minutesUntilStart);
+        }
+      }
+    }
+
     try {
       const res = await fetch("/api/sheets/sessions", {
         method: "POST",
@@ -140,6 +160,7 @@ export default function SetupClient() {
           lat: gps.lat,
           lng: gps.lng,
           ...settings,
+          late_after_min: effectiveLateAfterMin,
           date: sessionDate,
           week_number: weekNumber,
           week_label: weekLabel || undefined,
@@ -179,10 +200,16 @@ export default function SetupClient() {
   });
   const accWidth = Math.max(4, Math.min(100, (1 - gps.accuracy / 500) * 100));
   const accColor = gps.accuracy <= 20 ? "#3B6D11" : gps.accuracy <= 100 ? "#854F0B" : "#A32D2D";
+  const accLabel = gps.accuracy <= 20 ? "Excellent" : gps.accuracy <= 50 ? "Good" : gps.accuracy <= 100 ? "Fair" : "Poor";
   const course = getCourse();
   const periodNum = parseInt(period, 10);
   const periodEnd = periodCount >= 2 ? calcPeriodEnd(periodNum, periodCount) : undefined;
-  const periodRangeLabel = getPeriodLabel(periodNum, periodEnd);
+  const sessionDow = new Date(sessionDate + "T00:00:00").getDay();
+  const configuredDay = semesterConfig?.teaching_schedule.find((t) => t.day === sessionDow);
+  // Only use configured end_time when period count matches config — prevents a single-period
+  // end_time from being used as the end label when the teacher switches to double period.
+  const endTimeOverride = configuredDay?.period_count === periodCount ? configuredDay?.end_time : undefined;
+  const periodRangeLabel = getPeriodLabel(periodNum, periodEnd, configuredDay?.start_time, endTimeOverride);
   const periodEndWarning = periodCount >= 2 && !periodEnd;
   const hasValidGps = Number.isFinite(gps.lat) && Number.isFinite(gps.lng) && (gps.lat !== 0 || gps.lng !== 0);
 
@@ -192,10 +219,11 @@ export default function SetupClient() {
   };
 
   return (
-    <div className="space-y-4">
+    <>
+    <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); handleSubmit(); }}>
       {semesterConfig && (
-        <div className="rounded-lg px-3 py-2 text-[12px]" style={{ backgroundColor: "#E6F1FB", color: "#185FA5" }}>
-          Loaded semester config — starts {semesterConfig.semester_start}, {semesterConfig.total_weeks} weeks
+        <div className="rounded-lg px-3 py-2 text-[12px] flex items-center gap-2" style={{ backgroundColor: "#E6F1FB", color: "#185FA5" }}>
+          <span>✓</span> Schedule auto-filled from semester config ({semesterConfig.total_weeks} weeks)
         </div>
       )}
 
@@ -242,6 +270,7 @@ export default function SetupClient() {
                     className="flex-1 rounded-lg text-[13px] font-medium transition-colors"
                     style={{
                       padding: "8px 0",
+                      minHeight: 44,
                       border: periodCount === n ? "2px solid #185FA5" : "1px solid #d1d5db",
                       backgroundColor: periodCount === n ? "#E6F1FB" : "white",
                       color: periodCount === n ? "#185FA5" : "#374151",
@@ -252,15 +281,13 @@ export default function SetupClient() {
                 ))}
               </div>
 
-              {/* Period range display */}
-              {periodCount >= 2 && (
-                <div className="mt-2 rounded-lg px-3 py-2 text-[12px]"
-                  style={{ backgroundColor: periodEndWarning ? "#FCEBEB" : "#E6F1FB", color: periodEndWarning ? "#A32D2D" : "#185FA5" }}>
-                  {periodEndWarning
-                    ? `Period ${periodNum} + 1 exceeds คาบ 6 — please select an earlier period`
-                    : periodRangeLabel}
-                </div>
-              )}
+              {/* Period range display — always shown */}
+              <div className="mt-2 rounded-lg px-3 py-2 text-[12px]"
+                style={{ backgroundColor: periodEndWarning ? "#FCEBEB" : "#E6F1FB", color: periodEndWarning ? "#A32D2D" : "#185FA5" }}>
+                {periodEndWarning
+                  ? `Period ${periodNum} + 1 exceeds คาบ 6 — please select an earlier period`
+                  : periodRangeLabel}
+              </div>
             </div>
 
             {/* Check-in mode (only for double period) */}
@@ -274,13 +301,14 @@ export default function SetupClient() {
                     className="flex-1 rounded-lg text-[13px] transition-colors"
                     style={{
                       padding: "8px 0",
+                      minHeight: 44,
                       border: checkInMode === "single" ? "2px solid #185FA5" : "1px solid #d1d5db",
                       backgroundColor: checkInMode === "single" ? "#E6F1FB" : "white",
                       color: checkInMode === "single" ? "#185FA5" : "#374151",
                     }}
                   >
                     Single Check-in
-                    <span className="block text-[11px] font-normal mt-0.5" style={{ color: checkInMode === "single" ? "#185FA5" : "#6b7280" }}>
+                    <span className="block text-[12px] font-normal mt-0.5" style={{ color: checkInMode === "single" ? "#185FA5" : "#6b7280" }}>
                       1 OTP covers both periods
                     </span>
                   </button>
@@ -290,13 +318,14 @@ export default function SetupClient() {
                     className="flex-1 rounded-lg text-[13px] transition-colors"
                     style={{
                       padding: "8px 0",
+                      minHeight: 44,
                       border: checkInMode === "double" ? "2px solid #185FA5" : "1px solid #d1d5db",
                       backgroundColor: checkInMode === "double" ? "#E6F1FB" : "white",
                       color: checkInMode === "double" ? "#185FA5" : "#374151",
                     }}
                   >
                     Two Check-ins
-                    <span className="block text-[11px] font-normal mt-0.5" style={{ color: checkInMode === "double" ? "#185FA5" : "#6b7280" }}>
+                    <span className="block text-[12px] font-normal mt-0.5" style={{ color: checkInMode === "double" ? "#185FA5" : "#6b7280" }}>
                       Separate OTP per period
                     </span>
                   </button>
@@ -320,7 +349,6 @@ export default function SetupClient() {
                 <span
                   className="absolute top-1 left-1 w-4 h-4 bg-white rounded-full shadow transition-transform"
                   style={{ transform: isPast ? "translateX(16px)" : "translateX(0)" }}
-                  onClick={() => setIsPast(!isPast)}
                 />
               </div>
               <div>
@@ -420,7 +448,9 @@ export default function SetupClient() {
                 <div className="rounded-lg px-3 py-2" style={{ backgroundColor: "#f8fafc", border: "0.5px solid rgba(0,0,0,0.08)" }}>
                   <div className="flex justify-between text-[11px] mb-1" style={{ color: "#5F5E5A" }}>
                     <span>Accuracy</span>
-                    <span style={{ color: accColor }}>{Math.round(gps.accuracy)} m</span>
+                    <span style={{ color: accColor }}>
+                      {gpsSource === "map" ? "Map selected" : `${Math.round(gps.accuracy)} m · ${accLabel}`}
+                    </span>
                   </div>
                   <div className="h-2 rounded-full" style={{ backgroundColor: "#e5e7eb" }}>
                     <div className="h-full rounded-full transition-all" style={{ width: `${accWidth}%`, backgroundColor: accColor }} />
@@ -468,6 +498,12 @@ export default function SetupClient() {
         </div>
       </div>
 
+      {!isPast && !gps.loading && !hasValidGps && (
+        <div className="rounded-lg px-4 py-3 text-[12px]" style={{ backgroundColor: "#FEF9EC", color: "#854F0B" }}>
+          Please pick a classroom location on the map or refresh device GPS before opening a session.
+        </div>
+      )}
+
       {setupError && (
         <div className="rounded-lg px-4 py-3 text-[13px]" style={{ backgroundColor: "#FCEBEB", color: "#A32D2D" }}>
           {setupError}
@@ -475,7 +511,7 @@ export default function SetupClient() {
       )}
 
       <button
-        onClick={handleSubmit}
+        type="submit"
         disabled={
           submitting ||
           !courseKey ||
@@ -489,33 +525,28 @@ export default function SetupClient() {
           : isPast
             ? "Create Past Session & Enter Attendance"
             : periodCount >= 2 && checkInMode === "double"
-              ? "Open Double Period (Part 1) & Generate OTP"
+              ? "Open Double Period & Generate OTP"
               : "Open Session & Generate OTP"}
       </button>
+    </form>
 
-      {!isPast && !gps.loading && !hasValidGps && (
-        <div className="rounded-lg px-4 py-3 text-[12px]" style={{ backgroundColor: "#FEF9EC", color: "#854F0B" }}>
-          Please pick a classroom location on map or refresh device GPS before opening session.
-        </div>
-      )}
-
-      {showGpsWarn && (
-        <div className="fixed inset-0 flex items-center justify-center z-50 p-4" style={{ backgroundColor: "rgba(0,0,0,0.5)" }}>
-          <div className="card max-w-sm w-full space-y-4">
-            <h3 className="font-medium text-gray-900 flex items-center gap-2">
-              <IconWarning size={16} className="text-[#854F0B]" /> Low GPS Accuracy
-            </h3>
-            <p className="text-[13px] text-gray-600">
-              GPS accuracy is <strong>{Math.round(gps.accuracy)} m</strong> — นักศึกษาในห้องอาจเช็คชื่อไม่ผ่าน
-            </p>
-            <div className="flex gap-3">
-              <button onClick={() => setShowGpsWarn(false)} className="btn-outline flex-1">Wait</button>
-              <button onClick={doOpen} className="btn-primary flex-1">Open Anyway</button>
-            </div>
+    {showGpsWarn && (
+      <div className="fixed inset-0 flex items-center justify-center z-50 p-4" style={{ backgroundColor: "rgba(0,0,0,0.5)" }}>
+        <div className="card max-w-sm w-full space-y-4">
+          <h3 className="font-medium text-gray-900 flex items-center gap-2">
+            <IconWarning size={16} className="text-[#854F0B]" /> Low GPS Accuracy
+          </h3>
+          <p className="text-[13px] text-gray-600">
+            GPS accuracy is <strong>{Math.round(gps.accuracy)} m</strong> — students inside the room may fail to check in.
+          </p>
+          <div className="flex gap-3">
+            <button type="button" onClick={() => setShowGpsWarn(false)} className="btn-outline flex-1">Cancel</button>
+            <button type="button" onClick={doOpen} className="btn-primary flex-1">Open Anyway</button>
           </div>
         </div>
-      )}
-    </div>
+      </div>
+    )}
+    </>
   );
 }
 

@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useClock } from "@/lib/hooks/useClock";
 import HelpModal from "@/components/HelpModal";
 
@@ -10,19 +10,24 @@ export default function AdminNav({ email }: { email?: string | null }) {
   const pathname = usePathname();
   const clock = useClock();
   const [showHelp, setShowHelp] = useState(false);
+  const handleCloseHelp = useCallback(() => setShowHelp(false), []);
 
-  const link = (href: string, label: string) => (
-    <Link
-      href={href}
-      className={`px-3 py-2 rounded-lg text-[15px] font-medium transition-colors ${
-        pathname === href || pathname.startsWith(href + "/")
-          ? "bg-blue-50 text-[#185FA5]"
-          : "text-gray-500 hover:text-gray-900"
-      }`}
-    >
-      {label}
-    </Link>
-  );
+  const link = (href: string, label: string) => {
+    const isActive =
+      href === "/admin"
+        ? pathname === href
+        : pathname === href || pathname.startsWith(href + "/");
+    return (
+      <Link
+        href={href}
+        className={`px-3 py-2 rounded-lg text-[15px] font-medium transition-colors ${
+          isActive ? "bg-blue-50 text-[#185FA5]" : "text-gray-500 hover:text-gray-900"
+        }`}
+      >
+        {label}
+      </Link>
+    );
+  };
 
   return (
     <header
@@ -30,12 +35,15 @@ export default function AdminNav({ email }: { email?: string | null }) {
       style={{ borderBottom: "0.5px solid rgba(0,0,0,0.12)" }}
     >
       <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between gap-4">
-        <nav className="flex items-center gap-1 overflow-x-auto">
-          {link("/admin", "Courses")}
-          {link("/admin/import", "Import")}
-          {link("/admin/setup", "Open Session")}
-          {link("/admin/audit", "Audit Log")}
-        </nav>
+        <div className="relative flex-1 min-w-0">
+          <nav className="flex items-center gap-1 overflow-x-auto pr-4">
+            {link("/admin", "Courses")}
+            {link("/admin/import", "Import")}
+            {link("/admin/setup", "Open Session")}
+            {link("/admin/audit", "Audit Log")}
+          </nav>
+          <div className="absolute right-0 top-0 h-full w-6 bg-gradient-to-l from-white to-transparent pointer-events-none sm:hidden" aria-hidden="true" />
+        </div>
         <div className="flex items-center gap-4 flex-shrink-0">
           {email && (
             <span className="text-[12px] text-gray-400 hidden sm:block truncate max-w-40">
@@ -43,8 +51,8 @@ export default function AdminNav({ email }: { email?: string | null }) {
             </span>
           )}
           {clock.time && (
-            <div className="hidden sm:flex items-center gap-2">
-              <span className="text-[13px]" style={{ color: "#5F5E5A" }}>{clock.date}</span>
+            <div className="flex items-center gap-2">
+              <span className="text-[13px] hidden sm:block" style={{ color: "#5F5E5A" }}>{clock.date}</span>
               <span className="text-[18px] font-medium" style={{ fontFamily: "ui-monospace, monospace" }}>{clock.time}</span>
             </div>
           )}
@@ -65,7 +73,7 @@ export default function AdminNav({ email }: { email?: string | null }) {
           </button>
         </div>
       </div>
-      {showHelp && <HelpModal onClose={() => setShowHelp(false)} />}
+      {showHelp && <HelpModal onClose={handleCloseHelp} />}
     </header>
   );
 }

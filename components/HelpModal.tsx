@@ -1,22 +1,58 @@
 "use client";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { IconX } from "@/components/icons";
 
 export default function HelpModal({ onClose }: { onClose: () => void }) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    const prevFocus = document.activeElement as HTMLElement | null;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    const dialog = dialogRef.current;
+    const focusable = dialog
+      ? Array.from(
+          dialog.querySelectorAll<HTMLElement>(
+            'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+          )
+        ).filter((el) => !el.hasAttribute("disabled"))
+      : [];
+    focusable[0]?.focus();
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") { onClose(); return; }
+      if (e.key !== "Tab" || focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey) {
+        if (document.activeElement === first) { e.preventDefault(); last.focus(); }
+      } else {
+        if (document.activeElement === last) { e.preventDefault(); first.focus(); }
+      }
+    };
+
     document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevOverflow;
+      prevFocus?.focus();
+    };
   }, [onClose]);
 
   return (
     <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="help-dialog-title"
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
       style={{ backgroundColor: "rgba(0,0,0,0.45)" }}
-      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div
-        className="bg-white rounded-2xl shadow-xl w-full max-w-2xl flex flex-col"
+        ref={dialogRef}
+        tabIndex={-1}
+        className="bg-white rounded-2xl shadow-xl w-full max-w-2xl flex flex-col focus:outline-none"
         style={{ maxHeight: "85vh", border: "0.5px solid rgba(0,0,0,0.1)" }}
       >
         {/* Header */}
@@ -25,7 +61,7 @@ export default function HelpModal({ onClose }: { onClose: () => void }) {
           style={{ borderBottom: "0.5px solid rgba(0,0,0,0.08)" }}
         >
           <div>
-            <h2 className="font-semibold text-gray-900 text-[17px]">คู่มือการใช้งาน</h2>
+            <h2 id="help-dialog-title" className="font-semibold text-gray-900 text-[17px]">คู่มือการใช้งาน</h2>
             <p className="text-[12px] text-gray-400 mt-0.5">ระบบเช็คชื่อนักศึกษา</p>
           </div>
           <button
@@ -62,7 +98,7 @@ export default function HelpModal({ onClose }: { onClose: () => void }) {
           <Section title="3. ระหว่างคาบเรียน (Session Dashboard)" color="#185FA5">
             <Step n="1">แสดง OTP 6 หลักให้นักศึกษาเห็น — OTP จะหมดอายุตามเวลาที่ตั้ง</Step>
             <Step n="2">กด <Chip>Projector View</Chip> เพื่อแสดงบนหน้าจอห้องเรียน (fullscreen)</Step>
-            <Step n="3">นักศึกษาเปิด <strong>check.&lt;domain&gt;</strong> แล้วกรอก OTP + ยืนยัน GPS</Step>
+            <Step n="3">นักศึกษาเปิด <strong>ลิงก์เช็คชื่อ</strong> (QR บนกระดาน หรือพิมพ์ URL ตรง) แล้วกรอก OTP + ยืนยัน GPS</Step>
             <Step n="4">ดูรายชื่อ Present / Late / Absent แบบ real-time บน Dashboard</Step>
             <Step n="5">กด <Chip>Manual Override</Chip> เพื่อแก้สถานะนักศึกษารายคน หากจำเป็น</Step>
           </Section>
