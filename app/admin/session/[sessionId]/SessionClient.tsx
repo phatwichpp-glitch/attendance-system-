@@ -455,6 +455,7 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
   const flaggedCount        = students.filter((x) => x.attendance?.flagged).length;
   const totalIssues        = gpsFailCount + deviceConflictCount + lateCount + flaggedCount;
 
+  // Action buttons with optimized sizing
   const ActionButtons = (
     <div className="flex gap-2 flex-wrap">
       {!isClosed && (
