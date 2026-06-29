@@ -45,15 +45,15 @@ export default function AdminNav({ email }: { email?: string | null }) {
             </nav>
             <div className="absolute right-0 top-0 h-full w-6 bg-gradient-to-l from-white to-transparent pointer-events-none sm:hidden" aria-hidden="true" />
           </div>
-          <div className="flex items-center gap-4 flex-shrink-0">
+          <div className="flex items-center gap-2 flex-shrink-0">
             {email && (
-              <span className="text-[12px] text-gray-400 hidden sm:block truncate max-w-40">
+              <span className="text-[12px] text-gray-400 hidden lg:block truncate max-w-28">
                 {email}
               </span>
             )}
             {clock.time && (
-              <div className="flex items-center gap-2">
-                <span className="text-[13px] hidden sm:block" style={{ color: "#5F5E5A" }}>{clock.date}</span>
+              <div className="flex items-center gap-1.5">
+                <span className="text-[13px] hidden md:block" style={{ color: "#5F5E5A" }}>{clock.date}</span>
                 <span className="text-[18px] font-medium" style={{ fontFamily: "ui-monospace, monospace" }}>{clock.time}</span>
               </div>
             )}
@@ -68,7 +68,7 @@ export default function AdminNav({ email }: { email?: string | null }) {
             </button>
             <button
               onClick={() => signOut({ callbackUrl: "/login" })}
-              className="text-[14px] text-gray-500 hover:text-gray-900 transition-colors min-h-[44px] px-2"
+              className="text-[13px] text-gray-500 hover:text-gray-900 transition-colors px-1.5 h-8 flex items-center whitespace-nowrap"
             >
               Sign Out
             </button>
