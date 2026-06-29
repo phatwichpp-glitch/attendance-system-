@@ -1065,6 +1065,7 @@ export interface CourseStats {
   session_count: number;
   last_session_date: string;
   avg_attendance_pct: number;
+  open_session_id?: string;
 }
 
 export async function getCourseStats(
@@ -1091,11 +1092,13 @@ export async function getCourseStats(
   for (const r of sessRes.data.values ?? []) {
     const k = key(r[1] ?? "", r[2] ?? "");
     if (!stats[k]) stats[k] = { student_count: 0, session_count: 0, last_session_date: "", avg_attendance_pct: 0 };
-    if (r[12]) { // closed_at
+    if (r[12]) { // closed_at — session is closed
       stats[k].session_count++;
       if (!stats[k].last_session_date || r[4] > stats[k].last_session_date) {
         stats[k].last_session_date = r[4];
       }
+    } else if (r[11] && r[15] !== "true") { // opened_at set, closed_at empty, not past session
+      stats[k].open_session_id = r[0]; // session_id
     }
   }
 

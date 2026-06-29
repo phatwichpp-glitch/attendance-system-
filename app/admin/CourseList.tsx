@@ -169,13 +169,26 @@ export default function CourseList() {
             <div
               key={key}
               className="card"
-              style={{ transition: "border-color 0.15s" }}
-              onMouseEnter={(e) => (e.currentTarget.style.borderColor = "#185FA5")}
-              onMouseLeave={(e) => (e.currentTarget.style.borderColor = "rgba(0,0,0,0.1)")}
+              style={{
+                transition: "border-color 0.15s",
+                borderColor: st?.open_session_id ? "#86EFAC" : "rgba(0,0,0,0.1)",
+                backgroundColor: st?.open_session_id ? "#F0FDF4" : undefined,
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.borderColor = st?.open_session_id ? "#4ADE80" : "#185FA5")}
+              onMouseLeave={(e) => (e.currentTarget.style.borderColor = st?.open_session_id ? "#86EFAC" : "rgba(0,0,0,0.1)")}
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">
-                  <p className="font-mono text-[11px]" style={{ color: "#5F5E5A" }}>{c.course_id}</p>
+                  <div className="flex items-center gap-2">
+                    <p className="font-mono text-[11px]" style={{ color: "#5F5E5A" }}>{c.course_id}</p>
+                    {st?.open_session_id && (
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold"
+                        style={{ backgroundColor: "#DCFCE7", color: "#166534" }}>
+                        <span className="inline-block w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+                        กำลังเปิด
+                      </span>
+                    )}
+                  </div>
                   <h3 className="font-medium text-gray-900 truncate mt-0.5">{c.title}</h3>
                   <p className="text-[13px] text-gray-500 mt-1">
                     Sec.{c.section} · Year {c.year} Sem {c.semester}
@@ -208,13 +221,24 @@ export default function CourseList() {
 
                 <div className="flex flex-col gap-2 flex-shrink-0 items-end">
                   <div className="flex gap-1.5 items-center">
-                    <Link
-                      href={`/admin/setup?course_id=${c.course_id}&section=${c.section}`}
-                      className="btn-primary text-[13px] px-3"
-                      style={{ minHeight: 36 }}
-                    >
-                      Open Session
-                    </Link>
+                    {st?.open_session_id ? (
+                      <Link
+                        href={`/admin/session/${st.open_session_id}`}
+                        className="text-[13px] px-3 rounded-lg font-medium transition-colors flex items-center gap-1.5"
+                        style={{ minHeight: 36, backgroundColor: "#DCFCE7", color: "#166534", border: "1px solid #86EFAC" }}
+                      >
+                        <span className="inline-block w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                        View Active Session
+                      </Link>
+                    ) : (
+                      <Link
+                        href={`/admin/setup?course_id=${c.course_id}&section=${c.section}`}
+                        className="btn-primary text-[13px] px-3"
+                        style={{ minHeight: 36 }}
+                      >
+                        Open Session
+                      </Link>
+                    )}
 
                     {/* ⋯ menu */}
                     <div className="relative" ref={isMenuOpen ? menuRef : undefined}>
@@ -231,6 +255,17 @@ export default function CourseList() {
                           className="absolute right-0 top-full mt-1 rounded-xl shadow-lg z-20 py-1 min-w-[168px]"
                           style={{ backgroundColor: "white", border: "0.5px solid rgba(0,0,0,0.12)" }}
                         >
+                          {st?.open_session_id && (
+                            <>
+                              <MenuItem
+                                href={`/admin/session/${st.open_session_id}`}
+                                onClick={() => setMenuOpen(null)}
+                              >
+                                View Active Session
+                              </MenuItem>
+                              <div style={{ height: "0.5px", backgroundColor: "rgba(0,0,0,0.08)", margin: "4px 0" }} />
+                            </>
+                          )}
                           <MenuItem
                             href={`/admin/summary/${c.course_id}`}
                             onClick={() => setMenuOpen(null)}
@@ -255,13 +290,23 @@ export default function CourseList() {
                     </div>
                   </div>
 
-                  <Link
-                    href={`/admin/summary/${c.course_id}`}
-                    className="btn-outline text-[13px] px-3 w-full text-center"
-                    style={{ minHeight: 36 }}
-                  >
-                    Summary
-                  </Link>
+                  {st?.open_session_id ? (
+                    <Link
+                      href={`/admin/setup?course_id=${c.course_id}&section=${c.section}`}
+                      className="text-[13px] px-3 w-full text-center rounded-lg transition-colors"
+                      style={{ minHeight: 36, display: "flex", alignItems: "center", justifyContent: "center", color: "#6b7280", border: "1px solid #d1d5db", backgroundColor: "white" }}
+                    >
+                      Open Another Session
+                    </Link>
+                  ) : (
+                    <Link
+                      href={`/admin/summary/${c.course_id}`}
+                      className="btn-outline text-[13px] px-3 w-full text-center"
+                      style={{ minHeight: 36 }}
+                    >
+                      Summary
+                    </Link>
+                  )}
                 </div>
               </div>
             </div>

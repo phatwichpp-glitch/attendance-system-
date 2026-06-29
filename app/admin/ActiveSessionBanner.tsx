@@ -18,6 +18,7 @@ export default function ActiveSessionBanner() {
   const [stored, setStored] = useState<StoredSession | null>(null);
   const [loading, setLoading] = useState(true);
   const [closing, setClosing] = useState(false);
+  const [verified, setVerified] = useState(false);
 
   useEffect(() => {
     const raw = localStorage.getItem("active_session");
@@ -32,11 +33,14 @@ export default function ActiveSessionBanner() {
       .then((d) => {
         if (d.session && !d.session.closed_at) {
           setStored(parsed);
+          setVerified(true);
         } else {
           localStorage.removeItem("active_session");
         }
       })
-      .catch(() => { /* transient error — keep stored data, show banner */ setStored(parsed); })
+      .catch(() => {
+        // Network error — don't show potentially stale banner; CourseList handles per-course state
+      })
       .finally(() => setLoading(false));
   }, []);
 
@@ -78,9 +82,17 @@ export default function ActiveSessionBanner() {
       <div className="flex items-start gap-2 min-w-0">
         <IconWarning size={14} className="text-[#854F0B] mt-0.5 flex-shrink-0" />
         <div className="min-w-0">
-          <p className="font-medium text-[13px]" style={{ color: "#78350F" }}>
-            คาบเรียนกำลังดำเนินอยู่
-          </p>
+          <div className="flex items-center gap-2">
+            <p className="font-medium text-[13px]" style={{ color: "#78350F" }}>
+              คาบเรียนกำลังดำเนินอยู่
+            </p>
+            {verified && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium"
+                style={{ backgroundColor: "#FEF3C7", color: "#92400E" }}>
+                verified
+              </span>
+            )}
+          </div>
           <p className="text-[11px] mt-0.5 truncate" style={{ color: "#92400E" }}>
             {stored.course_id} · {stored.course_title} · Sec.{stored.section} · Period {stored.period}
           </p>
