@@ -31,6 +31,8 @@ export interface PeriodPrefs {
   period: string;
   period_count: 1 | 2;
   check_in_mode: "single" | "double";
+  start_time?: string;  // "HH:MM"
+  end_time?: string;    // "HH:MM"
 }
 
 export function loadPeriodPrefs(courseId: string): PeriodPrefs | null {

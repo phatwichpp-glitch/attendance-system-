@@ -4,10 +4,10 @@ import dynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
 import Spinner from "@/components/Spinner";
 import { IconLocation, IconRefresh, IconWarning } from "@/components/icons";
-import { Course, Settings, PERIODS, DEFAULT_SETTINGS, SemesterConfig } from "@/types";
+import { Course, Settings, DEFAULT_SETTINGS, SemesterConfig } from "@/types";
 import { loadSettings, saveSettings, loadPeriodPrefs, savePeriodPrefs } from "@/lib/settings";
 import { getWeekLabel } from "@/lib/week-utils";
-import { getPeriodLabel, calcPeriodEnd } from "@/lib/period-utils";
+import { getPeriodLabel, calcPeriodEnd, nearestPeriod, addMinutes, PERIOD_STARTS } from "@/lib/period-utils";
 
 const GpsMapPicker = dynamic(() => import("./GpsMapPicker"), {
   ssr: false,
@@ -28,7 +28,8 @@ export default function SetupClient() {
   const [courseKey, setCourseKey] = useState(
     initCourseId && initSection ? `${initCourseId}__${initSection}` : ""
   );
-  const [period, setPeriod] = useState("1");
+  const [classStartTime, setClassStartTime] = useState(PERIOD_STARTS["3"]); // 11:00 default
+  const [classEndTime, setClassEndTime] = useState("12:30");
   const [periodCount, setPeriodCount] = useState<1 | 2>(1);
   const [checkInMode, setCheckInMode] = useState<"single" | "double">("single");
   const [settings, setSettings] = useState<Settings>({ ...DEFAULT_SETTINGS });
@@ -69,7 +70,8 @@ export default function SetupClient() {
     const savedPeriod = loadPeriodPrefs(course.course_id);
     setSettings(saved);
     if (savedPeriod) {
-      setPeriod(savedPeriod.period);
+      if (savedPeriod.start_time) setClassStartTime(savedPeriod.start_time);
+      if (savedPeriod.end_time) setClassEndTime(savedPeriod.end_time);
       setPeriodCount(savedPeriod.period_count);
       setCheckInMode(savedPeriod.check_in_mode);
     }
@@ -90,14 +92,19 @@ export default function SetupClient() {
         };
         setSettings({ ...configDefaults, ...saved });
 
-        // Auto-fill period from teaching schedule only if the user has never
-        // manually selected a period for this course before
+        // Auto-fill class time from teaching schedule only if user has no saved preference.
+        // Try today's DOW first; fall back to the first configured teaching day so the form
+        // always shows a sensible time even when opened on a non-teaching day.
         if (!savedPeriod) {
           const todayDow = new Date().getDay();
-          const todayEntry = cfg.teaching_schedule.find((t) => t.day === todayDow);
+          const todayEntry = cfg.teaching_schedule.find((t) => t.day === todayDow)
+            ?? cfg.teaching_schedule[0];
           if (todayEntry) {
-            setPeriod(todayEntry.period);
+            const defaultStart = todayEntry.start_time ?? (PERIOD_STARTS[todayEntry.period] ?? "09:30");
             const pc = todayEntry.period_count ?? 1;
+            const defaultEnd = todayEntry.end_time ?? addMinutes(defaultStart, pc >= 2 ? 180 : 90);
+            setClassStartTime(defaultStart);
+            setClassEndTime(defaultEnd);
             setPeriodCount(pc >= 2 ? 2 : 1);
             if (pc >= 2) setCheckInMode(todayEntry.check_in_mode ?? "single");
           }
@@ -142,25 +149,25 @@ export default function SetupClient() {
     setSubmitting(true);
     const course = getCourse();
     if (!course) { setSubmitting(false); return; }
+    const period = nearestPeriod(classStartTime);
     saveSettings(course.course_id, settings);
-    savePeriodPrefs(course.course_id, { period, period_count: periodCount, check_in_mode: checkInMode });
+    savePeriodPrefs(course.course_id, {
+      period,
+      period_count: periodCount,
+      check_in_mode: checkInMode,
+      start_time: classStartTime,
+      end_time: classEndTime,
+    });
 
-    // Adjust late_after_min so the threshold is anchored to the configured class start_time,
-    // not to when the teacher opened the session. Works in both directions:
-    // opened early → inflate; opened late → deflate (clamped to 0).
+    // Adjust late_after_min so it's anchored to the configured class start_time,
+    // not to when the teacher actually clicked "Open". Works in both directions.
     let effectiveLateAfterMin = settings.late_after_min;
     if (!isPast) {
-      const sessionDayOfWeek = new Date(sessionDate + "T00:00:00").getDay();
-      const scheduleForDay = semesterConfig?.teaching_schedule.find(
-        (t) => t.day === sessionDayOfWeek
-      );
-      if (scheduleForDay?.start_time) {
-        const [sh, sm] = scheduleForDay.start_time.split(":").map(Number);
-        if (!isNaN(sh) && !isNaN(sm)) {
-          const now = new Date();
-          const minutesUntilStart = (sh * 60 + sm) - (now.getHours() * 60 + now.getMinutes());
-          effectiveLateAfterMin = Math.max(0, settings.late_after_min + minutesUntilStart);
-        }
+      const [sh, sm] = classStartTime.split(":").map(Number);
+      if (!isNaN(sh) && !isNaN(sm)) {
+        const now = new Date();
+        const minutesUntilStart = (sh * 60 + sm) - (now.getHours() * 60 + now.getMinutes());
+        effectiveLateAfterMin = Math.max(0, settings.late_after_min + minutesUntilStart);
       }
     }
 
@@ -171,7 +178,7 @@ export default function SetupClient() {
         body: JSON.stringify({
           course_id: course.course_id,
           section: course.section,
-          period,
+          period,            // "1"–"6", derived from classStartTime via nearestPeriod
           lat: gps.lat,
           lng: gps.lng,
           ...settings,
@@ -217,14 +224,10 @@ export default function SetupClient() {
   const accColor = gps.accuracy <= 20 ? "#3B6D11" : gps.accuracy <= 100 ? "#854F0B" : "#A32D2D";
   const accLabel = gps.accuracy <= 20 ? "Excellent" : gps.accuracy <= 50 ? "Good" : gps.accuracy <= 100 ? "Fair" : "Poor";
   const course = getCourse();
+  const period = nearestPeriod(classStartTime);
   const periodNum = parseInt(period, 10);
   const periodEnd = periodCount >= 2 ? calcPeriodEnd(periodNum, periodCount) : undefined;
-  const sessionDow = new Date(sessionDate + "T00:00:00").getDay();
-  const configuredDay = semesterConfig?.teaching_schedule.find((t) => t.day === sessionDow);
-  // Only use configured end_time when period count matches config — prevents a single-period
-  // end_time from being used as the end label when the teacher switches to double period.
-  const endTimeOverride = configuredDay?.period_count === periodCount ? configuredDay?.end_time : undefined;
-  const periodRangeLabel = getPeriodLabel(periodNum, periodEnd, configuredDay?.start_time, endTimeOverride);
+  const periodRangeLabel = getPeriodLabel(periodNum, periodEnd, classStartTime, classEndTime);
   const periodEndWarning = periodCount >= 2 && !periodEnd;
   const hasValidGps = Number.isFinite(gps.lat) && Number.isFinite(gps.lng) && (gps.lat !== 0 || gps.lng !== 0);
 
@@ -263,14 +266,28 @@ export default function SetupClient() {
               )}
             </div>
 
-            {/* Period selector */}
+            {/* Class time inputs */}
             <div>
-              <label className="block text-[13px] font-medium text-gray-700 mb-1">Period</label>
-              <select className="input" value={period} onChange={(e) => setPeriod(e.target.value)}>
-                {PERIODS.map((p) => (
-                  <option key={p.value} value={p.value}>{p.label}</option>
-                ))}
-              </select>
+              <label className="block text-[13px] font-medium text-gray-700 mb-1">Class Time</label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="time"
+                  className="input flex-1"
+                  value={classStartTime}
+                  onChange={(e) => {
+                    const t = e.target.value;
+                    setClassStartTime(t);
+                    setClassEndTime(addMinutes(t, periodCount === 1 ? 90 : 180));
+                  }}
+                />
+                <span className="text-gray-400 text-[13px] flex-shrink-0">–</span>
+                <input
+                  type="time"
+                  className="input flex-1"
+                  value={classEndTime}
+                  onChange={(e) => setClassEndTime(e.target.value)}
+                />
+              </div>
             </div>
 
             {/* Period duration toggle */}
@@ -281,7 +298,11 @@ export default function SetupClient() {
                   <button
                     key={n}
                     type="button"
-                    onClick={() => { setPeriodCount(n); if (n === 1) setCheckInMode("single"); }}
+                    onClick={() => {
+                      setPeriodCount(n);
+                      setClassEndTime(addMinutes(classStartTime, n === 1 ? 90 : 180));
+                      if (n === 1) setCheckInMode("single");
+                    }}
                     className="flex-1 rounded-lg text-[13px] font-medium transition-colors"
                     style={{
                       padding: "8px 0",

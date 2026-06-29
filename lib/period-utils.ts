@@ -7,6 +7,31 @@ export const PERIOD_TIMES: Record<number, string> = {
   6: "16:00–17:30",
 };
 
+export const PERIOD_STARTS: Record<string, string> = {
+  "1": "08:00", "2": "09:30", "3": "11:00",
+  "4": "13:00", "5": "14:30", "6": "16:00",
+};
+
+export function addMinutes(hhmm: string, minutes: number): string {
+  const [h, m] = hhmm.split(":").map(Number);
+  const total = h * 60 + m + minutes;
+  return `${String(Math.floor(total / 60) % 24).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+}
+
+/** Map an arbitrary HH:MM to the nearest standard period number ("1"–"6"). */
+export function nearestPeriod(hhmm: string): string {
+  const [h, m] = hhmm.split(":").map(Number);
+  const totalMin = h * 60 + m;
+  let best = "1";
+  let bestDiff = Infinity;
+  for (const [p, t] of Object.entries(PERIOD_STARTS)) {
+    const [ph, pm] = t.split(":").map(Number);
+    const diff = Math.abs(ph * 60 + pm - totalMin);
+    if (diff < bestDiff) { bestDiff = diff; best = p; }
+  }
+  return best;
+}
+
 /**
  * Returns human-readable period label.
  * Single: "คาบ 3 (11:00–12:30)"
