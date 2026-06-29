@@ -110,41 +110,16 @@ export default function SummaryClient({ courseId }: { courseId: string }) {
         body: JSON.stringify({ status: editStatus, note: editNote }),
       });
       if (!res.ok) throw new Error();
-      // Optimistically update grid + totals
+      // Optimistically update grid + attendance records.
+      // Stats (Att/Abs/Late/%) are derived from grid via visibleStats — no separate totals cache needed.
       setData((d) => {
         if (!d) return d;
         const newGrid = { ...d.grid };
         newGrid[editTarget.studentId] = { ...newGrid[editTarget.studentId], [editTarget.sessionId]: editStatus };
-
-        // Recompute totals for that student using weighted period_count (matches weightedPct)
-        const newTotals = { ...d.totals };
-        const sessions = d.sessions;
-        const t = { ...newTotals[editTarget.studentId] };
-        let present = 0, late = 0, absent = 0, gps_fail = 0;
-        let wAttended = 0, wTotal = 0;
-        for (const ss of sessions) {
-          const w = ss.period_count ?? 1;
-          const st = newGrid[editTarget.studentId]?.[ss.session_id];
-          if (st === "present") present++;
-          else if (st === "late") late++;
-          else if (st === "absent") absent++;
-          else if (st === "gps_fail") gps_fail++;
-          if (st !== undefined) {
-            wTotal += w;
-            if (st === "present" || st === "late") wAttended += w;
-          }
-        }
-        t.present_count = present; t.late_count = late; t.absent_count = absent; t.gps_fail_count = gps_fail;
-        t.percentage = wTotal > 0 ? Math.round((wAttended / wTotal) * 100) : 0;
-        newTotals[editTarget.studentId] = t;
-
-        // Also update attendance records
         const newAttendance = d.attendance.map((a) =>
-          a.attendance_id === editTarget.attendanceId
-            ? { ...a, status: editStatus }
-            : a
+          a.attendance_id === editTarget.attendanceId ? { ...a, status: editStatus } : a
         );
-        return { ...d, grid: newGrid, totals: newTotals, attendance: newAttendance };
+        return { ...d, grid: newGrid, attendance: newAttendance };
       });
       setEditTarget(null);
     } catch {
@@ -216,18 +191,24 @@ export default function SummaryClient({ courseId }: { courseId: string }) {
   const hiddenCount = hiddenSessions.size;
   const holidayDates = new Set(holidays.map((h) => h.date.slice(0, 10)));
 
-  // Weighted % calculation: sum(period_count for attended) / sum(period_count for all)
-  const weightedPct = (studentId: string): number => {
-    let attended = 0, total = 0;
-    for (const ss of sessions) {
+  // Recompute per-student stats from grid using only visible sessions.
+  // This ensures hiding a column immediately updates Att/Abs/Late/% columns.
+  const visibleStats = (studentId: string) => {
+    let present = 0, late = 0, absent = 0, gps_fail = 0;
+    let wAttended = 0, wTotal = 0;
+    for (const ss of visibleSessions) {
       const w = ss.period_count ?? 1;
       const st = grid[studentId]?.[ss.session_id];
-      if (st !== undefined) {
-        total += w;
-        if (st === "present" || st === "late") attended += w;
-      }
+      if (st === undefined) continue;
+      wTotal += w;
+      if (st === "present" || st === "overridden") { present++; wAttended += w; }
+      else if (st === "late")     { late++;    wAttended += w; }
+      else if (st === "absent")   { absent++; }
+      else if (st === "gps_fail") { gps_fail++; }
     }
-    return total > 0 ? Math.round((attended / total) * 100) : 0;
+    const pct = wTotal > 0 ? Math.round((wAttended / wTotal) * 100) : 0;
+    const hasAny = wTotal > 0;
+    return { present, late, absent, gps_fail, pct, hasAny };
   };
 
   // Build set of linked session IDs (for visual grouping)
@@ -247,8 +228,8 @@ export default function SummaryClient({ courseId }: { courseId: string }) {
     : 0;
   const remaining = Math.max(0, totalExpected - sessions.length);
   const belowThreshold = students.filter((s) => {
-    const t = totals[s.student_id];
-    return t && weightedPct(s.student_id) < threshold && t.total_sessions > 0;
+    const vs = visibleStats(s.student_id);
+    return vs.hasAny && vs.pct < threshold;
   }).length;
 
   // Session column summary (count of present+late per visible session)
@@ -406,10 +387,9 @@ export default function SummaryClient({ courseId }: { courseId: string }) {
           </thead>
           <tbody>
             {students.map((stu) => {
-              const t = totals[stu.student_id];
-              const pct = weightedPct(stu.student_id);
-              const low = pct < threshold && (t?.total_sessions ?? 0) > 0;
-              const warn = pct >= threshold - 10 && pct < threshold && (t?.total_sessions ?? 0) > 0;
+              const vs = visibleStats(stu.student_id);
+              const low = vs.hasAny && vs.pct < threshold;
+              const warn = vs.hasAny && vs.pct >= threshold - 10 && vs.pct < threshold;
               const rowBg = low && !warn ? "#FCEBEB" : warn ? "#FEF9EC" : "white";
               return (
                 <tr key={stu.student_id} style={{ borderBottom: "0.5px solid rgba(0,0,0,0.06)", backgroundColor: rowBg }}>
@@ -433,21 +413,21 @@ export default function SummaryClient({ courseId }: { courseId: string }) {
                         {(() => {
                           const isFlagged = flaggedSet.has(`${stu.student_id}:${ss.session_id}`);
                           const flag = isFlagged ? <sup style={{ color: "#a855f7", fontSize: 8 }}>⚠</sup> : null;
-                          if (st === "present")   return <span style={{ color: "#3B6D11" }} className="font-bold text-[13px]">✓{flag}</span>;
-                          if (st === "late")      return <span style={{ color: "#185FA5" }} className="text-[11px] font-bold">L{flag}</span>;
-                          if (st === "absent")    return <span style={{ color: "#A32D2D" }}>—{flag}</span>;
-                          if (st === "gps_fail")  return <span className="text-[11px]" style={{ color: "#854F0B" }}>⚠{flag}</span>;
+                          if (st === "present")    return <span style={{ color: "#3B6D11" }} className="font-bold text-[13px]">✓{flag}</span>;
+                          if (st === "late")       return <span style={{ color: "#185FA5" }} className="text-[11px] font-bold">L{flag}</span>;
+                          if (st === "absent")     return <span style={{ color: "#A32D2D" }}>—{flag}</span>;
+                          if (st === "gps_fail")   return <span className="text-[11px]" style={{ color: "#854F0B" }}>⚠{flag}</span>;
                           if (st === "overridden") return <span style={{ color: "#3B6D11" }} className="font-bold text-[13px]">✓*{flag}</span>;
                           return <span className="text-gray-200 text-[11px]">·</span>;
                         })()}
                       </td>
                     );
                   })}
-                  <td className="px-2 py-2 text-center font-medium" style={{ color: "#3B6D11" }}>{t ? t.present_count + t.late_count : 0}</td>
-                  <td className="px-2 py-2 text-center" style={{ color: "#A32D2D" }}>{t?.absent_count ?? 0}</td>
-                  <td className="px-2 py-2 text-center" style={{ color: "#185FA5" }}>{t?.late_count ?? 0}</td>
+                  <td className="px-2 py-2 text-center font-medium" style={{ color: "#3B6D11" }}>{vs.present + vs.late}</td>
+                  <td className="px-2 py-2 text-center" style={{ color: "#A32D2D" }}>{vs.absent}</td>
+                  <td className="px-2 py-2 text-center" style={{ color: "#185FA5" }}>{vs.late}</td>
                   <td className="px-2 py-2 text-center font-medium" style={{ color: low ? "#A32D2D" : warn ? "#854F0B" : "#374151" }}>
-                    {pct}%
+                    {vs.pct}%
                   </td>
                 </tr>
               );

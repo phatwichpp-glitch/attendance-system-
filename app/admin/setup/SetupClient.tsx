@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Spinner from "@/components/Spinner";
 import { IconLocation, IconRefresh, IconWarning } from "@/components/icons";
 import { Course, Settings, PERIODS, DEFAULT_SETTINGS, SemesterConfig } from "@/types";
-import { loadSettings, saveSettings } from "@/lib/settings";
+import { loadSettings, saveSettings, loadPeriodPrefs, savePeriodPrefs } from "@/lib/settings";
 import { getWeekLabel } from "@/lib/week-utils";
 import { getPeriodLabel, calcPeriodEnd } from "@/lib/period-utils";
 
@@ -64,7 +64,15 @@ export default function SetupClient() {
     const course = getCourse();
     if (!course) { setSemesterConfig(null); return; }
 
-    setSettings(loadSettings(course.course_id));
+    // Load saved preferences synchronously first so the UI doesn't flicker
+    const saved = loadSettings(course.course_id);
+    const savedPeriod = loadPeriodPrefs(course.course_id);
+    setSettings(saved);
+    if (savedPeriod) {
+      setPeriod(savedPeriod.period);
+      setPeriodCount(savedPeriod.period_count);
+      setCheckInMode(savedPeriod.check_in_mode);
+    }
 
     fetch(`/api/sheets/semester-config/${course.course_id}?section=${course.section}`)
       .then((r) => r.ok ? r.json() : null)
@@ -72,21 +80,27 @@ export default function SetupClient() {
         if (!d?.config) { setSemesterConfig(null); return; }
         const cfg: SemesterConfig = d.config;
         setSemesterConfig(cfg);
-        // Auto-fill settings from config
-        setSettings((s) => ({
-          ...s,
+
+        // Merge: semester config provides defaults, saved localStorage wins on conflict
+        const configDefaults = {
+          ...DEFAULT_SETTINGS,
           radius_m: cfg.default_gps_radius,
           otp_expire_min: cfg.default_otp_min,
           late_after_min: cfg.default_late_min,
-        }));
-        // Auto-fill period + double period from today's teaching day
-        const todayDow = new Date().getDay();
-        const todayEntry = cfg.teaching_schedule.find((t) => t.day === todayDow);
-        if (todayEntry) {
-          setPeriod(todayEntry.period);
-          const pc = todayEntry.period_count ?? 1;
-          setPeriodCount(pc >= 2 ? 2 : 1);
-          if (pc >= 2) setCheckInMode(todayEntry.check_in_mode ?? "single");
+        };
+        setSettings({ ...configDefaults, ...saved });
+
+        // Auto-fill period from teaching schedule only if the user has never
+        // manually selected a period for this course before
+        if (!savedPeriod) {
+          const todayDow = new Date().getDay();
+          const todayEntry = cfg.teaching_schedule.find((t) => t.day === todayDow);
+          if (todayEntry) {
+            setPeriod(todayEntry.period);
+            const pc = todayEntry.period_count ?? 1;
+            setPeriodCount(pc >= 2 ? 2 : 1);
+            if (pc >= 2) setCheckInMode(todayEntry.check_in_mode ?? "single");
+          }
         }
       })
       .catch(() => setSemesterConfig(null));
@@ -129,6 +143,7 @@ export default function SetupClient() {
     const course = getCourse();
     if (!course) { setSubmitting(false); return; }
     saveSettings(course.course_id, settings);
+    savePeriodPrefs(course.course_id, { period, period_count: periodCount, check_in_mode: checkInMode });
 
     // Adjust late_after_min so the threshold is anchored to the configured class start_time,
     // not to when the teacher opened the session. Works in both directions:

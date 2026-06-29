@@ -4,8 +4,10 @@ const DAY_SUFFIX: Record<number, string> = {
 
 export function getWeekNumber(sessionDate: Date, semesterStart: Date): number {
   const diffMs = sessionDate.getTime() - semesterStart.getTime();
-  const week = Math.ceil(diffMs / (7 * 24 * 60 * 60 * 1000));
-  return Math.max(1, week);
+  // Use integer day arithmetic — Math.ceil breaks when diffMs is an exact multiple of 7 days
+  // (e.g. exactly 1 week gives ceil(1.0)=1 instead of 2).
+  const diffDays = Math.floor(diffMs / (24 * 60 * 60 * 1000));
+  return Math.max(1, Math.floor(diffDays / 7) + 1);
 }
 
 export function getWeekLabel(
