@@ -621,50 +621,51 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
           </div>
         )}
 
-        <div className="grid grid-cols-4 md:grid-cols-2 gap-3">
-          <Stat label="Total"    value={total}   bg="#f3f4f6" color="#374151" />
-          <Stat label="Present"  value={present} bg="#EAF3DE" color="#3B6D11" />
-          <Stat label="Absent"   value={absent}  bg="#FCEBEB" color="#A32D2D" />
-          <Stat label="GPS fail" value={gpsFail} bg="#FAEEDA" color="#854F0B" />
-        </div>
-
-        {!isClosed && (
-          <div className="card flex items-center justify-between gap-4">
-            <div>
-              <p className="text-[11px] mb-0.5 flex items-center gap-1.5"
-                style={{ color: otpSecondsLeft !== null && otpSecondsLeft < 60 ? "#A32D2D" : "#5F5E5A" }}>
-                OTP
-                {otpSecondsLeft !== null && (
-                  <span className="font-mono font-semibold text-[12px]">
-                    {otpSecondsLeft > 0
-                      ? `${String(Math.floor(otpSecondsLeft / 60)).padStart(2, "0")}:${String(otpSecondsLeft % 60).padStart(2, "0")}`
-                      : "หมดอายุ..."}
-                  </span>
-                )}
-              </p>
-              <p className="text-4xl font-bold tracking-widest"
-                style={{ fontFamily: "ui-monospace, monospace", color: "#185FA5" }}>
-                {s.otp}
-              </p>
-            </div>
-            <div className="text-right text-[11px] space-y-1" style={{ color: "#5F5E5A" }}>
-              <p>Radius {s.radius_m} m</p>
-              <p>Late &gt;{s.late_after_min} min</p>
-              <a href={checkUrl} target="_blank" className="text-[#185FA5] underline text-[11px]">
-                Check-in link ↗
-              </a>
-            </div>
-          </div>
-        )}
-
         <div className="card">
-          <div className="flex justify-between text-[13px] text-gray-600 mb-2">
-            <span>Checked In</span>
-            <span className="font-medium">{present}/{total} students</span>
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            {/* Stats summary */}
+            <div className="flex gap-4 text-[13px]">
+              <div><span className="font-medium text-gray-900">{total}</span> <span className="text-gray-500">Total</span></div>
+              <div><span className="font-medium" style={{ color: "#3B6D11" }}>{present}</span> <span className="text-gray-500">Present</span></div>
+              <div><span className="font-medium" style={{ color: "#A32D2D" }}>{absent}</span> <span className="text-gray-500">Absent</span></div>
+              <div><span className="font-medium" style={{ color: "#854F0B" }}>{gpsFail}</span> <span className="text-gray-500">GPS fail</span></div>
+            </div>
+
+            {/* OTP */}
+            {!isClosed && (
+              <div className="flex items-center gap-3">
+                <div className="text-right">
+                  <p className="text-[11px]" style={{ color: otpSecondsLeft !== null && otpSecondsLeft < 60 ? "#A32D2D" : "#5F5E5A" }}>
+                    OTP {otpSecondsLeft !== null && (
+                      <span className="font-mono font-semibold">
+                        {otpSecondsLeft > 0
+                          ? `${String(Math.floor(otpSecondsLeft / 60)).padStart(2, "0")}:${String(otpSecondsLeft % 60).padStart(2, "0")}`
+                          : "หมดอายุ..."}
+                      </span>
+                    )}
+                  </p>
+                  <p className="text-2xl font-bold tracking-widest" style={{ fontFamily: "ui-monospace, monospace", color: "#185FA5" }}>
+                    {s.otp}
+                  </p>
+                </div>
+                <div className="text-[11px] space-y-0.5" style={{ color: "#5F5E5A" }}>
+                  <p>R {s.radius_m}m</p>
+                  <p>L &gt;{s.late_after_min}m</p>
+                </div>
+              </div>
+            )}
           </div>
-          <div className="h-2 rounded-full" style={{ backgroundColor: "#e5e7eb" }}>
-            <div className="h-full rounded-full transition-all"
-              style={{ width: total > 0 ? `${(present / total) * 100}%` : "0%", backgroundColor: "#3B6D11" }} />
+
+          {/* Progress bar */}
+          <div className="mt-3">
+            <div className="flex justify-between text-[12px] text-gray-600 mb-1">
+              <span>Checked In</span>
+              <span className="font-medium">{present}/{total}</span>
+            </div>
+            <div className="h-1.5 rounded-full" style={{ backgroundColor: "#e5e7eb" }}>
+              <div className="h-full rounded-full transition-all"
+                style={{ width: total > 0 ? `${(present / total) * 100}%` : "0%", backgroundColor: "#3B6D11" }} />
+            </div>
           </div>
         </div>
           {/* Part 1 → Part 2 comparison panel */}
