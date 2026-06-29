@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
+import * as XLSX from "xlsx";
 import Spinner from "@/components/Spinner";
 import { IconDownload } from "@/components/icons";
 import { Course, Session, Student, AttendanceStatus, AttendanceRecord, SemesterConfig } from "@/types";
@@ -129,9 +130,11 @@ export default function SummaryClient({ courseId }: { courseId: string }) {
     }
   };
 
-  const exportCsv = () => {
+  const exportXlsx = () => {
     if (!data) return;
-    const { course, sessions: rawSessions, students, grid, totals } = data;
+    const { course, sessions: rawSessions, students, grid } = data;
+
+    // Use the same visible-and-sorted sessions as the table
     const exportSessions = [...rawSessions]
       .sort((a, b) => {
         if (a.week_label && b.week_label) return compareWeekLabels(a.week_label, b.week_label);
@@ -140,32 +143,60 @@ export default function SummaryClient({ courseId }: { courseId: string }) {
         return a.date.localeCompare(b.date);
       })
       .filter((ss) => !hiddenSessions.has(ss.session_id));
-    const header = [
-      "#", "Student ID", "First Name", "Last Name",
-      ...exportSessions.map((s) => s.week_label ? `${s.week_label} ${s.date}` : `${s.date} P${s.period}`),
-      "Att", "Abs", "Late", "%",
-    ];
+
+    // Re-derive stats from visible sessions (same logic as visibleStats in render)
+    const computeStats = (studentId: string) => {
+      let att = 0, abs = 0, late = 0, wAttended = 0, wTotal = 0;
+      for (const ss of exportSessions) {
+        const w = ss.period_count ?? 1;
+        const st = grid[studentId]?.[ss.session_id];
+        if (st === undefined) continue;
+        wTotal += w;
+        if (st === "present" || st === "overridden") { att++; wAttended += w; }
+        else if (st === "late") { late++; wAttended += w; }
+        else if (st === "absent") { abs++; }
+      }
+      const pct = wTotal > 0 ? Math.round((wAttended / wTotal) * 100) : 0;
+      return { att, abs, late, pct };
+    };
+
+    const sessionHeaders = exportSessions.map((s) =>
+      s.week_label ? `${s.week_label}\n${s.date}` : `${s.date}\nP${s.period}`
+    );
+    const header = ["#", "รหัสนักศึกษา", "ชื่อ", "นามสกุล", ...sessionHeaders, "มา", "ขาด", "สาย", "%"];
+
     const rows = students.map((s) => {
-      const t = totals[s.student_id];
-      const cells = exportSessions.map((sess) => {
+      const stats = computeStats(s.student_id);
+      const sessionCells = exportSessions.map((sess) => {
         const st = grid[s.student_id]?.[sess.session_id];
-        if (!st) return "-";
-        return st === "present" ? "✓" : st === "late" ? "L" : st === "absent" ? "—" : "⚠";
+        if (st === "present" || st === "overridden") return 1;
+        if (st === "late") return 0.5;
+        if (st === "absent" || st === "gps_fail") return 0;
+        return "";  // no record for this session
       });
-      return [
-        s.order_num, s.student_id, s.firstname, s.lastname,
-        ...cells,
-        t ? t.present_count + t.late_count : 0,
-        t?.absent_count ?? 0,
-        t?.late_count ?? 0,
-        t ? `${t.percentage}%` : "0%",
-      ];
+      return [s.order_num, s.student_id, s.firstname, s.lastname, ...sessionCells,
+        stats.att, stats.abs, stats.late, `${stats.pct}%`];
     });
-    const csv = "﻿" + [header, ...rows].map((r) => r.join(",")).join("\n");
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8;" }));
-    a.download = `summary_${course.course_id}_sec${course.section}.csv`;
-    a.click();
+
+    const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
+
+    // Column widths: fixed info cols + narrow session cols + summary cols
+    ws["!cols"] = [
+      { wch: 5 },
+      { wch: 14 },
+      { wch: 18 },
+      { wch: 18 },
+      ...exportSessions.map(() => ({ wch: 8 })),
+      { wch: 6 }, { wch: 6 }, { wch: 6 }, { wch: 7 },
+    ];
+
+    // Row height for the header (two-line week label)
+    ws["!rows"] = [{ hpt: 30 }];
+
+    const wb = XLSX.utils.book_new();
+    const sheetName = `${course.course_id} Sec${course.section}`;
+    XLSX.utils.book_append_sheet(wb, ws, sheetName.slice(0, 31)); // Excel sheet name limit
+    XLSX.writeFile(wb, `attendance_${course.course_id}_sec${course.section}.xlsx`);
   };
 
   if (loading) return (
@@ -275,8 +306,8 @@ export default function SummaryClient({ courseId }: { courseId: string }) {
               {hiddenCount} column{hiddenCount > 1 ? "s" : ""} hidden · Restore all
             </button>
           )}
-          <button onClick={exportCsv} className="btn-outline text-[13px]" style={{ minHeight: 36 }}>
-            <IconDownload size={14} /> Export CSV
+          <button onClick={exportXlsx} className="btn-outline text-[13px]" style={{ minHeight: 36 }}>
+            <IconDownload size={14} /> Export .xlsx
           </button>
         </div>
       </div>
