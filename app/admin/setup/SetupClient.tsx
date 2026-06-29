@@ -469,7 +469,7 @@ export default function SetupClient() {
               <h3 className="font-semibold text-gray-900 flex items-center gap-2">
                 <IconLocation size={14} className="text-[#185FA5]" /> GPS Location
               </h3>
-              <button onClick={detectGps} className="btn-outline text-[13px] px-3" style={{ minHeight: 36 }}>
+              <button type="button" onClick={detectGps} className="btn-outline text-[13px] px-3" style={{ minHeight: 36 }}>
                 <IconRefresh size={13} /> Refresh
               </button>
             </div>
