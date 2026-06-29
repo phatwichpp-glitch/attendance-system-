@@ -51,7 +51,10 @@ export default function SummaryClient({ courseId }: { courseId: string }) {
   const [editSubmitting, setEditSubmitting] = useState(false);
   const [holidays, setHolidays] = useState<Holiday[]>([]);
   const [tooltipSession, setTooltipSession] = useState<string | null>(null);
-  const [hiddenSessions, setHiddenSessions] = useState<Set<string>>(new Set());
+  const [deleteTarget, setDeleteTarget] = useState<Session | null>(null);
+  const [deleteSubmitting, setDeleteSubmitting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
+  const [sortByIssues, setSortByIssues] = useState(false);
   const popoverRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -130,6 +133,36 @@ export default function SummaryClient({ courseId }: { courseId: string }) {
     }
   };
 
+  const handleDeleteSession = async () => {
+    if (!deleteTarget) return;
+    setDeleteSubmitting(true);
+    setDeleteError("");
+    try {
+      const res = await fetch(`/api/sheets/sessions/${deleteTarget.session_id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Delete failed");
+      const sid = deleteTarget.session_id;
+      setData((d) => {
+        if (!d) return d;
+        return {
+          ...d,
+          sessions: d.sessions.filter((s) => s.session_id !== sid),
+          attendance: d.attendance.filter((a) => a.session_id !== sid),
+          grid: Object.fromEntries(
+            Object.entries(d.grid).map(([studentId, sessMap]) => [
+              studentId,
+              Object.fromEntries(Object.entries(sessMap).filter(([ssid]) => ssid !== sid)),
+            ])
+          ),
+        };
+      });
+      setDeleteTarget(null);
+    } catch {
+      setDeleteError("ลบไม่สำเร็จ — กรุณาลองใหม่");
+    } finally {
+      setDeleteSubmitting(false);
+    }
+  };
+
   const exportXlsx = () => {
     if (!data) return;
     const { course, sessions: rawSessions, students, grid } = data;
@@ -142,7 +175,6 @@ export default function SummaryClient({ courseId }: { courseId: string }) {
         if (b.week_label) return 1;
         return a.date.localeCompare(b.date);
       })
-      .filter((ss) => !hiddenSessions.has(ss.session_id));
 
     // Re-derive stats from visible sessions (same logic as visibleStats in render)
     const computeStats = (studentId: string) => {
@@ -218,12 +250,10 @@ export default function SummaryClient({ courseId }: { courseId: string }) {
     return a.date.localeCompare(b.date);
   });
 
-  const visibleSessions = sessions.filter((ss) => !hiddenSessions.has(ss.session_id));
-  const hiddenCount = hiddenSessions.size;
+  const visibleSessions = sessions;
   const holidayDates = new Set(holidays.map((h) => h.date.slice(0, 10)));
 
   // Recompute per-student stats from grid using only visible sessions.
-  // This ensures hiding a column immediately updates Att/Abs/Late/% columns.
   const visibleStats = (studentId: string) => {
     let present = 0, late = 0, absent = 0, gps_fail = 0;
     let wAttended = 0, wTotal = 0;
@@ -252,6 +282,78 @@ export default function SummaryClient({ courseId }: { courseId: string }) {
   const flaggedSet = new Set<string>(
     data.attendance.filter((a) => a.flagged).map((a) => `${a.student_id}:${a.session_id}`)
   );
+
+  // --- Sort-by-issues logic ---
+  // Build conflict groups: (device_fingerprint + session_id) → Set<student_id> (only when ≥2 students share one device)
+  type ConflictGroup = { key: string; studentIds: string[] };
+  const conflictGroups: ConflictGroup[] = (() => {
+    const fpMap = new Map<string, Set<string>>();
+    for (const rec of data.attendance) {
+      if (rec.flagged && rec.device_fingerprint) {
+        const key = `${rec.device_fingerprint}:${rec.session_id}`;
+        if (!fpMap.has(key)) fpMap.set(key, new Set());
+        fpMap.get(key)!.add(rec.student_id);
+      }
+    }
+    const groups: ConflictGroup[] = [];
+    for (const [key, sids] of fpMap) {
+      if (sids.size >= 2) groups.push({ key, studentIds: [...sids] });
+    }
+    return groups;
+  })();
+
+  // student_id → conflict group key (first group only)
+  const studentConflictGroup = new Map<string, string>();
+  const conflictStudentIds = new Set<string>();
+  for (const g of conflictGroups) {
+    for (const sid of g.studentIds) {
+      conflictStudentIds.add(sid);
+      if (!studentConflictGroup.has(sid)) studentConflictGroup.set(sid, g.key);
+    }
+  }
+
+  // Sorted student list based on mode
+  type RowEntry = { student: Student; category: "conflict" | "absent" | "normal"; groupKey?: string; isGroupLast?: boolean };
+  const sortedRows: RowEntry[] = (() => {
+    if (!sortByIssues) {
+      return students.map((s) => ({ student: s, category: "normal" as const }));
+    }
+
+    // 1. Conflict group rows (students grouped by conflict key, pairs adjacent)
+    const seenConflict = new Set<string>();
+    const conflictRows: RowEntry[] = [];
+    for (const g of conflictGroups) {
+      const groupStudents = g.studentIds
+        .map((sid) => students.find((s) => s.student_id === sid))
+        .filter(Boolean) as Student[];
+      groupStudents.forEach((s, i) => {
+        if (seenConflict.has(s.student_id)) return;
+        seenConflict.add(s.student_id);
+        conflictRows.push({
+          student: s,
+          category: "conflict",
+          groupKey: g.key,
+          isGroupLast: i === groupStudents.length - 1,
+        });
+      });
+    }
+
+    // 2. Absent rows (not already in conflict group), sorted by absent count desc
+    const absentRows: RowEntry[] = students
+      .filter((s) => !conflictStudentIds.has(s.student_id))
+      .map((s) => ({ student: s, absentCount: visibleStats(s.student_id).absent }))
+      .filter(({ absentCount }) => absentCount > 0)
+      .sort((a, b) => b.absentCount - a.absentCount)
+      .map(({ student }) => ({ student, category: "absent" as const }));
+
+    // 3. Normal rows
+    const absentIds = new Set(absentRows.map((r) => r.student.student_id));
+    const normalRows: RowEntry[] = students
+      .filter((s) => !conflictStudentIds.has(s.student_id) && !absentIds.has(s.student_id))
+      .map((s) => ({ student: s, category: "normal" as const }));
+
+    return [...conflictRows, ...absentRows, ...normalRows];
+  })();
 
   // Stats bar calculations
   const totalExpected = semester_config
@@ -297,15 +399,19 @@ export default function SummaryClient({ courseId }: { courseId: string }) {
             />
             %
           </label>
-          {hiddenCount > 0 && (
-            <button
-              onClick={() => setHiddenSessions(new Set())}
-              className="text-[12px] px-2.5 py-1.5 rounded-lg transition-colors hover:bg-gray-200"
-              style={{ backgroundColor: "#F1EFE8", color: "#5F5E5A", border: "0.5px solid rgba(0,0,0,0.1)" }}
-            >
-              {hiddenCount} column{hiddenCount > 1 ? "s" : ""} hidden · Restore all
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={() => setSortByIssues((v) => !v)}
+            className="text-[13px] px-3 py-1.5 rounded-xl font-medium transition-colors"
+            style={{
+              minHeight: 36,
+              backgroundColor: sortByIssues ? "#F3E8FF" : "#F1EFE8",
+              color: sortByIssues ? "#7C3AED" : "#5F5E5A",
+              border: sortByIssues ? "0.5px solid #C4B5FD" : "0.5px solid rgba(0,0,0,0.1)",
+            }}
+          >
+            {sortByIssues ? "⚠ เรียงตามปัญหา" : "⚠ เรียงตามปัญหา"}
+          </button>
           <button onClick={exportXlsx} className="btn-outline text-[13px]" style={{ minHeight: 36 }}>
             <IconDownload size={14} /> Export .xlsx
           </button>
@@ -361,18 +467,19 @@ export default function SummaryClient({ courseId }: { courseId: string }) {
                     onMouseEnter={() => setTooltipSession(ss.session_id)}
                     onMouseLeave={() => setTooltipSession(null)}
                   >
-                    {/* Hide button — appears on hover */}
+                    {/* Delete button — appears on hover */}
                     {isHovered && (
                       <button
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
-                          setHiddenSessions((prev) => { const n = new Set(prev); n.add(ss.session_id); return n; });
                           setTooltipSession(null);
+                          setDeleteError("");
+                          setDeleteTarget(ss);
                         }}
                         className="absolute top-0.5 right-0.5 rounded flex items-center justify-center text-[10px] leading-none"
                         style={{ width: 14, height: 14, backgroundColor: "#fee2e2", color: "#A32D2D" }}
-                        title="Hide column"
+                        title="Delete session"
                       >
                         ×
                       </button>
@@ -404,7 +511,7 @@ export default function SummaryClient({ courseId }: { courseId: string }) {
                         {ss.check_in_mode === "double" && <p style={{ color: "#93C5FD" }}>Part {ss.part_number} of 2</p>}
                         {isPast && <p style={{ color: "#FBBF24" }}>📋 Past session</p>}
                         {holiday && <p style={{ color: "#FCA5A5" }}>🎌 {holiday.name}</p>}
-                        <p className="mt-1 pt-1" style={{ borderTop: "0.5px solid rgba(255,255,255,0.2)", color: "#94a3b8" }}>Hover × to hide</p>
+                        <p className="mt-1 pt-1" style={{ borderTop: "0.5px solid rgba(255,255,255,0.2)", color: "#94a3b8" }}>× เพื่อลบ session นี้ถาวร</p>
                       </div>
                     )}
                   </th>
@@ -417,16 +524,44 @@ export default function SummaryClient({ courseId }: { courseId: string }) {
             </tr>
           </thead>
           <tbody>
-            {students.map((stu) => {
+            {sortedRows.map((row, rowIdx) => {
+              const stu = row.student;
               const vs = visibleStats(stu.student_id);
               const low = vs.hasAny && vs.pct < threshold;
               const warn = vs.hasAny && vs.pct >= threshold - 10 && vs.pct < threshold;
-              const rowBg = low && !warn ? "#FCEBEB" : warn ? "#FEF9EC" : "white";
+              const isConflict = row.category === "conflict";
+              const isAbsent = row.category === "absent" && sortByIssues;
+
+              // Base row background (conflict overrides threshold highlight)
+              const rowBg = isConflict ? "#FAF5FF" : low && !warn ? "#FCEBEB" : warn ? "#FEF9EC" : "white";
+              const leftBorder = isConflict ? "3px solid #a855f7" : isAbsent ? "3px solid #A32D2D" : undefined;
+
+              // Separator before first absent row and first normal row (in issue-sort mode)
+              const prevRow = sortedRows[rowIdx - 1];
+              const needSeparator = sortByIssues && prevRow && prevRow.category !== row.category;
+
               return (
-                <tr key={stu.student_id} style={{ borderBottom: "0.5px solid rgba(0,0,0,0.06)", backgroundColor: rowBg }}>
+                <>
+                  {needSeparator && (
+                    <tr key={`sep-${rowIdx}`} aria-hidden>
+                      <td colSpan={visibleSessions.length + 6}
+                        style={{ padding: 0, height: 2, backgroundColor: row.category === "absent" ? "#FCEBEB" : "#f3f4f6" }} />
+                    </tr>
+                  )}
+                  {/* Conflict sub-group separator (between different device groups) */}
+                  {isConflict && prevRow?.category === "conflict" && prevRow.groupKey !== row.groupKey && (
+                    <tr key={`cg-sep-${rowIdx}`} aria-hidden>
+                      <td colSpan={visibleSessions.length + 6}
+                        style={{ padding: 0, height: 1, backgroundColor: "#E9D5FF" }} />
+                    </tr>
+                  )}
+                <tr key={stu.student_id} style={{ borderBottom: "0.5px solid rgba(0,0,0,0.06)", backgroundColor: rowBg, borderLeft: leftBorder }}>
                   <td className="sticky left-0 z-10 px-2 py-2 text-[11px] text-gray-400" style={{ backgroundColor: rowBg }}>{stu.order_num}</td>
                   <td className="sticky left-8 z-10 px-3 py-2 whitespace-nowrap text-[12px]" style={{ backgroundColor: rowBg, boxShadow: "2px 0 4px rgba(0,0,0,0.05)" }}>
-                    <p className="font-medium text-gray-900">{stu.firstname} {stu.lastname}</p>
+                    <p className="font-medium text-gray-900">
+                      {isConflict && <span className="mr-1 text-[10px]" style={{ color: "#a855f7" }}>⚠</span>}
+                      {stu.firstname} {stu.lastname}
+                    </p>
                     <p className="font-mono text-[10px]" style={{ color: "#5F5E5A" }}>{stu.student_id}</p>
                   </td>
                   {visibleSessions.map((ss) => {
@@ -461,6 +596,7 @@ export default function SummaryClient({ courseId }: { courseId: string }) {
                     {vs.pct}%
                   </td>
                 </tr>
+                </>
               );
             })}
             {/* Summary row */}
@@ -536,6 +672,47 @@ export default function SummaryClient({ courseId }: { courseId: string }) {
                 style={{ minHeight: 36 }}
               >
                 {editSubmitting ? <Spinner className="h-4 w-4" /> : "Save"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete session confirmation modal */}
+      {deleteTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: "rgba(0,0,0,0.5)" }}>
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-5 space-y-4">
+            <div>
+              <p className="text-[15px] font-semibold" style={{ color: "#A32D2D" }}>ลบ Session นี้?</p>
+              <p className="text-[13px] mt-1" style={{ color: "#374151" }}>
+                {deleteTarget.week_label ? `${deleteTarget.week_label} — ` : ""}{deleteTarget.date}
+                {deleteTarget.period ? ` · P${deleteTarget.period}` : ""}
+              </p>
+              <p className="text-[12px] mt-2" style={{ color: "#5F5E5A" }}>
+                ข้อมูลการเช็คชื่อของนักศึกษาทุกคนในคาบนี้จะถูกลบออกอย่างถาวร ไม่สามารถกู้คืนได้
+              </p>
+            </div>
+            {deleteError && (
+              <p className="text-[12px]" style={{ color: "#A32D2D" }}>{deleteError}</p>
+            )}
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => { setDeleteTarget(null); setDeleteError(""); }}
+                disabled={deleteSubmitting}
+                className="btn-outline flex-1 text-[13px]"
+                style={{ minHeight: 36 }}
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteSession}
+                disabled={deleteSubmitting}
+                className="flex-1 text-[13px] rounded-xl font-medium text-white transition-colors"
+                style={{ minHeight: 36, backgroundColor: "#A32D2D" }}
+              >
+                {deleteSubmitting ? <Spinner className="h-4 w-4 mx-auto" /> : "ลบถาวร"}
               </button>
             </div>
           </div>

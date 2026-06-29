@@ -136,7 +136,7 @@ export default function HelpModal({ onClose }: { onClose: () => void }) {
 
               <FeatureGroup icon="📊" title="สรุปผล (Summary Table)" color="#3B6D11">
                 <Li>ตารางนักศึกษา × session — ดูสถานะแต่ละคาบในที่เดียว</Li>
-                <Li>ซ่อน/แสดง column session ได้อิสระ — คำนวณ Att/Abs/% ใหม่ทันที</Li>
+                <Li>ลบ session ที่เปิดผิดได้ถาวร — hover column header แล้วกด ×</Li>
                 <Li>แก้ไขสถานะย้อนหลังได้จากตาราง (คลิกที่ cell)</Li>
                 <Li>Export .xlsx — format เดียวกับต้นฉบับ (ลำดับ รหัส ชื่อ) + ข้อมูลเช็คชื่อ</Li>
                 <Li>แสดงนักศึกษาที่ต่ำกว่า threshold เป็นสี highlight</Li>
@@ -290,7 +290,7 @@ export default function HelpModal({ onClose }: { onClose: () => void }) {
               <Section title="6. ดูสรุปผลการเช็คชื่อ" color="#3B6D11">
                 <Step n="1">กด <Chip>Summary</Chip> บนการ์ดวิชา</Step>
                 <Step n="2">ตารางแสดงนักศึกษา × session — คลิก cell เพื่อแก้ไขสถานะย้อนหลัง</Step>
-                <Step n="3">กด <strong>×</strong> บน column header เพื่อซ่อน session นั้น — Att/Abs/% ปรับใหม่ทันที</Step>
+                <Step n="3">hover บน column header — กด <strong>×</strong> เพื่อ<strong>ลบ session นั้นถาวร</strong> (มี confirm ก่อน)</Step>
                 <Step n="4">กด <Chip>Export .xlsx</Chip> เพื่อดาวน์โหลด — format เดียวกับต้นฉบับ + ข้อมูลเช็คชื่อ</Step>
                 <Note>นักศึกษาที่ต่ำกว่า threshold จะถูก highlight — ปรับ threshold ได้มุมบนขวาของตาราง</Note>
               </Section>
@@ -326,12 +326,13 @@ export default function HelpModal({ onClose }: { onClose: () => void }) {
                 ระบบคำนวณจาก semester_start ที่ตั้งไว้ — แก้ได้ตรง field Week # และ Week Label
                 บนหน้า Open Session รูปแบบ: W1m, W2th ฯลฯ
               </FAQ>
-              <FAQ q="ซ่อน session column แล้วอยากคืนค่า?">
-                กดปุ่ม <em>N columns hidden · Restore all</em> ที่ด้านบนตาราง Summary
+              <FAQ q="ลบ session ไปแล้วกู้คืนได้ไหม?">
+                ไม่ได้ครับ — การลบเป็นถาวร ข้อมูลเช็คชื่อทุกคนในคาบนั้นจะหายไปด้วย
+                ระบบจะแสดง confirm dialog ก่อนเสมอ กด <em>ยกเลิก</em> หากไม่แน่ใจ
               </FAQ>
-              <FAQ q="Export .xlsx มีเฉพาะ session ที่ซ่อนอยู่ไหม?">
-                ไม่มีครับ — Export ใช้เฉพาะ session ที่มองเห็นในตาราง ณ เวลานั้น
-                (ซ่อน column ไหนไว้ จะไม่ติดมาใน .xlsx)
+              <FAQ q="Export .xlsx รวม session ทั้งหมดหรือเปล่า?">
+                ใช่ครับ — Export รวม session ทุกอันที่อยู่ในตาราง ณ เวลานั้น
+                ถ้าลบ session ไปแล้ว session นั้นจะไม่อยู่ใน .xlsx
               </FAQ>
               <FAQ q="เผลอกด Open Session ซ้ำสำหรับวิชาเดิม?">
                 ระบบจะแสดงปุ่ม <em>View Active Session</em> แทน — กดเพื่อกลับไปคาบที่เปิดอยู่
