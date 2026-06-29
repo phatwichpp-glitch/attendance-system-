@@ -2,11 +2,14 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
+import { useState } from "react";
 import { useClock } from "@/lib/hooks/useClock";
+import HelpModal from "@/components/HelpModal";
 
 export default function AdminNav({ email }: { email?: string | null }) {
   const pathname = usePathname();
   const clock = useClock();
+  const [showHelp, setShowHelp] = useState(false);
 
   const link = (href: string, label: string) => (
     <Link
@@ -46,6 +49,15 @@ export default function AdminNav({ email }: { email?: string | null }) {
             </div>
           )}
           <button
+            onClick={() => setShowHelp(true)}
+            className="rounded-full flex items-center justify-center flex-shrink-0 text-gray-400 hover:text-[#185FA5] hover:bg-blue-50 transition-colors font-bold"
+            style={{ width: 30, height: 30, border: "1.5px solid currentColor", fontSize: 14, lineHeight: 1 }}
+            title="คู่มือการใช้งาน"
+            aria-label="Help"
+          >
+            ?
+          </button>
+          <button
             onClick={() => signOut({ callbackUrl: "/login" })}
             className="text-[14px] text-gray-500 hover:text-gray-900 transition-colors min-h-[44px] px-2"
           >
@@ -53,6 +65,7 @@ export default function AdminNav({ email }: { email?: string | null }) {
           </button>
         </div>
       </div>
+      {showHelp && <HelpModal onClose={() => setShowHelp(false)} />}
     </header>
   );
 }
