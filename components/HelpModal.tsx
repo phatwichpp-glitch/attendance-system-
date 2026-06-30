@@ -120,6 +120,7 @@ export default function HelpModal({ onClose }: { onClose: () => void }) {
                 <Li>Single period (90 นาที) หรือ Double period (180 นาที)</Li>
                 <Li>Double period มี 2 โหมด: OTP เดียว หรือ แยก OTP ต่อคาบ</Li>
                 <Li>OTP duration และ Late threshold — พิมพ์ตัวเลขได้โดยตรง, max = ความยาวคาบนั้น</Li>
+                <Li>เปิด/ปิดการนับ &quot;สาย&quot; ทั้งคาบได้ — ถ้าปิด นักศึกษาจะได้แค่ Present หรือ Absent เท่านั้น</Li>
                 <Li>เลือก GPS จากอุปกรณ์ หรือปักหมุดบนแผนที่เอง</Li>
                 <Li>บันทึกย้อนหลัง — ไม่ต้องการ GPS/OTP กรอกสถานะด้วยมือ</Li>
               </FeatureGroup>
@@ -127,11 +128,11 @@ export default function HelpModal({ onClose }: { onClose: () => void }) {
               <FeatureGroup icon="📡" title="ระหว่างคาบ (Session Dashboard)" color="#185FA5">
                 <Li>OTP 6 หลัก — แสดง countdown MM:SS แบบ real-time บนหน้าจอ</Li>
                 <Li>OTP หมดอายุ → session ปิดอัตโนมัติ ไม่ต้องกลับมากด</Li>
-                <Li>Re-Generate OTP — เปิด session ใหม่ได้ถ้ายังเป็นวันเดิม</Li>
+                <Li>Re-Generate OTP — เปิด session ใหม่ได้ถ้ายังเป็นวันเดิม พร้อมปรับ GPS Radius / OTP Duration / Late threshold / เปิดปิดสถานะสาย ก่อนออกรหัสใหม่</Li>
                 <Li>Projector View — แสดงเต็มจอ พร้อม QR code และ countdown</Li>
                 <Li>Real-time list — เห็นว่าใครเช็คชื่อแล้วบ้าง</Li>
                 <Li>Manual override — แก้สถานะนักศึกษารายคนได้ทันที</Li>
-                <Li>Conflict detection — ตรวจจับอุปกรณ์เดียวกันใช้เช็คหลายคน</Li>
+                <Li>Conflict detection 2 ระดับ — &quot;ยืนยันแล้ว&quot; (อุปกรณ์เดียวกันแน่นอน แม้สลับ browser/โหมดไม่ระบุตัวตน) และ &quot;น่าสงสัย&quot; (IP เดียวกัน + เช็คชื่อใกล้กันทั้งเวลาและตำแหน่ง)</Li>
               </FeatureGroup>
 
               <FeatureGroup icon="📊" title="สรุปผล (Summary Table)" color="#3B6D11">
@@ -168,6 +169,17 @@ export default function HelpModal({ onClose }: { onClose: () => void }) {
                 </SymbolRow>
                 <SymbolRow symbol="✓⚠" label="Flagged" color="#185FA5" bg="#E6F1FB">
                   มีการ flag ไว้เพื่อตรวจสอบ (เช่น อุปกรณ์ซ้ำ หรือ override)
+                </SymbolRow>
+              </Section>
+
+              <Section title="ระดับความน่าเชื่อถือของ Device Conflict" color="#185FA5">
+                <SymbolRow symbol="!" label="ยืนยันแล้ว (Confirmed)" color="#A32D2D" bg="#FCEBEB">
+                  ตรวจพบลายนิ้วมืออุปกรณ์ตรงกัน — รวมถึงกรณีสลับ browser หรือเปิดโหมดไม่ระบุตัวตน
+                  (ใช้ลายนิ้วมือระดับ GPU จาก Canvas/WebGL ที่เหมือนกันบนเครื่องเดียวกัน) ความมั่นใจสูง ควรตรวจสอบ
+                </SymbolRow>
+                <SymbolRow symbol="?" label="น่าสงสัย (Possible)" color="#185FA5" bg="#E6F1FB">
+                  IP เดียวกัน + เช็คชื่อห่างกันไม่เกิน 30 วินาที และตำแหน่ง GPS ใกล้กันไม่เกิน 10 เมตร —
+                  เป็นสัญญาณอ่อนกว่า เพราะ WiFi มหาวิทยาลัยมักแชร์ IP เดียวกันให้หลายคน ไม่ได้แปลว่าโกงเสมอไป
                 </SymbolRow>
               </Section>
 
@@ -264,7 +276,7 @@ export default function HelpModal({ onClose }: { onClose: () => void }) {
                 <Step n="6">OTP หมดอายุ → session <strong>ปิดอัตโนมัติ</strong> — ไม่จำเป็นต้องกลับมากด Close</Step>
                 <Note>
                   ถ้าต้องการให้นักศึกษาเช็คชื่อเพิ่ม กด <strong>Re-Generate OTP</strong> ได้ตราบใดที่ยังเป็นวันเดิม
-                  — ระบบจะออก OTP ใหม่และเปิด session ต่อ
+                  — ระบบจะออก OTP ใหม่ เปิด session ต่อ และเริ่มนับเวลาถอยหลังใหม่ทั้งหมด
                 </Note>
               </Section>
 
@@ -272,6 +284,14 @@ export default function HelpModal({ onClose }: { onClose: () => void }) {
                 <Row label="พิมพ์ตัวเลขได้">กรอกตัวเลขในช่องขวาโดยตรง (ความละเอียด 1 นาที) หรือลาก slider</Row>
                 <Row label="Max = ความยาวคาบ">ถ้าเรียน 90 นาที → max = 90 | ถ้า Double (180 นาที) → max = 180</Row>
                 <Row label="OTP หมดแล้ว Re-Gen">countdown ใน dashboard แสดง MM:SS — เมื่อถึง 00:00 ปิดอัตโนมัติ</Row>
+                <Row label="ปิดสถานะสายได้">มี toggle <em>Enable late status</em> ทั้งตอนเปิดคาบและตอน Re-Generate OTP — ปิดแล้วนักศึกษาที่เช็คชื่อช้าจะยังได้ Present (ไม่ขึ้น Late)</Row>
+              </Section>
+
+              <Section title="3c. ตรวจจับอุปกรณ์ซ้ำ (Device Conflict)" color="#185FA5">
+                <Step n="1">ระบบเก็บลายนิ้วมืออุปกรณ์ 2 แบบตอนเช็คชื่อ: แบบทั่วไป (browser/เครื่อง) และแบบ GPU (Canvas/WebGL)</Step>
+                <Step n="2">ลายนิ้วมือ GPU จะเหมือนเดิมแม้สลับ browser หรือเปิดโหมดไม่ระบุตัวตนบนเครื่องเดียวกัน — จับคู่กันแล้วขึ้นแบนเนอร์ &quot;ยืนยันแล้ว&quot; สีเหลือง</Step>
+                <Step n="3">ถ้าแค่ IP เดียวกัน และเช็คชื่อใกล้กันทั้งเวลา (≤30 วิ) และตำแหน่ง (≤10 ม.) — ขึ้นแบนเนอร์ &quot;น่าสงสัย&quot; สีฟ้าแยกต่างหาก เพราะ WiFi เดียวกันไม่ได้แปลว่าเป็นคนเดียวกันเสมอไป</Step>
+                <Step n="4">กดดูรายชื่อในแบนเนอร์เพื่อตรวจสอบ แล้วใช้ Manual Override แก้สถานะได้ตามดุลยพินิจ</Step>
               </Section>
 
               <Section title="4. คาบ Double Period" color="#185FA5">
@@ -339,6 +359,15 @@ export default function HelpModal({ onClose }: { onClose: () => void }) {
               </FAQ>
               <FAQ q="ต้องการลบวิชาทั้งหมดและ import ใหม่?">
                 กดเมนู ⋯ บนการ์ดวิชา แล้วเลือก <em>Delete Course</em> — ต้องยืนยันด้วยรหัสวิชา
+              </FAQ>
+              <FAQ q="ไม่อยากนับ &quot;สาย&quot; เลย ทำยังไง?">
+                ปิด toggle <em>Enable late status</em> ได้ทั้งตอนเปิดคาบ (หน้า Open Session) และตอนกด
+                <em> Re-Generate OTP</em> — ปิดแล้วนักศึกษาที่เช็คชื่อช้าจะยังได้สถานะ Present ไม่ขึ้น Late
+              </FAQ>
+              <FAQ q="ระบบตรวจจับอุปกรณ์ซ้ำได้แค่ใน browser เดียวกันหรือเปล่า?">
+                ไม่ครับ ตอนนี้ตรวจจับได้ถึงระดับ GPU ของเครื่อง (Canvas/WebGL) ซึ่งเหมือนเดิมแม้สลับ browser
+                หรือเปิดโหมดไม่ระบุตัวตน — เคสแบบนี้จะขึ้นเป็น &quot;ยืนยันแล้ว&quot; ส่วนที่แค่ IP เดียวกัน
+                + เวลา/ตำแหน่งใกล้กัน จะขึ้นแยกเป็น &quot;น่าสงสัย&quot; (ความมั่นใจต่ำกว่า เพราะ WiFi เดียวกันแชร์ IP ให้คนอื่นได้)
               </FAQ>
             </div>
           )}
