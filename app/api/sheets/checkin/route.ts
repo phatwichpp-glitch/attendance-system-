@@ -163,7 +163,7 @@ export async function POST(req: NextRequest) {
     let status: AttendanceRecord["status"];
     if (!gps_pass) {
       status = "gps_fail";
-    } else if (now > lateThreshold) {
+    } else if (sessionData.late_enabled !== false && now > lateThreshold) {
       status = "late";
     } else {
       status = "present";

@@ -4,6 +4,7 @@ import dynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
 import Spinner from "@/components/Spinner";
 import Slider from "@/components/Slider";
+import Toggle from "@/components/Toggle";
 import { IconLocation, IconRefresh, IconWarning } from "@/components/icons";
 import { Course, Settings, DEFAULT_SETTINGS, SemesterConfig } from "@/types";
 import { loadSettings, saveSettings, loadPeriodPrefs, savePeriodPrefs } from "@/lib/settings";
@@ -517,8 +518,12 @@ export default function SetupClient() {
           <MinuteSlider label="OTP Expires After" value={settings.otp_expire_min} min={1} max={classDurationMin} unit="min"
             onChange={(v) => setSettings((s) => ({ ...s, otp_expire_min: v }))} />
           <div className="h-px" style={{ backgroundColor: "rgba(0,0,0,0.08)" }} />
-          <MinuteSlider label="Late After" value={settings.late_after_min} min={1} max={classDurationMin} unit="min"
-            onChange={(v) => setSettings((s) => ({ ...s, late_after_min: v }))} />
+          <Toggle label="Enable late status" checked={settings.late_enabled}
+            onChange={(v) => setSettings((s) => ({ ...s, late_enabled: v }))} />
+          <div className={settings.late_enabled ? "" : "opacity-40 pointer-events-none"}>
+            <MinuteSlider label="Late After" value={settings.late_after_min} min={1} max={classDurationMin} unit="min"
+              onChange={(v) => setSettings((s) => ({ ...s, late_after_min: v }))} />
+          </div>
         </div>
         <div className="space-y-2 pt-3 border-t border-gray-100">
           <Toggle label="Save GPS fail check-ins" checked={settings.save_gps_fail}
@@ -623,22 +628,3 @@ function MinuteSlider({ label, value, min, max, unit, onChange }: {
   );
 }
 
-function Toggle({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <label className="flex items-center justify-between cursor-pointer select-none min-h-[44px]">
-      <span className="text-[13px] text-gray-700">{label}</span>
-      <button
-        role="switch"
-        aria-checked={checked}
-        onClick={() => onChange(!checked)}
-        className="relative w-10 h-6 rounded-full transition-colors flex-shrink-0"
-        style={{ backgroundColor: checked ? "#185FA5" : "#d1d5db" }}
-      >
-        <span
-          className="absolute top-1 left-1 w-4 h-4 bg-white rounded-full shadow transition-transform"
-          style={{ transform: checked ? "translateX(16px)" : "translateX(0)" }}
-        />
-      </button>
-    </label>
-  );
-}

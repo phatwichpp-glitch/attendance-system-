@@ -19,7 +19,7 @@ export async function PATCH(
   if (!session?.access_token) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   try {
     const { sessionId } = await params;
-    const { week_label, date, period, week_number, reopen, activate, radius_m, late_after_min, otp_expire_min } = await req.json();
+    const { week_label, date, period, week_number, reopen, activate, radius_m, late_after_min, otp_expire_min, late_enabled } = await req.json();
 
     const spreadsheetId = await initializeSpreadsheet(session.access_token);
     const current = await getSessionById(session.access_token, spreadsheetId, sessionId);
@@ -27,7 +27,7 @@ export async function PATCH(
 
     if (reopen) {
       const result = await reopenSession(session.access_token, spreadsheetId, sessionId, {
-        radius_m, late_after_min, otp_expire_min,
+        radius_m, late_after_min, otp_expire_min, late_enabled,
       });
       if (!result) return NextResponse.json({ error: "Session not found" }, { status: 404 });
       registerSession(sessionId, spreadsheetId, session.access_token, result.otp);
@@ -43,6 +43,7 @@ export async function PATCH(
         radius_m: radius_m ?? current.radius_m,
         late_after_min: late_after_min ?? current.late_after_min,
         otp_expire_min: otp_expire_min ?? current.otp_expire_min,
+        late_enabled: late_enabled ?? current.late_enabled,
       });
     }
 

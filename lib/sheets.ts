@@ -70,12 +70,13 @@ export async function initializeSpreadsheet(
           values: [["student_id", "firstname", "lastname", "course_id", "section", "order_num"]],
         },
         {
-          range: "sessions!A1:U1",
+          range: "sessions!A1:V1",
           values: [[
             "session_id", "course_id", "section", "period", "date", "otp",
             "lat", "lng", "radius_m", "late_after_min", "otp_expire_min",
             "opened_at", "closed_at", "week_number", "week_label", "is_past_session",
             "period_count", "period_end", "check_in_mode", "linked_session_id", "part_number",
+            "late_enabled",
           ]],
         },
         {
@@ -337,7 +338,7 @@ export async function createSession(
   const sheets = getSheetsClient(accessToken);
   await sheets.spreadsheets.values.append({
     spreadsheetId,
-    range: "sessions!A:U",
+    range: "sessions!A:V",
     valueInputOption: "RAW",
     requestBody: {
       values: [[
@@ -353,6 +354,7 @@ export async function createSession(
         session.check_in_mode ?? "",
         session.linked_session_id ?? "",
         session.part_number ?? "",
+        session.late_enabled === false ? "FALSE" : "TRUE",
       ]],
     },
   });
@@ -364,7 +366,7 @@ export async function getAllSessions(
 ): Promise<Session[]> {
   const sheets = getSheetsClient(accessToken);
   const res = await sheets.spreadsheets.values.get({
-    spreadsheetId, range: "sessions!A2:U",
+    spreadsheetId, range: "sessions!A2:V",
   });
   return (res.data.values ?? []).map(rowToSession);
 }
@@ -423,6 +425,7 @@ function rowToSession(r: string[]): Session {
     check_in_mode: (r[18] as Session["check_in_mode"]) || undefined,
     linked_session_id: r[19] || undefined,
     part_number: r[20] ? parseInt(r[20], 10) : undefined,
+    late_enabled: r[21] !== "FALSE",
   };
 }
 
@@ -1008,18 +1011,18 @@ export async function updateSessionById(
   updates: Partial<Pick<Session,
     "week_label" | "date" | "period" | "closed_at" | "week_number" | "opened_at" |
     "period_count" | "period_end" | "check_in_mode" | "linked_session_id" | "part_number" |
-    "otp" | "radius_m" | "late_after_min" | "otp_expire_min"
+    "otp" | "radius_m" | "late_after_min" | "otp_expire_min" | "late_enabled"
   >>
 ): Promise<boolean> {
   const sheets = getSheetsClient(accessToken);
-  const res = await sheets.spreadsheets.values.get({ spreadsheetId, range: "sessions!A2:U" });
+  const res = await sheets.spreadsheets.values.get({ spreadsheetId, range: "sessions!A2:V" });
   const rows = (res.data.values ?? []) as string[][];
   const idx = rows.findIndex((r) => r[0] === sessionId);
   if (idx === -1) return false;
 
-  // Pad row to 21 columns so new fields always have indices
+  // Pad row to 22 columns so new fields always have indices
   const row = [...rows[idx]];
-  while (row.length < 21) row.push("");
+  while (row.length < 22) row.push("");
 
   if (updates.period !== undefined) row[3] = updates.period;
   if (updates.date !== undefined) row[4] = updates.date;
@@ -1036,10 +1039,11 @@ export async function updateSessionById(
   if (updates.check_in_mode !== undefined) row[18] = updates.check_in_mode ?? "";
   if (updates.linked_session_id !== undefined) row[19] = updates.linked_session_id ?? "";
   if (updates.part_number !== undefined) row[20] = updates.part_number ? String(updates.part_number) : "";
+  if (updates.late_enabled !== undefined) row[21] = updates.late_enabled ? "TRUE" : "FALSE";
 
   await sheets.spreadsheets.values.update({
     spreadsheetId,
-    range: `sessions!A${idx + 2}:U${idx + 2}`,
+    range: `sessions!A${idx + 2}:V${idx + 2}`,
     valueInputOption: "RAW",
     requestBody: { values: [row] },
   });
@@ -1059,7 +1063,7 @@ export async function reopenSession(
   accessToken: string,
   spreadsheetId: string,
   sessionId: string,
-  overrides?: { radius_m?: number; late_after_min?: number; otp_expire_min?: number }
+  overrides?: { radius_m?: number; late_after_min?: number; otp_expire_min?: number; late_enabled?: boolean }
 ): Promise<{ otp: string; opened_at: string } | null> {
   const otp = generateOTP();
   const opened_at = new Date().toISOString();

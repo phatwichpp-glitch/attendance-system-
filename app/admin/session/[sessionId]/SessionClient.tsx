@@ -6,6 +6,7 @@ import Link from "next/link";
 import QRCode from "qrcode";
 import Spinner from "@/components/Spinner";
 import Slider from "@/components/Slider";
+import Toggle from "@/components/Toggle";
 import IssueBadge, { IssueType } from "@/components/IssueBadge";
 import ActionDropdown, { ActionType } from "@/components/ActionDropdown";
 import UndoToast from "@/components/UndoToast";
@@ -121,7 +122,7 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
   const [reopening, setReopening]         = useState(false);
   const [activatingPart2, setActivatingPart2] = useState(false);
   const [showReopenSettings, setShowReopenSettings] = useState(false);
-  const [reopenForm, setReopenForm] = useState({ radius_m: 200, late_after_min: 15, otp_expire_min: 15 });
+  const [reopenForm, setReopenForm] = useState({ radius_m: 200, late_after_min: 15, otp_expire_min: 15, late_enabled: true });
 
   const fetchData = useCallback(async () => {
     try {
@@ -257,6 +258,7 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
         radius_m: data.session.radius_m,
         late_after_min: data.session.late_after_min,
         otp_expire_min: data.session.otp_expire_min,
+        late_enabled: data.session.late_enabled !== false,
       });
     }
     setShowReopenSettings(true);
@@ -593,7 +595,7 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
                 <div className="text-right text-[11px] shrink-0" style={{ color: "#6b7280" }}>
                   <p className="text-[10px] font-medium uppercase tracking-wide" style={{ color: "#9ca3af" }}>Radius</p>
                   <p>R {s.radius_m}m</p>
-                  <p>L &gt;{s.late_after_min}m</p>
+                  <p>{s.late_enabled === false ? "L Off" : `L >${s.late_after_min}m`}</p>
                 </div>
               </>
             ) : (
@@ -1091,8 +1093,13 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
                 onChange={(v) => setReopenForm((f) => ({ ...f, radius_m: v }))} />
               <Slider label="OTP Expires After" value={reopenForm.otp_expire_min} min={1} max={60} step={1} unit="min"
                 onChange={(v) => setReopenForm((f) => ({ ...f, otp_expire_min: v }))} />
-              <Slider label="Late After" value={reopenForm.late_after_min} min={1} max={60} step={1} unit="min"
-                onChange={(v) => setReopenForm((f) => ({ ...f, late_after_min: v }))} />
+              <div className="h-px" style={{ backgroundColor: "rgba(0,0,0,0.08)" }} />
+              <Toggle label="Enable late status" checked={reopenForm.late_enabled}
+                onChange={(v) => setReopenForm((f) => ({ ...f, late_enabled: v }))} />
+              <div className={reopenForm.late_enabled ? "" : "opacity-40 pointer-events-none"}>
+                <Slider label="Late After" value={reopenForm.late_after_min} min={1} max={60} step={1} unit="min"
+                  onChange={(v) => setReopenForm((f) => ({ ...f, late_after_min: v }))} />
+              </div>
             </div>
             <div className="flex gap-3">
               <button onClick={() => setShowReopenSettings(false)} className="btn-outline flex-1">Cancel</button>

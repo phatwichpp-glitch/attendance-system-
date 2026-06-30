@@ -30,6 +30,7 @@ export interface Session {
   otp_expire_min: number;
   opened_at: string;
   closed_at: string;
+  late_enabled?: boolean;         // false = check-ins are never marked "late" (defaults true)
   // Week labels
   week_number?: number;
   week_label?: string;
@@ -124,6 +125,7 @@ export interface Settings {
   radius_m: number;
   otp_expire_min: number;
   late_after_min: number;
+  late_enabled: boolean;
   save_gps_fail: boolean;
   warn_low_accuracy: boolean;
   show_countdown: boolean;
@@ -133,6 +135,7 @@ export const DEFAULT_SETTINGS: Settings = {
   radius_m: 200,
   otp_expire_min: 15,
   late_after_min: 15,
+  late_enabled: true,
   save_gps_fail: true,
   warn_low_accuracy: true,
   show_countdown: false,
