@@ -455,7 +455,7 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
   const flaggedCount        = students.filter((x) => x.attendance?.flagged).length;
   const totalIssues        = gpsFailCount + deviceConflictCount + lateCount + flaggedCount;
 
-  // Action buttons with optimized sizing - 2 rows
+  // Action buttons — row 1: frequent/neutral actions, row 2: the one-time, destructive action kept apart
   const ActionButtons = (
     <div className="flex flex-col gap-2">
       <div className="flex gap-2 flex-wrap">
@@ -474,8 +474,8 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
             >
               + Manual Record
             </button>
-            <button onClick={() => setShowClose(true)} className="btn-danger text-[14px]" style={{ minHeight: 36, padding: "8px 14px" }}>
-              <IconStop size={14} /> Close Session
+            <button onClick={exportCsv} className="btn-outline text-[14px]" style={{ minHeight: 36, padding: "8px 14px" }}>
+              <IconDownload size={14} /> Export CSV
             </button>
           </>
         )}
@@ -487,14 +487,19 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
                 {reopening ? <Spinner className="h-4 w-4" /> : "Re-Generate OTP"}
               </button>
             )}
+            <button onClick={exportCsv} className="btn-outline text-[14px]" style={{ minHeight: 36, padding: "8px 14px" }}>
+              <IconDownload size={14} /> Export CSV
+            </button>
           </>
         )}
       </div>
-      <div className="flex gap-2 flex-wrap">
-        <button onClick={exportCsv} className="btn-outline text-[14px]" style={{ minHeight: 36, padding: "8px 14px" }}>
-          <IconDownload size={14} /> Export CSV
-        </button>
-      </div>
+      {!isClosed && (
+        <div className="flex gap-2 flex-wrap justify-end">
+          <button onClick={() => setShowClose(true)} className="btn-danger text-[14px]" style={{ minHeight: 36, padding: "8px 14px" }}>
+            <IconStop size={14} /> Close Session
+          </button>
+        </div>
+      )}
     </div>
   );
 
@@ -656,7 +661,7 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
                       </span>
                     )}
                   </p>
-                  <p className="text-2xl font-bold tracking-widest" style={{ fontFamily: "ui-monospace, monospace", color: "#185FA5" }}>
+                  <p className="text-4xl font-bold tracking-widest leading-none" style={{ fontFamily: "ui-monospace, monospace", color: "#185FA5" }}>
                     {s.otp}
                   </p>
                 </div>
