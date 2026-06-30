@@ -118,6 +118,32 @@
   .badge-absent  { display:inline-flex;align-items:center;background-color:#FCEBEB;color:#A32D2D;font-size:11px;font-weight:500;padding:3px 9px;border-radius:20px; }
   .badge-gps     { display:inline-flex;align-items:center;background-color:#FAEEDA;color:#854F0B;font-size:11px;font-weight:500;padding:3px 9px;border-radius:20px; }
   .badge-waiting { display:inline-flex;align-items:center;background-color:#F1EFE8;color:#5F5E5A;font-size:11px;font-weight:500;padding:3px 9px;border-radius:20px; }
+
+  .badge-live {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background-color: #EAF3DE;
+    color: #3B6D11;
+    border: 0.5px solid rgba(59, 109, 17, 0.25);
+    font-size: 11px;
+    font-weight: 500;
+    padding: 2px 9px;
+    border-radius: 9999px;
+  }
+  .live-dot {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 9999px;
+    background-color: #3B6D11;
+    animation: live-pulse 1.8s ease-in-out infinite;
+  }
+}
+
+@keyframes live-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.35; }
 }
 
 /* Projector page — fade-in animation */

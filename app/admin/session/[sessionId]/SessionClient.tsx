@@ -10,7 +10,7 @@ import ActionDropdown, { ActionType } from "@/components/ActionDropdown";
 import UndoToast from "@/components/UndoToast";
 import {
   IconScreen, IconStop, IconDownload, IconWarning,
-  IconClock, IconChevronDown, IconChevronUp, IconQR,
+  IconChevronDown, IconChevronUp, IconQR,
 } from "@/components/icons";
 import { Session, StudentWithAttendance, DeviceConflict, AttendanceStatus, AttendanceRecord } from "@/types";
 import { getPeriodLabel } from "@/lib/period-utils";
@@ -455,90 +455,45 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
   const flaggedCount        = students.filter((x) => x.attendance?.flagged).length;
   const totalIssues        = gpsFailCount + deviceConflictCount + lateCount + flaggedCount;
 
-  // Mobile action buttons — row 1: frequent/neutral actions, row 2: the one-time, destructive action kept apart
-  const MobileActionButtons = (
-    <div className="flex flex-col gap-2">
-      <div className="flex gap-2 flex-wrap">
-        {!isClosed && (
-          <>
-            <Link href={`/projector/${sessionId}`} target="_blank" className="btn-outline text-[14px]" style={{ minHeight: 36, padding: "8px 14px" }}>
-              <IconScreen size={14} /> Projector View
-            </Link>
-            <button onClick={openManualQR} className="btn-outline text-[14px]" style={{ minHeight: 36, padding: "8px 14px" }}>
-              <IconQR size={14} /> Manual QR
-            </button>
-            <button
-              onClick={() => { setShowManual(true); setManualError(""); }}
-              className="btn-outline text-[14px]"
-              style={{ minHeight: 36, padding: "8px 14px" }}
-            >
-              + Manual Record
-            </button>
-            <button onClick={exportCsv} className="btn-outline text-[14px]" style={{ minHeight: 36, padding: "8px 14px" }}>
-              <IconDownload size={14} /> Export CSV
-            </button>
-          </>
-        )}
-        {isClosed && (
-          <>
-            <span className="badge-absent px-3 py-1.5 text-[14px]">Closed</span>
-            {isToday && (
-              <button onClick={handleReopen} disabled={reopening} className="btn-outline text-[14px]" style={{ minHeight: 36, padding: "8px 14px" }}>
-                {reopening ? <Spinner className="h-4 w-4" /> : "Re-Generate OTP"}
-              </button>
-            )}
-            <button onClick={exportCsv} className="btn-outline text-[14px]" style={{ minHeight: 36, padding: "8px 14px" }}>
-              <IconDownload size={14} /> Export CSV
-            </button>
-          </>
-        )}
-      </div>
-      {!isClosed && (
-        <div className="flex gap-2 flex-wrap justify-end">
-          <button onClick={() => setShowClose(true)} className="btn-danger text-[14px]" style={{ minHeight: 36, padding: "8px 14px" }}>
-            <IconStop size={14} /> Close Session
-          </button>
-        </div>
-      )}
-    </div>
-  );
-
-  // Desktop action buttons — single row, evenly spread across the full card width
-  const DesktopActionButtons = (
-    <div className="flex gap-2 w-full">
-      {!isClosed && (
+  // Action row — one row, never wraps onto the title/clock row. Frequent actions sit left,
+  // a flex spacer pushes the rare/destructive action to the far right. Scrolls horizontally
+  // on very narrow screens instead of wrapping.
+  const ActionRow = (
+    <div className="flex items-center gap-1.5 overflow-x-auto">
+      {!isClosed ? (
         <>
-          <Link href={`/projector/${sessionId}`} target="_blank" className="btn-outline text-[14px] flex-1" style={{ minHeight: 36, padding: "8px 14px" }}>
-            <IconScreen size={14} /> Projector View
+          <Link href={`/projector/${sessionId}`} target="_blank" className="btn-outline text-[13px] shrink-0 whitespace-nowrap" style={{ minHeight: 34, padding: "7px 12px" }}>
+            <IconScreen size={13} /> Projector View
           </Link>
-          <button onClick={openManualQR} className="btn-outline text-[14px] flex-1" style={{ minHeight: 36, padding: "8px 14px" }}>
-            <IconQR size={14} /> Manual QR
+          <button onClick={openManualQR} className="btn-outline text-[13px] shrink-0 whitespace-nowrap" style={{ minHeight: 34, padding: "7px 12px" }}>
+            <IconQR size={13} /> Manual QR
           </button>
           <button
             onClick={() => { setShowManual(true); setManualError(""); }}
-            className="btn-outline text-[14px] flex-1"
-            style={{ minHeight: 36, padding: "8px 14px" }}
+            className="btn-outline text-[13px] shrink-0 whitespace-nowrap"
+            style={{ minHeight: 34, padding: "7px 12px" }}
           >
             + Manual Record
           </button>
-          <button onClick={exportCsv} className="btn-outline text-[14px] flex-1" style={{ minHeight: 36, padding: "8px 14px" }}>
-            <IconDownload size={14} /> Export CSV
+          <button onClick={exportCsv} className="btn-outline text-[13px] shrink-0 whitespace-nowrap" style={{ minHeight: 34, padding: "7px 12px" }}>
+            <IconDownload size={13} /> Export CSV
           </button>
-          <button onClick={() => setShowClose(true)} className="btn-danger text-[14px] flex-1" style={{ minHeight: 36, padding: "8px 14px" }}>
-            <IconStop size={14} /> Close Session
+          <div className="flex-1 min-w-[8px]" />
+          <button onClick={() => setShowClose(true)} className="btn-danger text-[13px] shrink-0 whitespace-nowrap" style={{ minHeight: 34, padding: "7px 12px" }}>
+            <IconStop size={13} /> Close Session
           </button>
         </>
-      )}
-      {isClosed && (
+      ) : (
         <>
-          <span className="badge-absent px-3 py-1.5 text-[14px] flex items-center justify-center flex-1">Closed</span>
+          <span className="badge-absent px-3 py-1.5 text-[13px] shrink-0">Closed</span>
           {isToday && (
-            <button onClick={handleReopen} disabled={reopening} className="btn-outline text-[14px] flex-1" style={{ minHeight: 36, padding: "8px 14px" }}>
+            <button onClick={handleReopen} disabled={reopening} className="btn-outline text-[13px] shrink-0 whitespace-nowrap" style={{ minHeight: 34, padding: "7px 12px" }}>
               {reopening ? <Spinner className="h-4 w-4" /> : "Re-Generate OTP"}
             </button>
           )}
-          <button onClick={exportCsv} className="btn-outline text-[14px] flex-1" style={{ minHeight: 36, padding: "8px 14px" }}>
-            <IconDownload size={14} /> Export CSV
+          <div className="flex-1 min-w-[8px]" />
+          <button onClick={exportCsv} className="btn-outline text-[13px] shrink-0 whitespace-nowrap" style={{ minHeight: 34, padding: "7px 12px" }}>
+            <IconDownload size={13} /> Export CSV
           </button>
         </>
       )}
@@ -554,16 +509,19 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
 
   return (
     <div>
-      {/* Desktop header */}
-      <div className="hidden md:flex flex-col gap-3 py-3 mb-4"
-        style={{ borderBottom: "0.5px solid rgba(0,0,0,0.08)" }}>
-        {/* Row 1: title + live status + clock, spread across the full width */}
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <h1 className="text-[18px] font-medium text-gray-900 flex items-center gap-2">
+      {/* Session status card: title/clock, actions, divider, stats grid, progress — all one card */}
+      <div className="card mb-4">
+        {/* Row 1: title + live status (left) / clock (right) */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+          <div className="min-w-0">
+            <h1 className="text-[18px] font-medium text-gray-900 flex items-center gap-2 flex-wrap">
               {s.course_id} — {periodLabel}
               {partBadge && <span className="text-[14px]" style={{ color: "#185FA5" }}>{partBadge}</span>}
-              {!isClosed && <span className="text-[12px] font-normal" style={{ color: "#3B6D11" }}>● Live</span>}
+              {!isClosed && (
+                <span className="badge-live">
+                  <span className="live-dot" /> Live
+                </span>
+              )}
             </h1>
             <p className="text-[11px] mt-0.5" style={{ color: "#5F5E5A" }}>
               {s.date} · Section {s.section}
@@ -572,45 +530,74 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
             </p>
           </div>
 
-          {/* Live clock */}
           {clock.time && (
             <div className="text-right leading-tight shrink-0">
-              <p className="text-[13px]" style={{ color: "#5F5E5A" }}>{clock.date}</p>
-              <p className="text-[22px] font-medium" style={{ fontFamily: "ui-monospace, monospace" }}>{clock.time}</p>
+              <p className="text-[12px]" style={{ color: "#5F5E5A" }}>{clock.date}</p>
+              <p className="text-[24px] font-medium" style={{ fontFamily: "ui-monospace, monospace", fontVariantNumeric: "tabular-nums" }}>{clock.time}</p>
             </div>
           )}
         </div>
 
-        {/* Row 2: actions, spread to fill the row */}
-        {DesktopActionButtons}
-      </div>
+        {/* Row 2: actions — its own dedicated row, never wraps onto row 1 */}
+        <div className="mt-2.5">{ActionRow}</div>
 
-      {/* Mobile header */}
-      <div className="md:hidden flex flex-col gap-3 mb-4">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div>
-              <h1 className="text-[18px] font-medium text-gray-900 flex items-center gap-2">
-                {s.course_id} — {periodLabel}
-                {partBadge && <span className="text-[14px]" style={{ color: "#185FA5" }}>{partBadge}</span>}
-                {!isClosed && <span className="text-[11px] font-normal" style={{ color: "#3B6D11" }}>● Live</span>}
-              </h1>
-              <p className="text-[11px] mt-0.5" style={{ color: "#5F5E5A" }}>{s.date} · Section {s.section}</p>
-            </div>
-            {clock.time && (
-              <div className="text-right leading-tight shrink-0">
-                <p className="text-[11px]" style={{ color: "#5F5E5A" }}>{clock.date}</p>
-                <p className="text-[16px] font-medium" style={{ fontFamily: "ui-monospace, monospace" }}>{clock.time}</p>
+        {/* Divider */}
+        <div className="my-3" style={{ borderTop: "1px solid rgba(0,0,0,0.08)" }} />
+
+        {/* Stats grid: 4 small cards + 1 wide OTP/Radius card */}
+        <div className="grid grid-cols-2 lg:grid-cols-[repeat(4,1fr)_2fr] gap-2">
+          <Stat label="Total"    value={total}   caption="enrolled"   color="#374151" />
+          <Stat label="Present"  value={present} caption="checked in" color="#3B6D11" />
+          <Stat label="Absent"   value={absent}  caption="no show"    color="#A32D2D" />
+          <Stat label="GPS fail" value={gpsFail} caption="flagged"    color="#854F0B" />
+
+          <div className="col-span-2 lg:col-span-1 rounded-xl px-3 py-2.5 flex items-center justify-between gap-3"
+            style={{ backgroundColor: "#f9fafb", border: "0.5px solid rgba(0,0,0,0.06)" }}>
+            {!isClosed ? (
+              <>
+                <div className="min-w-0">
+                  <p className="text-[10px] font-medium uppercase tracking-wide" style={{ color: "#9ca3af" }}>OTP Code</p>
+                  <p className="text-[26px] font-bold tracking-widest leading-none" style={{ fontFamily: "ui-monospace, monospace", color: "#185FA5", fontVariantNumeric: "tabular-nums" }}>
+                    {s.otp}
+                  </p>
+                  {otpSecondsLeft !== null && (
+                    <p className="text-[10px] mt-1" style={{ color: otpSecondsLeft < 60 ? "#A32D2D" : "#9ca3af" }}>
+                      Expires in {otpSecondsLeft > 0
+                        ? `${String(Math.floor(otpSecondsLeft / 60)).padStart(2, "0")}:${String(otpSecondsLeft % 60).padStart(2, "0")}`
+                        : "หมดอายุ"}
+                    </p>
+                  )}
+                </div>
+                <div className="text-right text-[11px] shrink-0" style={{ color: "#6b7280" }}>
+                  <p className="text-[10px] font-medium uppercase tracking-wide" style={{ color: "#9ca3af" }}>Radius</p>
+                  <p>R {s.radius_m}m</p>
+                  <p>L &gt;{s.late_after_min}m</p>
+                </div>
+              </>
+            ) : (
+              <div className="flex items-center justify-between w-full">
+                <span className="badge-absent">Closed</span>
+                {isToday && (
+                  <button onClick={handleReopen} disabled={reopening} className="btn-outline text-[12px]" style={{ minHeight: 32, padding: "6px 10px" }}>
+                    {reopening ? <Spinner className="h-3 w-3" /> : "Re-Generate OTP"}
+                  </button>
+                )}
               </div>
             )}
           </div>
         </div>
-        {MobileActionButtons}
-        {lastUpdated && (
-          <p className="text-[11px] text-gray-400 flex items-center gap-1">
-            <IconClock size={11} /> Updated {lastUpdated.toLocaleTimeString("th-TH")}
-          </p>
-        )}
+
+        {/* Progress bar — sits directly under the stats, no dead space */}
+        <div className="mt-2">
+          <div className="flex justify-between text-[12px] mb-1">
+            <span className="font-medium text-gray-700">Checked In</span>
+            <span className="text-gray-500" style={{ fontVariantNumeric: "tabular-nums" }}>{present}/{total}</span>
+          </div>
+          <div className="h-1.5 rounded-full" style={{ backgroundColor: "#e5e7eb" }}>
+            <div className="h-full rounded-full transition-all"
+              style={{ width: total > 0 ? `${(present / total) * 100}%` : "0%", backgroundColor: "#3B6D11" }} />
+          </div>
+        </div>
       </div>
 
       {/* Single column layout */}
@@ -670,53 +657,6 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
           </div>
         )}
 
-        <div className="card">
-          <div className="flex flex-wrap items-center gap-4">
-            {/* Stats summary */}
-            <div className="flex gap-4 text-[13px] shrink-0">
-              <div><span className="font-medium text-gray-900">{total}</span> <span className="text-gray-500">Total</span></div>
-              <div><span className="font-medium" style={{ color: "#3B6D11" }}>{present}</span> <span className="text-gray-500">Present</span></div>
-              <div><span className="font-medium" style={{ color: "#A32D2D" }}>{absent}</span> <span className="text-gray-500">Absent</span></div>
-              <div><span className="font-medium" style={{ color: "#854F0B" }}>{gpsFail}</span> <span className="text-gray-500">GPS fail</span></div>
-            </div>
-
-            {/* Progress bar fills the middle space instead of sitting empty */}
-            <div className="flex-1 min-w-[160px]">
-              <div className="flex justify-between text-[12px] text-gray-600 mb-1">
-                <span>Checked In</span>
-                <span className="font-medium">{present}/{total}</span>
-              </div>
-              <div className="h-1.5 rounded-full" style={{ backgroundColor: "#e5e7eb" }}>
-                <div className="h-full rounded-full transition-all"
-                  style={{ width: total > 0 ? `${(present / total) * 100}%` : "0%", backgroundColor: "#3B6D11" }} />
-              </div>
-            </div>
-
-            {/* OTP */}
-            {!isClosed && (
-              <div className="flex items-center gap-3 shrink-0">
-                <div className="text-right">
-                  <p className="text-[11px]" style={{ color: otpSecondsLeft !== null && otpSecondsLeft < 60 ? "#A32D2D" : "#5F5E5A" }}>
-                    OTP {otpSecondsLeft !== null && (
-                      <span className="font-mono font-semibold">
-                        {otpSecondsLeft > 0
-                          ? `${String(Math.floor(otpSecondsLeft / 60)).padStart(2, "0")}:${String(otpSecondsLeft % 60).padStart(2, "0")}`
-                          : "หมดอายุ..."}
-                      </span>
-                    )}
-                  </p>
-                  <p className="text-4xl font-bold tracking-widest leading-none" style={{ fontFamily: "ui-monospace, monospace", color: "#185FA5" }}>
-                    {s.otp}
-                  </p>
-                </div>
-                <div className="text-[11px] space-y-0.5" style={{ color: "#5F5E5A" }}>
-                  <p>R {s.radius_m}m</p>
-                  <p>L &gt;{s.late_after_min}m</p>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
           {/* Part 1 → Part 2 comparison panel */}
           {s.part_number === 2 && part1Map && part1Map.size > 0 && (
             <div className="card" style={{ border: "1px solid rgba(0,0,0,0.08)" }}>
@@ -1111,11 +1051,12 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
   );
 }
 
-function Stat({ label, value, bg, color }: { label: string; value: number; bg: string; color: string }) {
+function Stat({ label, value, caption, color }: { label: string; value: number; caption: string; color: string }) {
   return (
-    <div className="rounded-xl p-3 text-center" style={{ backgroundColor: bg }}>
-      <p className="text-2xl font-bold" style={{ color }}>{value}</p>
-      <p className="text-[11px] mt-0.5" style={{ color }}>{label}</p>
+    <div className="rounded-xl px-3 py-2.5" style={{ backgroundColor: "#f9fafb", border: "0.5px solid rgba(0,0,0,0.06)" }}>
+      <p className="text-[10px] font-medium uppercase tracking-wide" style={{ color: "#9ca3af" }}>{label}</p>
+      <p className="text-[20px] font-semibold leading-tight" style={{ color, fontVariantNumeric: "tabular-nums" }}>{value}</p>
+      <p className="text-[10px]" style={{ color: "#9ca3af" }}>{caption}</p>
     </div>
   );
 }
