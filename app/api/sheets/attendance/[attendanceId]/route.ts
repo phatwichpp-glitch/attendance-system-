@@ -37,8 +37,8 @@ export async function PATCH(
           });
           if (!prev.found) return NextResponse.json({ error: "Record not found" }, { status: 404 });
 
-          // If was gps_fail, upgrade status to present
-          if (prev.previousStatus === "gps_fail") {
+          // If was gps_fail or a teacher-marked absent, upgrade status to present
+          if (prev.previousStatus === "gps_fail" || prev.previousStatus === "absent") {
             await updateAttendanceFields(session.access_token, spreadsheetId, attendanceId, {
               status: "present",
             });
@@ -69,8 +69,12 @@ export async function PATCH(
         }
 
         case "mark_absent": {
+          // Marking absent supersedes any earlier approval — clear it so the row doesn't
+          // keep showing a stale "✓ Approved" tag while now sitting at status "absent".
           const prev = await updateAttendanceFields(session.access_token, spreadsheetId, attendanceId, {
             status: "absent",
+            overridden: false,
+            edit_note: "",
             action_taken: "mark_absent",
             action_taken_at: now,
           });

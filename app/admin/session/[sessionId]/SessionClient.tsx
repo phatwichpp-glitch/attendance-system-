@@ -973,6 +973,7 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
                           <Spinner className="h-4 w-4 shrink-0" />
                         ) : (
                           <ActionButtons
+                            status={att.status}
                             overridden={att.overridden}
                             onAction={(action) => {
                               const studentName = `${stu.firstname} ${stu.lastname}`;
