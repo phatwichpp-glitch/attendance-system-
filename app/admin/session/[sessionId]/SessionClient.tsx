@@ -922,7 +922,7 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
                 const issues = att ? getIssues(stu, conflictSet) : [];
                 const hasIssues    = issues.length > 0;
                 const primaryIssue = issues[0];
-                // "late" and "gps_fail" are already shown by the status pill on the right — don't repeat them as tags
+                // "late" and "gps_fail" are already shown by the status pill — don't repeat them as tags
                 const issueTags    = issues.filter((issue) => issue !== "late" && issue !== "gps_fail");
                 const isActioning  = actioning === att?.attendance_id;
 
@@ -937,16 +937,9 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
                   >
                     <span className="text-gray-300 text-[16px] w-8 text-right font-mono">{stu.order_num}</span>
                     <span className="font-mono text-[16px] text-gray-500 w-28">{stu.student_id}</span>
-                    <span className="flex-1 min-w-0 flex items-center gap-2">
+                    <span className="flex-1 min-w-0 flex items-center gap-2 flex-wrap">
                       <span className="truncate shrink">{stu.firstname} {stu.lastname}</span>
-                      {issueTags.length > 0 && (
-                        <span className="flex flex-wrap gap-1 shrink-0">
-                          {issueTags.map((issue) => <IssueBadge key={issue} type={issue} />)}
-                        </span>
-                      )}
-                    </span>
-                    {att ? (
-                      <>
+                      {att && (
                         <span
                           className={`${
                             att.status === "present" ? "badge-present" :
@@ -958,7 +951,16 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
                            att.status === "late"    ? "Late"    :
                            att.status === "absent"  ? "Absent"  : "GPS fail"}
                         </span>
-
+                      )}
+                      {!att && <span className="badge-waiting text-[15px] px-3 py-1.5 shrink-0">Pending</span>}
+                      {issueTags.length > 0 && (
+                        <span className="flex flex-wrap gap-1 shrink-0">
+                          {issueTags.map((issue) => <IssueBadge key={issue} type={issue} />)}
+                        </span>
+                      )}
+                    </span>
+                    {att && (
+                      <>
                         {hasIssues && (
                           isActioning ? (
                             <Spinner className="h-4 w-4 shrink-0" />
@@ -994,8 +996,6 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
                           </button>
                         </div>
                       </>
-                    ) : (
-                      <span className="badge-waiting text-[15px] px-3 py-1.5">Pending</span>
                     )}
                   </div>
                 );

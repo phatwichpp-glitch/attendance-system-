@@ -96,6 +96,31 @@
   }
   .btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
 
+  /* Compact row actions (Approve / Mark Absent) — transparent fill + solid border, same
+     recipe as .btn-outline/.btn-danger, fills in on hover. Deliberately the opposite of the
+     status/issue tags (light fill, thin border, no hover) so it's clear what's clickable. */
+  .btn-row-approve {
+    display: inline-flex; align-items: center; justify-content: center;
+    background-color: transparent; color: #3B6D11; font-weight: 500; font-size: 13px;
+    padding: 6px 10px; border-radius: 6px; border: 1.5px solid #3B6D11; cursor: pointer;
+    transition: background-color 0.15s ease;
+  }
+  @media (hover: hover) {
+    .btn-row-approve:hover:not(:disabled) { background-color: #EAF3DE; }
+  }
+  .btn-row-approve:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .btn-row-absent {
+    display: inline-flex; align-items: center; justify-content: center;
+    background-color: transparent; color: #A32D2D; font-weight: 500; font-size: 13px;
+    padding: 6px 10px; border-radius: 6px; border: 1.5px solid #A32D2D; cursor: pointer;
+    transition: background-color 0.15s ease;
+  }
+  @media (hover: hover) {
+    .btn-row-absent:hover:not(:disabled) { background-color: #FCEBEB; }
+  }
+  .btn-row-absent:disabled { opacity: 0.5; cursor: not-allowed; }
+
   .input {
     width: 100%;
     border: 0.5px solid rgba(0, 0, 0, 0.2);
@@ -112,12 +137,13 @@
     box-shadow: 0 0 0 3px rgba(24, 95, 165, 0.12);
   }
 
-  /* Status badges — 11px, 3px 9px, 20px radius */
-  .badge-present { display:inline-flex;align-items:center;background-color:#EAF3DE;color:#3B6D11;font-size:11px;font-weight:500;padding:3px 9px;border-radius:20px; }
-  .badge-late    { display:inline-flex;align-items:center;background-color:#E6F1FB;color:#185FA5;font-size:11px;font-weight:500;padding:3px 9px;border-radius:20px; }
-  .badge-absent  { display:inline-flex;align-items:center;background-color:#FCEBEB;color:#A32D2D;font-size:11px;font-weight:500;padding:3px 9px;border-radius:20px; }
-  .badge-gps     { display:inline-flex;align-items:center;background-color:#FAEEDA;color:#854F0B;font-size:11px;font-weight:500;padding:3px 9px;border-radius:20px; }
-  .badge-waiting { display:inline-flex;align-items:center;background-color:#F1EFE8;color:#5F5E5A;font-size:11px;font-weight:500;padding:3px 9px;border-radius:20px; }
+  /* Status badges — non-interactive labels, not buttons: small radius + thin border (no
+     fill-only pill shape, no shadow) so they read as tags, never as something clickable. */
+  .badge-present { display:inline-flex;align-items:center;background-color:#EAF3DE;color:#3B6D11;font-size:11px;font-weight:500;padding:3px 9px;border-radius:6px;border:1px solid #c3dba3; }
+  .badge-late    { display:inline-flex;align-items:center;background-color:#E6F1FB;color:#185FA5;font-size:11px;font-weight:500;padding:3px 9px;border-radius:6px;border:1px solid #aed0f0; }
+  .badge-absent  { display:inline-flex;align-items:center;background-color:#FCEBEB;color:#A32D2D;font-size:11px;font-weight:500;padding:3px 9px;border-radius:6px;border:1px solid #f3bcbc; }
+  .badge-gps     { display:inline-flex;align-items:center;background-color:#FAEEDA;color:#854F0B;font-size:11px;font-weight:500;padding:3px 9px;border-radius:6px;border:1px solid #edd09c; }
+  .badge-waiting { display:inline-flex;align-items:center;background-color:#F1EFE8;color:#5F5E5A;font-size:11px;font-weight:500;padding:3px 9px;border-radius:6px;border:1px solid #ddd9cc; }
 
   .badge-live {
     display: inline-flex;
