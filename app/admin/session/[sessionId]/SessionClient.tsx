@@ -819,7 +819,7 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
 
           {/* Issue summary bar */}
           {totalIssues > 0 && (
-            <div className="flex flex-wrap items-center gap-3 px-3 py-2 rounded-lg text-[11px]"
+            <div className="flex flex-wrap items-center gap-3 px-3 py-2.5 rounded-lg text-[15px]"
               style={{ backgroundColor: "#f9fafb", border: "0.5px solid rgba(0,0,0,0.08)" }}>
               <span className="font-medium text-gray-500">Issues:</span>
               {gpsFailCount > 0 && <span className="font-medium" style={{ color: "#ef4444" }}>GPS Fail {gpsFailCount}</span>}
@@ -830,7 +830,7 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
           )}
 
           <div className="card overflow-hidden">
-            <h2 className="font-medium text-gray-900 mb-3">Student List</h2>
+            <h2 className="font-semibold text-gray-900 mb-3 text-[18px]">Student List</h2>
             <div className="divide-y divide-gray-50">
               {students.map((stu) => {
                 const att    = stu.attendance;
@@ -842,18 +842,18 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
                 return (
                   <div
                     key={stu.student_id}
-                    className="py-2.5 flex items-center gap-3 text-[13px]"
+                    className="py-3 flex items-center gap-3 text-[16px]"
                     style={hasIssues
                       ? { borderLeft: `3px solid ${BORDER_COLORS[primaryIssue]}`, paddingLeft: 8 }
                       : { paddingLeft: 8 }
                     }
                   >
-                    <span className="text-gray-300 text-[11px] w-5 text-right font-mono">{stu.order_num}</span>
-                    <span className="font-mono text-[11px] text-gray-400 w-24">{stu.student_id}</span>
+                    <span className="text-gray-300 text-[16px] w-8 text-right font-mono">{stu.order_num}</span>
+                    <span className="font-mono text-[16px] text-gray-500 w-28">{stu.student_id}</span>
                     <span className="flex-1 min-w-0">
                       <span className="truncate block">{stu.firstname} {stu.lastname}</span>
                       {hasIssues && (
-                        <span className="flex flex-wrap gap-1 mt-0.5">
+                        <span className="flex flex-wrap gap-1 mt-1">
                           {issues.map((issue) => <IssueBadge key={issue} type={issue} />)}
                         </span>
                       )}
@@ -866,7 +866,7 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
                             att.status === "present" ? "badge-present" :
                             att.status === "late"    ? "badge-late"    :
                             att.status === "absent"  ? "badge-absent"  : "badge-gps"
-                          } cursor-pointer shrink-0`}
+                          } cursor-pointer shrink-0 text-[15px] px-3 py-1.5`}
                           title="Click to edit status"
                           style={{ border: "none" }}
                         >
@@ -877,7 +877,7 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
 
                         {hasIssues && (
                           isActioning ? (
-                            <Spinner className="h-3 w-3 shrink-0" />
+                            <Spinner className="h-4 w-4 shrink-0" />
                           ) : (
                             <ActionDropdown
                               status={att.status}
@@ -891,14 +891,14 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
                         )}
 
                         {att.overridden && !hasIssues && (
-                          <span className="text-[11px] text-gray-400 shrink-0">✓</span>
+                          <span className="text-[15px] text-gray-400 shrink-0">✓</span>
                         )}
 
                         {/* ⋯ row menu trigger */}
                         <div className="shrink-0">
                           <button
                             onClick={(e) => openRowMenu(e, stu)}
-                            style={{ background: "none", border: "none", cursor: "pointer", color: "#9ca3af", fontSize: 18, lineHeight: 1, padding: "4px 6px" }}
+                            style={{ background: "none", border: "none", cursor: "pointer", color: "#9ca3af", fontSize: 22, lineHeight: 1, padding: "6px 8px" }}
                             title="More"
                           >
                             ⋯
@@ -906,7 +906,7 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
                         </div>
                       </>
                     ) : (
-                      <span className="badge-waiting">Pending</span>
+                      <span className="badge-waiting text-[15px] px-3 py-1.5">Pending</span>
                     )}
                   </div>
                 );

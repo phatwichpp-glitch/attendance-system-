@@ -32,7 +32,7 @@ const BADGE_CONFIG: Record<IssueType, { label: string; className: string }> = {
 export default function IssueBadge({ type }: IssueBadgeProps) {
   const config = BADGE_CONFIG[type];
   return (
-    <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium ${config.className}`}>
+    <span className={`inline-flex items-center px-2 py-1 rounded text-sm font-medium ${config.className}`}>
       {config.label}
     </span>
   );

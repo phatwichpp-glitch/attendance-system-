@@ -128,10 +128,10 @@ export default function ActionDropdown({
           <button
             key={opt.action}
             onClick={() => { onAction(opt.action); setOpen(false); }}
-            className={`w-full text-left px-3 py-2 text-xs ${opt.className}`}
+            className={`w-full text-left px-3 py-2.5 text-sm ${opt.className}`}
           >
             <div className="font-medium">{opt.label}</div>
-            <div className="text-gray-400 text-[10px]">{opt.description}</div>
+            <div className="text-gray-400 text-[12px]">{opt.description}</div>
           </button>
         ))}
       </div>
@@ -145,10 +145,10 @@ export default function ActionDropdown({
         ref={triggerRef}
         disabled={disabled}
         onClick={handleToggle}
-        className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium border ${statusClass} border-transparent hover:border-current disabled:opacity-50 disabled:cursor-not-allowed`}
+        className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded text-sm font-medium border ${statusClass} border-transparent hover:border-current disabled:opacity-50 disabled:cursor-not-allowed`}
       >
         {statusLabel}
-        <svg className="w-3 h-3" viewBox="0 0 20 20" fill="currentColor">
+        <svg className="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor">
           <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
         </svg>
       </button>
