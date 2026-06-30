@@ -160,18 +160,6 @@ export default function SetupClient() {
       end_time: classEndTime,
     });
 
-    // Adjust late_after_min so it's anchored to the configured class start_time,
-    // not to when the teacher actually clicked "Open". Works in both directions.
-    let effectiveLateAfterMin = settings.late_after_min;
-    if (!isPast) {
-      const [sh, sm] = classStartTime.split(":").map(Number);
-      if (!isNaN(sh) && !isNaN(sm)) {
-        const now = new Date();
-        const minutesUntilStart = (sh * 60 + sm) - (now.getHours() * 60 + now.getMinutes());
-        effectiveLateAfterMin = Math.max(0, settings.late_after_min + minutesUntilStart);
-      }
-    }
-
     try {
       const res = await fetch("/api/sheets/sessions", {
         method: "POST",
@@ -183,7 +171,6 @@ export default function SetupClient() {
           lat: gps.lat,
           lng: gps.lng,
           ...settings,
-          late_after_min: effectiveLateAfterMin,
           date: sessionDate,
           week_number: weekNumber,
           week_label: weekLabel || undefined,
