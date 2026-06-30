@@ -666,6 +666,7 @@ export async function updateAttendanceFields(
     flagged_at: string;
     action_taken: string;
     action_taken_at: string;
+    edit_note: string;
   }>
 ): Promise<{ found: boolean; previousStatus: string; previousOverridden: string }> {
   const sheets = getSheetsClient(accessToken);
@@ -687,6 +688,7 @@ export async function updateAttendanceFields(
   if (fields.flagged_at !== undefined)   updates.push({ range: `attendance!T${rowNum}`, values: [[fields.flagged_at]] });
   if (fields.action_taken !== undefined) updates.push({ range: `attendance!U${rowNum}`, values: [[fields.action_taken]] });
   if (fields.action_taken_at !== undefined) updates.push({ range: `attendance!V${rowNum}`, values: [[fields.action_taken_at]] });
+  if (fields.edit_note !== undefined)    updates.push({ range: `attendance!Q${rowNum}`, values: [[fields.edit_note]] });
 
   if (updates.length > 0) {
     await sheets.spreadsheets.values.batchUpdate({

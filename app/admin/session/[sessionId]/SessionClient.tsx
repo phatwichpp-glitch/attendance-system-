@@ -40,12 +40,19 @@ type UndoState = {
   previousStatus: string;
 };
 
+type ApproveTarget = {
+  attendanceId: string;
+  studentName: string;
+  issues: IssueType[];
+};
+
 type RowMenuState = {
   studentId: string;
   top: number;
   left: number;
   openUpward: boolean;
-  onEdit: () => void;
+  onFlag?: () => void;
+  onRevoke?: () => void;
   onDelete: () => void;
 };
 
@@ -128,6 +135,12 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
   // Delete attendance
   const [deleteAttId, setDeleteAttId] = useState<string | null>(null);
   const [deletingAtt, setDeletingAtt] = useState(false);
+
+  // Approve attendance — requires a short reason so there's a record of why
+  // a manual override was needed (not just "approved" with no context)
+  const [approveTarget, setApproveTarget] = useState<ApproveTarget | null>(null);
+  const [approveNote, setApproveNote]     = useState("");
+  const [approveSaving, setApproveSaving] = useState(false);
 
   // Row ⋯ menu (portal)
   const [rowMenu, setRowMenu]   = useState<RowMenuState | null>(null);
@@ -241,9 +254,11 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
   const openRowMenu = (e: React.MouseEvent<HTMLButtonElement>, stu: StudentWithAttendance) => {
     const att = stu.attendance!;
     if (rowMenu?.studentId === stu.student_id) { setRowMenu(null); return; }
+    const studentName = `${stu.firstname} ${stu.lastname}`;
+    const itemCount = 1 + (!att.flagged ? 1 : 0) + (att.overridden ? 1 : 0); // Delete + optional Flag/Revoke
     const rect     = e.currentTarget.getBoundingClientRect();
-    const menuH    = 80;
-    const menuW    = 150;
+    const menuH    = itemCount * 38 + 8;
+    const menuW    = 160;
     const spaceBelow = window.innerHeight - rect.bottom;
     const spaceAbove = rect.top;
     const openUpward = spaceBelow < menuH && (spaceAbove >= menuH || spaceAbove > spaceBelow);
@@ -253,7 +268,8 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
       top:  openUpward ? rect.top - menuH - 4 : rect.bottom + 4,
       left: alignRight ? rect.right - menuW   : rect.left,
       openUpward,
-      onEdit:   () => { openEditPopover(stu); setRowMenu(null); },
+      onFlag:   !att.flagged    ? () => { handleAction(att.attendance_id, "flag", studentName); setRowMenu(null); } : undefined,
+      onRevoke: att.overridden  ? () => { handleAction(att.attendance_id, "revoke", studentName); setRowMenu(null); } : undefined,
       onDelete: () => { setDeleteAttId(att.attendance_id); setRowMenu(null); },
     });
   };
@@ -337,6 +353,24 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
       await fetchData();
     } finally {
       setActioning(null);
+    }
+  };
+
+  const submitApprove = async () => {
+    if (!approveTarget) return;
+    setApproveSaving(true);
+    try {
+      const res = await fetch(`/api/sheets/attendance/${approveTarget.attendanceId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "approve", note: approveNote.trim() }),
+      });
+      if (!res.ok) { setActionError("Action failed"); return; }
+      setApproveTarget(null);
+      setApproveNote("");
+      await fetchData();
+    } finally {
+      setApproveSaving(false);
     }
   };
 
@@ -955,7 +989,15 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
                               overridden={att.overridden}
                               flagged={att.flagged}
                               actionTaken={att.action_taken}
-                              onAction={(action) => handleAction(att.attendance_id, action, `${stu.firstname} ${stu.lastname}`)}
+                              onAction={(action) => {
+                                const studentName = `${stu.firstname} ${stu.lastname}`;
+                                if (action === "approve") {
+                                  setApproveTarget({ attendanceId: att.attendance_id, studentName, issues });
+                                  setApproveNote("");
+                                  return;
+                                }
+                                handleAction(att.attendance_id, action, studentName);
+                              }}
                               disabled={!!actioning}
                             />
                           )
@@ -1021,6 +1063,45 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
                 style={{ minHeight: 36 }}
               >
                 {editSaving ? <Spinner className="h-4 w-4" /> : "Save"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Approve modal — requires a short reason so the override has context */}
+      {approveTarget && (
+        <div className="fixed inset-0 flex items-center justify-center z-50 p-4" style={{ backgroundColor: "rgba(0,0,0,0.4)" }}>
+          <div className="card max-w-sm w-full space-y-4">
+            <div>
+              <h3 className="font-medium text-gray-900">Approve Check-in</h3>
+              <p className="text-[12px] mt-0.5" style={{ color: "#5F5E5A" }}>{approveTarget.studentName}</p>
+            </div>
+            {approveTarget.issues.length > 0 && (
+              <div className="flex flex-wrap gap-1">
+                {approveTarget.issues.map((issue) => <IssueBadge key={issue} type={issue} />)}
+              </div>
+            )}
+            <div>
+              <label className="block text-[12px] font-medium text-gray-700 mb-1">เหตุผลที่อนุมัติ</label>
+              <textarea
+                className="input text-[13px]"
+                rows={3}
+                value={approveNote}
+                onChange={(e) => setApproveNote(e.target.value)}
+                placeholder="เช่น ตรวจสอบแล้วว่านักศึกษาอยู่ในห้องจริง แต่ GPS อ่านพิกัดผิดพลาด"
+                autoFocus
+              />
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => setApproveTarget(null)} className="btn-outline flex-1 text-[13px]" style={{ minHeight: 36 }}>Cancel</button>
+              <button
+                onClick={submitApprove}
+                disabled={approveSaving || !approveNote.trim()}
+                className="btn-primary flex-1 text-[13px]"
+                style={{ minHeight: 36 }}
+              >
+                {approveSaving ? <Spinner className="h-4 w-4" /> : "Approve"}
               </button>
             </div>
           </div>
@@ -1217,13 +1298,24 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
           }}
         >
           <style>{`@keyframes dd-appear{from{opacity:0;transform:scaleY(0.92)}to{opacity:1;transform:scaleY(1)}}`}</style>
-          <button
-            onClick={rowMenu.onEdit}
-            className="block w-full text-left px-3 py-2 text-[13px] hover:bg-gray-50 transition-colors"
-            style={{ background: "none", border: "none", cursor: "pointer", color: "#374151" }}
-          >
-            Edit Status
-          </button>
+          {rowMenu.onFlag && (
+            <button
+              onClick={rowMenu.onFlag}
+              className="block w-full text-left px-3 py-2 text-[13px] hover:bg-gray-50 transition-colors"
+              style={{ background: "none", border: "none", cursor: "pointer", color: "#7e22ce" }}
+            >
+              Flag as suspicious
+            </button>
+          )}
+          {rowMenu.onRevoke && (
+            <button
+              onClick={rowMenu.onRevoke}
+              className="block w-full text-left px-3 py-2 text-[13px] hover:bg-gray-50 transition-colors"
+              style={{ background: "none", border: "none", cursor: "pointer", color: "#374151" }}
+            >
+              Revoke Approval
+            </button>
+          )}
           <button
             onClick={rowMenu.onDelete}
             className="block w-full text-left px-3 py-2 text-[13px] hover:bg-gray-50 transition-colors"

@@ -128,15 +128,18 @@ export default function HelpModal({ onClose }: { onClose: () => void }) {
               <FeatureGroup icon="📡" title="ระหว่างคาบ (Session Dashboard)" color="#185FA5">
                 <Li>OTP 6 หลัก — แสดง countdown MM:SS แบบ real-time บนหน้าจอ</Li>
                 <Li>OTP หมดอายุ → session ปิดอัตโนมัติ ไม่ต้องกลับมากด</Li>
-                <Li>Re-Generate OTP — เปิด session ใหม่ได้ถ้ายังเป็นวันเดิม พร้อมปรับ GPS Radius / OTP Duration / Late threshold / เปิดปิดสถานะสาย ก่อนออกรหัสใหม่</Li>
+                <Li>Re-Generate OTP — เปิด session ที่ปิดไปแล้วได้ทุกเมื่อ (ยกเว้น session แบบบันทึกย้อนหลัง) พร้อมปรับ GPS Radius / OTP Duration / Late threshold / เปิดปิดสถานะสาย ก่อนออกรหัสใหม่ — มีเตือนถ้า session นั้นไม่ใช่ของวันนี้</Li>
                 <Li>Projector View — แสดงเต็มจอ พร้อม QR code และ countdown</Li>
                 <Li>Real-time list — เห็นว่าใครเช็คชื่อแล้วบ้าง</Li>
-                <Li>Manual override — แก้สถานะนักศึกษารายคนได้ทันที</Li>
+                <Li>คลิกป้ายสถานะ (Present/Late/Absent/GPS fail) เพื่อแก้สถานะนักศึกษารายคนได้ทันที</Li>
+                <Li>ปุ่ม Review — Approve (ต้องระบุเหตุผล) หรือ Mark Absent ส่วน Flag / Revoke Approval / Delete Record ย้ายไปไว้ในเมนู ⋯ เพราะใช้ไม่บ่อย</Li>
                 <Li>Conflict detection 2 ระดับ — &quot;ยืนยันแล้ว&quot; (อุปกรณ์เดียวกันแน่นอน แม้สลับ browser/โหมดไม่ระบุตัวตน) และ &quot;น่าสงสัย&quot; (IP เดียวกัน + เช็คชื่อใกล้กันทั้งเวลาและตำแหน่ง)</Li>
+                <Li>แถบ Issues ด้านบนรายชื่อ — กดที่ป้าย (GPS Fail / Same Device / Late / Flagged) เพื่อกรองรายชื่อให้เหลือแค่คนกลุ่มนั้น กดซ้ำหรือกด Clear filter เพื่อยกเลิก</Li>
               </FeatureGroup>
 
               <FeatureGroup icon="📊" title="สรุปผล (Summary Table)" color="#3B6D11">
                 <Li>ตารางนักศึกษา × session — ดูสถานะแต่ละคาบในที่เดียว</Li>
+                <Li>คลิกที่หัวคอลัมน์ session เพื่อเปิดหน้า session นั้นโดยตรง — ใช้กลับเข้าไป Re-Generate OTP คาบที่ปิดไปแล้วได้</Li>
                 <Li>ลบ session ที่เปิดผิดได้ถาวร — hover column header แล้วกด ×</Li>
                 <Li>แก้ไขสถานะย้อนหลังได้จากตาราง (คลิกที่ cell)</Li>
                 <Li>Export .xlsx — format เดียวกับต้นฉบับ (ลำดับ รหัส ชื่อ) + ข้อมูลเช็คชื่อ</Li>
@@ -272,12 +275,22 @@ export default function HelpModal({ onClose }: { onClose: () => void }) {
                 <Step n="2">กด <Chip>Projector View</Chip> เพื่อฉาย OTP + QR code บนหน้าจอห้องเรียน</Step>
                 <Step n="3">นักศึกษาเปิดลิงก์เช็คชื่อ (QR หรือพิมพ์ URL) กรอก OTP + ยืนยัน GPS</Step>
                 <Step n="4">ดูรายชื่อแบบ real-time — Present / Late / Absent</Step>
-                <Step n="5">กด <Chip>Manual Override</Chip> เพื่อแก้สถานะรายคน หรือตรวจ conflict อุปกรณ์</Step>
-                <Step n="6">OTP หมดอายุ → session <strong>ปิดอัตโนมัติ</strong> — ไม่จำเป็นต้องกลับมากด Close</Step>
+                <Step n="5">คลิกป้ายสถานะรายคนเพื่อแก้ไขตรง ๆ หรือกด <Chip>Review</Chip> เพื่อ Approve/Mark Absent</Step>
+                <Step n="6">มีแถบ <strong>Issues</strong> สรุปจำนวนปัญหาแต่ละแบบ — กดที่ป้ายเพื่อกรองรายชื่อให้เหลือเฉพาะคนกลุ่มนั้น (กดซ้ำหรือกด Clear filter เพื่อดูทั้งหมด)</Step>
+                <Step n="7">OTP หมดอายุ → session <strong>ปิดอัตโนมัติ</strong> — ไม่จำเป็นต้องกลับมากด Close</Step>
                 <Note>
-                  ถ้าต้องการให้นักศึกษาเช็คชื่อเพิ่ม กด <strong>Re-Generate OTP</strong> ได้ตราบใดที่ยังเป็นวันเดิม
-                  — ระบบจะออก OTP ใหม่ เปิด session ต่อ และเริ่มนับเวลาถอยหลังใหม่ทั้งหมด
+                  ถ้าต้องการให้นักศึกษาเช็คชื่อเพิ่ม กด <strong>Re-Generate OTP</strong> ได้แม้ session จะปิดไปแล้ว ไม่ว่าจะเป็นวันนี้หรือวันก่อนหน้า
+                  (ยกเว้น session แบบบันทึกย้อนหลัง) — ระบบจะออก OTP ใหม่ เปิด session ต่อ เริ่มนับเวลาถอยหลังใหม่ทั้งหมด
+                  และล้างสถานะ &quot;ขาด&quot; ที่ระบบ auto-mark ไว้ตอนปิดคาบ ให้นักศึกษาเช็คชื่อใหม่ได้ปกติ — ถ้า session
+                  ไม่ใช่ของวันนี้จะมีกล่องเตือนสีเหลืองให้ยืนยันก่อน
                 </Note>
+              </Section>
+
+              <Section title="3a. Review / ⋯ — แก้สถานะรายคน" color="#185FA5">
+                <Row label="คลิกป้ายสถานะ">เปลี่ยน Present/Late/Absent/GPS fail ตรง ๆ พร้อมใส่เหตุผล (ถ้ามี)</Row>
+                <Row label="ปุ่ม Review"><strong>Approve</strong> — ยืนยันว่าถูกต้อง (เช่น GPS fail แต่จริง ๆ อยู่ในห้อง) ต้องพิมพ์เหตุผลก่อนกดเสมอ | <strong>Mark Absent</strong> — เปลี่ยนเป็นขาดทันที</Row>
+                <Row label="เมนู ⋯">action ที่ใช้ไม่บ่อย — <strong>Flag</strong> (ตั้งข้อสงสัยไว้ตรวจสอบ), <strong>Revoke Approval</strong> (ยกเลิกการ Approve ที่เคยกด), <strong>Delete Record</strong> (ลบ record ทิ้ง กลับเป็น Pending)</Row>
+                <Note>เหตุผลที่พิมพ์ตอนกด Approve จะถูกบันทึกใน Audit Log ด้วย — ช่วยให้ตรวจสอบย้อนหลังได้ว่าทำไมต้องอนุมัติเคสนั้น</Note>
               </Section>
 
               <Section title="3b. OTP Duration &amp; Late Threshold" color="#185FA5">
@@ -310,8 +323,9 @@ export default function HelpModal({ onClose }: { onClose: () => void }) {
               <Section title="6. ดูสรุปผลการเช็คชื่อ" color="#3B6D11">
                 <Step n="1">กด <Chip>Summary</Chip> บนการ์ดวิชา</Step>
                 <Step n="2">ตารางแสดงนักศึกษา × session — คลิก cell เพื่อแก้ไขสถานะย้อนหลัง</Step>
-                <Step n="3">hover บน column header — กด <strong>×</strong> เพื่อ<strong>ลบ session นั้นถาวร</strong> (มี confirm ก่อน)</Step>
-                <Step n="4">กด <Chip>Export .xlsx</Chip> เพื่อดาวน์โหลด — format เดียวกับต้นฉบับ + ข้อมูลเช็คชื่อ</Step>
+                <Step n="3">คลิกที่ตัวหัวคอลัมน์ (วันที่/Week label) เพื่อเปิดหน้า session นั้น — ใช้กลับเข้าไปดูรายละเอียดหรือ Re-Generate OTP ของคาบที่ปิดไปแล้ว</Step>
+                <Step n="4">hover บน column header — กด <strong>×</strong> มุมขวาบน เพื่อ<strong>ลบ session นั้นถาวร</strong> (มี confirm ก่อน)</Step>
+                <Step n="5">กด <Chip>Export .xlsx</Chip> เพื่อดาวน์โหลด — format เดียวกับต้นฉบับ + ข้อมูลเช็คชื่อ</Step>
                 <Note>นักศึกษาที่ต่ำกว่า threshold จะถูก highlight — ปรับ threshold ได้มุมบนขวาของตาราง</Note>
               </Section>
 
@@ -331,8 +345,8 @@ export default function HelpModal({ onClose }: { onClose: () => void }) {
               </FAQ>
               <FAQ q="OTP หมดอายุแล้ว จะเกิดอะไรขึ้น?">
                 session จะ<strong>ปิดอัตโนมัติ</strong>เมื่อ countdown ถึง 00:00
-                — ถ้ายังเป็นวันเดิมจะมีปุ่ม <em>Re-Generate OTP</em> ให้กดเพื่อเปิด session ใหม่พร้อม OTP ชุดใหม่
-                ข้ามวันแล้วปุ่มนี้จะไม่แสดง
+                — กดปุ่ม <em>Re-Generate OTP</em> เพื่อเปิด session ใหม่พร้อม OTP ชุดใหม่ได้เสมอ ไม่ว่าจะวันไหนก็ตาม
+                (ยกเว้น session แบบบันทึกย้อนหลัง) ถ้า session นั้นไม่ใช่ของวันนี้ระบบจะเตือนก่อนให้ยืนยัน
               </FAQ>
               <FAQ q="ต้องการเพิ่มเวลา OTP ให้นานขึ้น?">
                 ในหน้า Open Session — ช่อง OTP Expires After พิมพ์ตัวเลขได้โดยตรง (1–N นาที
@@ -368,6 +382,20 @@ export default function HelpModal({ onClose }: { onClose: () => void }) {
                 ไม่ครับ ตอนนี้ตรวจจับได้ถึงระดับ GPU ของเครื่อง (Canvas/WebGL) ซึ่งเหมือนเดิมแม้สลับ browser
                 หรือเปิดโหมดไม่ระบุตัวตน — เคสแบบนี้จะขึ้นเป็น &quot;ยืนยันแล้ว&quot; ส่วนที่แค่ IP เดียวกัน
                 + เวลา/ตำแหน่งใกล้กัน จะขึ้นแยกเป็น &quot;น่าสงสัย&quot; (ความมั่นใจต่ำกว่า เพราะ WiFi เดียวกันแชร์ IP ให้คนอื่นได้)
+              </FAQ>
+              <FAQ q="เผลอกด Close Session แล้วหาคาบนั้นไม่เจอ ทำยังไง?">
+                เข้าไปที่ <Chip>Summary</Chip> ของวิชานั้น แล้วคลิกที่หัวคอลัมน์ของ session ที่ปิดไปได้เลย
+                — จะพาเข้าหน้า session โดยตรง แล้วกด <em>Re-Generate OTP</em> เพื่อเปิดรับเช็คชื่อต่อได้ทันที
+                ไม่ต้องสนใจว่าจะปิดไปนานแค่ไหนหรือข้ามวันแล้ว (ยกเว้น session แบบบันทึกย้อนหลัง)
+              </FAQ>
+              <FAQ q="ทำไมกด Approve แล้วต้องพิมพ์เหตุผลก่อนถึงจะกดได้?">
+                ป้องกันการกด Approve มั่ว ๆ โดยไม่มีบันทึกว่าทำไมต้องอนุมัติเคสนั้น — เหตุผลที่พิมพ์จะถูกบันทึกเข้า
+                Audit Log ทันที ทำให้ตรวจสอบย้อนหลังได้ว่าทำไมนักศึกษาคนนี้ถึงได้รับการอนุมัติทั้งที่มีปัญหา
+                (เช่น GPS fail, Flagged) ส่วน Mark Absent ไม่ต้องใส่เหตุผลเพราะเป็นการกลับไปสถานะ Default
+              </FAQ>
+              <FAQ q="ปุ่ม Flag, Revoke Approval, Delete Record หายไปไหน?">
+                ย้ายไปอยู่ในเมนู <Chip>⋯</Chip> ท้ายแถวแล้ว เพราะใช้ไม่บ่อยเท่า Approve/Mark Absent — Flag
+                จะโผล่เฉพาะตอนยังไม่ได้ flag, Revoke Approval โผล่เฉพาะตอนเคย Approve ไปแล้ว
               </FAQ>
             </div>
           )}

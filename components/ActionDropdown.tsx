@@ -12,11 +12,11 @@ interface ActionOption {
   className: string;
 }
 
+// Only the two frequent actions live here. Flag / Revoke / Delete are rare —
+// they're tucked into the row's "⋯" menu instead so this stays a 2-item decision.
 const ACTIONS: ActionOption[] = [
   { action: "approve",      label: "Approve",      description: "Mark as verified present", className: "text-green-700 hover:bg-green-50" },
-  { action: "flag",         label: "Flag",         description: "Mark as suspicious",       className: "text-purple-700 hover:bg-purple-50" },
   { action: "mark_absent",  label: "Mark Absent",  description: "Override to absent",       className: "text-red-700 hover:bg-red-50" },
-  { action: "revoke",       label: "Revoke",       description: "Remove approval",          className: "text-gray-700 hover:bg-gray-50" },
 ];
 
 const DROPDOWN_HEIGHT = 160;
@@ -100,12 +100,7 @@ export default function ActionDropdown({
     statusLabel = "Flagged"; statusClass = "bg-purple-100 text-purple-700";
   }
 
-  const available = ACTIONS.filter((a) => {
-    if (a.action === "approve" && overridden) return false;
-    if (a.action === "revoke"  && !overridden) return false;
-    if (a.action === "flag"    && flagged) return false;
-    return true;
-  });
+  const available = ACTIONS.filter((a) => !(a.action === "approve" && overridden));
 
   const portal = open && pos ? createPortal(
     <div

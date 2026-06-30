@@ -27,11 +27,13 @@ export async function PATCH(
 
       switch (action) {
         case "approve": {
+          const note = typeof body.note === "string" ? body.note.trim() : "";
           const prev = await updateAttendanceFields(session.access_token, spreadsheetId, attendanceId, {
             overridden: true,
             overridden_at: now,
             action_taken: "approve",
             action_taken_at: now,
+            edit_note: note,
           });
           if (!prev.found) return NextResponse.json({ error: "Record not found" }, { status: 404 });
 
@@ -45,7 +47,7 @@ export async function PATCH(
             action: "update", entity_type: "attendance", entity_id: attendanceId,
             changed_from: { overridden: false, status: prev.previousStatus },
             changed_to: { overridden: true, action: "approve" },
-            note: "Teacher approved",
+            note: note ? `Teacher approved — ${note}` : "Teacher approved",
           });
           return NextResponse.json({ success: true });
         }
