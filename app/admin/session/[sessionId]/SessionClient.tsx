@@ -977,8 +977,12 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
                             overridden={att.overridden}
                             onAction={(action) => {
                               const studentName = `${stu.firstname} ${stu.lastname}`;
-                              const note = action === "approve" && issues.length > 0
-                                ? issues.filter((i) => i !== "manual").map((i) => ISSUE_LABELS[i]).join(", ")
+                              // Only note issues that *disappear* once approved (status changes away
+                              // from late/gps_fail) — device_conflict/flagged stay visible as their own
+                              // tag regardless, so repeating them here would just duplicate that tag.
+                              const vanishingIssues = issues.filter((i) => i === "late" || i === "gps_fail");
+                              const note = action === "approve" && vanishingIssues.length > 0
+                                ? vanishingIssues.map((i) => ISSUE_LABELS[i]).join(", ")
                                 : undefined;
                               handleAction(att!.attendance_id, action, studentName, note);
                             }}
