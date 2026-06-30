@@ -622,18 +622,30 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
         )}
 
         <div className="card">
-          <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex flex-wrap items-center gap-4">
             {/* Stats summary */}
-            <div className="flex gap-4 text-[13px]">
+            <div className="flex gap-4 text-[13px] shrink-0">
               <div><span className="font-medium text-gray-900">{total}</span> <span className="text-gray-500">Total</span></div>
               <div><span className="font-medium" style={{ color: "#3B6D11" }}>{present}</span> <span className="text-gray-500">Present</span></div>
               <div><span className="font-medium" style={{ color: "#A32D2D" }}>{absent}</span> <span className="text-gray-500">Absent</span></div>
               <div><span className="font-medium" style={{ color: "#854F0B" }}>{gpsFail}</span> <span className="text-gray-500">GPS fail</span></div>
             </div>
 
+            {/* Progress bar fills the middle space instead of sitting empty */}
+            <div className="flex-1 min-w-[160px]">
+              <div className="flex justify-between text-[12px] text-gray-600 mb-1">
+                <span>Checked In</span>
+                <span className="font-medium">{present}/{total}</span>
+              </div>
+              <div className="h-1.5 rounded-full" style={{ backgroundColor: "#e5e7eb" }}>
+                <div className="h-full rounded-full transition-all"
+                  style={{ width: total > 0 ? `${(present / total) * 100}%` : "0%", backgroundColor: "#3B6D11" }} />
+              </div>
+            </div>
+
             {/* OTP */}
             {!isClosed && (
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 shrink-0">
                 <div className="text-right">
                   <p className="text-[11px]" style={{ color: otpSecondsLeft !== null && otpSecondsLeft < 60 ? "#A32D2D" : "#5F5E5A" }}>
                     OTP {otpSecondsLeft !== null && (
@@ -654,18 +666,6 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
                 </div>
               </div>
             )}
-          </div>
-
-          {/* Progress bar */}
-          <div className="mt-3">
-            <div className="flex justify-between text-[12px] text-gray-600 mb-1">
-              <span>Checked In</span>
-              <span className="font-medium">{present}/{total}</span>
-            </div>
-            <div className="h-1.5 rounded-full" style={{ backgroundColor: "#e5e7eb" }}>
-              <div className="h-full rounded-full transition-all"
-                style={{ width: total > 0 ? `${(present / total) * 100}%` : "0%", backgroundColor: "#3B6D11" }} />
-            </div>
           </div>
         </div>
           {/* Part 1 → Part 2 comparison panel */}
