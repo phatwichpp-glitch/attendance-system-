@@ -540,7 +540,7 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
       ) : (
         <>
           <span className="badge-absent px-3 py-1.5 text-[13px] shrink-0">Closed</span>
-          {isToday && (
+          {!s.is_past_session && (
             <button onClick={openReopenSettings} className="btn-outline text-[13px] shrink-0 whitespace-nowrap" style={{ minHeight: 34, padding: "7px 12px" }}>
               Re-Generate OTP
             </button>
@@ -631,7 +631,7 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
             ) : (
               <div className="flex items-center justify-between w-full">
                 <span className="badge-absent">Closed</span>
-                {isToday && (
+                {!s.is_past_session && (
                   <button onClick={openReopenSettings} className="btn-outline text-[12px]" style={{ minHeight: 32, padding: "6px 10px" }}>
                     Re-Generate OTP
                   </button>
@@ -1158,6 +1158,11 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
               <p className="text-[12px] mt-0.5" style={{ color: "#5F5E5A" }}>
                 Generates a new code and restarts the countdown. Adjust the settings below if needed, or leave them as-is.
               </p>
+              {!isToday && (
+                <p className="text-[12px] mt-2 rounded-lg px-3 py-2" style={{ backgroundColor: "#FEF9EC", color: "#854F0B", border: "0.5px solid #EF9F27" }}>
+                  This session was held on {s.date}, not today — new check-ins will be timestamped now but recorded under that date.
+                </p>
+              )}
             </div>
             <div className="space-y-4">
               <Slider label="GPS Radius" value={reopenForm.radius_m} min={50} max={500} step={10} unit="m"

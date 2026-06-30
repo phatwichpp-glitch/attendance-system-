@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
 import * as XLSX from "xlsx";
 import Spinner from "@/components/Spinner";
 import { IconDownload } from "@/components/icons";
@@ -41,6 +42,7 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 export default function SummaryClient({ courseId }: { courseId: string }) {
+  const router = useRouter();
   const [data, setData] = useState<SummaryData | null>(null);
   const [loading, setLoading] = useState(true);
   const [threshold, setThreshold] = useState(80);
@@ -466,6 +468,7 @@ export default function SummaryClient({ courseId }: { courseId: string }) {
                     }}
                     onMouseEnter={() => setTooltipSession(ss.session_id)}
                     onMouseLeave={() => setTooltipSession(null)}
+                    onClick={() => router.push(`/admin/session/${ss.session_id}`)}
                   >
                     {/* Delete button — appears on hover */}
                     {isHovered && (
@@ -511,7 +514,7 @@ export default function SummaryClient({ courseId }: { courseId: string }) {
                         {ss.check_in_mode === "double" && <p style={{ color: "#93C5FD" }}>Part {ss.part_number} of 2</p>}
                         {isPast && <p style={{ color: "#FBBF24" }}>📋 Past session</p>}
                         {holiday && <p style={{ color: "#FCA5A5" }}>🎌 {holiday.name}</p>}
-                        <p className="mt-1 pt-1" style={{ borderTop: "0.5px solid rgba(255,255,255,0.2)", color: "#94a3b8" }}>× เพื่อลบ session นี้ถาวร</p>
+                        <p className="mt-1 pt-1" style={{ borderTop: "0.5px solid rgba(255,255,255,0.2)", color: "#94a3b8" }}>คลิกเพื่อเปิดหน้า session · × เพื่อลบถาวร</p>
                       </div>
                     )}
                   </th>
