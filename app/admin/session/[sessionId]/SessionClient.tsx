@@ -57,6 +57,32 @@ const BORDER_COLORS: Record<IssueType, string> = {
   flagged: "#a855f7",
 };
 
+const ISSUE_FILTER_LABELS: Partial<Record<IssueType, string>> = {
+  gps_fail: "GPS Fail",
+  device_conflict: "Same Device",
+  late: "Late",
+  flagged: "Flagged",
+};
+
+function IssueChip({ active, color, onClick, children }: {
+  active: boolean; color: string; onClick: () => void; children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="font-medium rounded-full px-2.5 py-1 transition-colors"
+      style={{
+        color: active ? "#fff" : color,
+        backgroundColor: active ? color : "transparent",
+        border: `1px solid ${color}`,
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
 function getIssues(stu: StudentWithAttendance, conflictSet: Set<string>): IssueType[] {
   const att = stu.attendance;
   if (!att) return [];
@@ -88,6 +114,7 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
   const [conflictsExpanded, setConflictsExpanded] = useState(false);
   const [possibleDismissed, setPossibleDismissed] = useState(false);
   const [possibleExpanded, setPossibleExpanded] = useState(false);
+  const [issueFilter, setIssueFilter] = useState<IssueType | null>(null);
   const [showManualQR, setShowManualQR] = useState(false);
   const [manualQrDataUrl, setManualQrDataUrl] = useState("");
 
@@ -478,6 +505,9 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
   const lateCount          = students.filter((x) => x.attendance?.status === "late").length;
   const flaggedCount        = students.filter((x) => x.attendance?.flagged).length;
   const totalIssues        = gpsFailCount + deviceConflictCount + lateCount + flaggedCount;
+  const visibleStudents    = issueFilter
+    ? students.filter((stu) => getIssues(stu, conflictSet).includes(issueFilter))
+    : students;
 
   // Action row — one row, never wraps onto the title/clock row. Frequent actions sit left,
   // a flex spacer pushes the rare/destructive action to the far right. Scrolls horizontally
@@ -817,28 +847,67 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
             </div>
           )}
 
-          {/* Issue summary bar */}
+          {/* Issue summary bar — click a chip to filter the list below, click again to clear */}
           {totalIssues > 0 && (
-            <div className="flex flex-wrap items-center gap-3 px-3 py-2.5 rounded-lg text-[15px]"
+            <div className="flex flex-wrap items-center gap-2 px-3 py-2.5 rounded-lg text-[15px]"
               style={{ backgroundColor: "#f9fafb", border: "0.5px solid rgba(0,0,0,0.08)" }}>
               <span className="font-medium text-gray-500">Issues:</span>
-              {gpsFailCount > 0 && <span className="font-medium" style={{ color: "#ef4444" }}>GPS Fail {gpsFailCount}</span>}
-              {deviceConflictCount > 0 && <span className="font-medium" style={{ color: "#f97316" }}>Same Device {deviceConflictCount}</span>}
-              {lateCount > 0 && <span className="font-medium" style={{ color: "#ca8a04" }}>Late {lateCount}</span>}
-              {flaggedCount > 0 && <span className="font-medium" style={{ color: "#a855f7" }}>Flagged {flaggedCount}</span>}
+              {gpsFailCount > 0 && (
+                <IssueChip active={issueFilter === "gps_fail"} color="#ef4444"
+                  onClick={() => setIssueFilter((f) => f === "gps_fail" ? null : "gps_fail")}>
+                  GPS Fail {gpsFailCount}
+                </IssueChip>
+              )}
+              {deviceConflictCount > 0 && (
+                <IssueChip active={issueFilter === "device_conflict"} color="#f97316"
+                  onClick={() => setIssueFilter((f) => f === "device_conflict" ? null : "device_conflict")}>
+                  Same Device {deviceConflictCount}
+                </IssueChip>
+              )}
+              {lateCount > 0 && (
+                <IssueChip active={issueFilter === "late"} color="#ca8a04"
+                  onClick={() => setIssueFilter((f) => f === "late" ? null : "late")}>
+                  Late {lateCount}
+                </IssueChip>
+              )}
+              {flaggedCount > 0 && (
+                <IssueChip active={issueFilter === "flagged"} color="#a855f7"
+                  onClick={() => setIssueFilter((f) => f === "flagged" ? null : "flagged")}>
+                  Flagged {flaggedCount}
+                </IssueChip>
+              )}
+              {issueFilter && (
+                <button
+                  onClick={() => setIssueFilter(null)}
+                  className="text-[13px] text-gray-400 hover:text-gray-600 underline ml-1"
+                  style={{ background: "none", border: "none", cursor: "pointer" }}
+                >
+                  Clear filter
+                </button>
+              )}
             </div>
           )}
 
           <div className="card overflow-hidden">
-            <h2 className="font-semibold text-gray-900 mb-3 text-[18px]">Student List</h2>
+            <h2 className="font-semibold text-gray-900 mb-3 text-[18px]">
+              Student List
+              {issueFilter && (
+                <span className="text-[13px] font-normal text-gray-400 ml-2">
+                  — filtered by {ISSUE_FILTER_LABELS[issueFilter]}
+                </span>
+              )}
+            </h2>
             <div className="divide-y divide-gray-50">
-              {students.map((stu) => {
+              {visibleStudents.length === 0 && (
+                <p className="text-[14px] text-gray-400 py-6 text-center">No students match this filter</p>
+              )}
+              {visibleStudents.map((stu) => {
                 const att    = stu.attendance;
                 const issues = att ? getIssues(stu, conflictSet) : [];
                 const hasIssues    = issues.length > 0;
                 const primaryIssue = issues[0];
-                // "late" already shown by the status pill on the right — don't repeat it as a tag
-                const issueTags    = issues.filter((issue) => issue !== "late");
+                // "late" and "gps_fail" are already shown by the status pill on the right — don't repeat them as tags
+                const issueTags    = issues.filter((issue) => issue !== "late" && issue !== "gps_fail");
                 const isActioning  = actioning === att?.attendance_id;
 
                 return (

@@ -3,6 +3,7 @@ export default function Toggle({ label, checked, onChange }: { label: string; ch
     <label className="flex items-center justify-between cursor-pointer select-none min-h-[44px]">
       <span className="text-[13px] text-gray-700">{label}</span>
       <button
+        type="button"
         role="switch"
         aria-checked={checked}
         onClick={() => onChange(!checked)}
