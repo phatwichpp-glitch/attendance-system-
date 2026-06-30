@@ -1198,7 +1198,7 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
               <Toggle label="Enable late status" checked={reopenForm.late_enabled}
                 onChange={(v) => setReopenForm((f) => ({ ...f, late_enabled: v }))} />
               <div className={reopenForm.late_enabled ? "" : "opacity-40 pointer-events-none"}>
-                <Slider label="Late After" value={reopenForm.late_after_min} min={1} max={60} step={1} unit="min"
+                <Slider label="Late After" value={reopenForm.late_after_min} min={0} max={60} step={1} unit="min"
                   onChange={(v) => setReopenForm((f) => ({ ...f, late_after_min: v }))} />
               </div>
             </div>
