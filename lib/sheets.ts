@@ -8,6 +8,7 @@ import {
   SemesterConfig,
   TeachingDay,
 } from "@/types";
+import { generateOTP } from "@/lib/otp";
 
 function makeAuth(accessToken: string) {
   const oauth = new google.auth.OAuth2();
@@ -993,7 +994,8 @@ export async function updateSessionById(
   sessionId: string,
   updates: Partial<Pick<Session,
     "week_label" | "date" | "period" | "closed_at" | "week_number" | "opened_at" |
-    "period_count" | "period_end" | "check_in_mode" | "linked_session_id" | "part_number"
+    "period_count" | "period_end" | "check_in_mode" | "linked_session_id" | "part_number" |
+    "otp" | "radius_m" | "late_after_min" | "otp_expire_min"
   >>
 ): Promise<boolean> {
   const sheets = getSheetsClient(accessToken);
@@ -1008,6 +1010,10 @@ export async function updateSessionById(
 
   if (updates.period !== undefined) row[3] = updates.period;
   if (updates.date !== undefined) row[4] = updates.date;
+  if (updates.otp !== undefined) row[5] = updates.otp;
+  if (updates.radius_m !== undefined) row[8] = String(updates.radius_m);
+  if (updates.late_after_min !== undefined) row[9] = String(updates.late_after_min);
+  if (updates.otp_expire_min !== undefined) row[10] = String(updates.otp_expire_min);
   if (updates.opened_at !== undefined) row[11] = updates.opened_at;
   if (updates.closed_at !== undefined) row[12] = updates.closed_at;
   if (updates.week_number !== undefined) row[13] = String(updates.week_number);
@@ -1039,9 +1045,15 @@ export async function deleteSessionById(
 export async function reopenSession(
   accessToken: string,
   spreadsheetId: string,
-  sessionId: string
-): Promise<boolean> {
-  return updateSessionById(accessToken, spreadsheetId, sessionId, { closed_at: "" });
+  sessionId: string,
+  overrides?: { radius_m?: number; late_after_min?: number; otp_expire_min?: number }
+): Promise<{ otp: string; opened_at: string } | null> {
+  const otp = generateOTP();
+  const opened_at = new Date().toISOString();
+  const ok = await updateSessionById(accessToken, spreadsheetId, sessionId, {
+    closed_at: "", opened_at, otp, ...overrides,
+  });
+  return ok ? { otp, opened_at } : null;
 }
 
 // ─── Attendance CRUD ──────────────────────────────────────────────────────────

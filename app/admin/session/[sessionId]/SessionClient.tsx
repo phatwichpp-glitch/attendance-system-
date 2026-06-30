@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import QRCode from "qrcode";
 import Spinner from "@/components/Spinner";
+import Slider from "@/components/Slider";
 import IssueBadge, { IssueType } from "@/components/IssueBadge";
 import ActionDropdown, { ActionType } from "@/components/ActionDropdown";
 import UndoToast from "@/components/UndoToast";
@@ -117,6 +118,8 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
   // Reopen / Activate Part 2
   const [reopening, setReopening]         = useState(false);
   const [activatingPart2, setActivatingPart2] = useState(false);
+  const [showReopenSettings, setShowReopenSettings] = useState(false);
+  const [reopenForm, setReopenForm] = useState({ radius_m: 200, late_after_min: 15, otp_expire_min: 15 });
 
   const fetchData = useCallback(async () => {
     try {
@@ -245,15 +248,27 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
     }
   };
 
+  const openReopenSettings = () => {
+    if (data) {
+      setReopenForm({
+        radius_m: data.session.radius_m,
+        late_after_min: data.session.late_after_min,
+        otp_expire_min: data.session.otp_expire_min,
+      });
+    }
+    setShowReopenSettings(true);
+  };
+
   const handleReopen = async () => {
     setReopening(true);
     try {
       await fetch(`/api/sheets/sessions/${sessionId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ reopen: true }),
+        body: JSON.stringify({ reopen: true, ...reopenForm }),
       });
       await fetchData();
+      setShowReopenSettings(false);
     } finally {
       setReopening(false);
     }
@@ -487,8 +502,8 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
         <>
           <span className="badge-absent px-3 py-1.5 text-[13px] shrink-0">Closed</span>
           {isToday && (
-            <button onClick={handleReopen} disabled={reopening} className="btn-outline text-[13px] shrink-0 whitespace-nowrap" style={{ minHeight: 34, padding: "7px 12px" }}>
-              {reopening ? <Spinner className="h-4 w-4" /> : "Re-Generate OTP"}
+            <button onClick={openReopenSettings} className="btn-outline text-[13px] shrink-0 whitespace-nowrap" style={{ minHeight: 34, padding: "7px 12px" }}>
+              Re-Generate OTP
             </button>
           )}
           <div className="flex-1 min-w-[8px]" />
@@ -578,8 +593,8 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
               <div className="flex items-center justify-between w-full">
                 <span className="badge-absent">Closed</span>
                 {isToday && (
-                  <button onClick={handleReopen} disabled={reopening} className="btn-outline text-[12px]" style={{ minHeight: 32, padding: "6px 10px" }}>
-                    {reopening ? <Spinner className="h-3 w-3" /> : "Re-Generate OTP"}
+                  <button onClick={openReopenSettings} className="btn-outline text-[12px]" style={{ minHeight: 32, padding: "6px 10px" }}>
+                    Re-Generate OTP
                   </button>
                 )}
               </div>
@@ -995,6 +1010,35 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
               <button onClick={handleClose} disabled={closing} className="btn-danger flex-1 flex items-center justify-center gap-2">
                 {closing && <Spinner className="h-4 w-4" />}
                 Close Session
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Re-generate OTP settings modal */}
+      {showReopenSettings && (
+        <div className="fixed inset-0 flex items-center justify-center z-50 p-4" style={{ backgroundColor: "rgba(0,0,0,0.5)" }}>
+          <div className="card max-w-sm w-full space-y-4" role="dialog" aria-modal="true" aria-labelledby="reopen-title">
+            <div>
+              <h3 id="reopen-title" className="font-medium text-gray-900">Re-Generate OTP</h3>
+              <p className="text-[12px] mt-0.5" style={{ color: "#5F5E5A" }}>
+                Generates a new code and restarts the countdown. Adjust the settings below if needed, or leave them as-is.
+              </p>
+            </div>
+            <div className="space-y-4">
+              <Slider label="GPS Radius" value={reopenForm.radius_m} min={50} max={500} step={10} unit="m"
+                onChange={(v) => setReopenForm((f) => ({ ...f, radius_m: v }))} />
+              <Slider label="OTP Expires After" value={reopenForm.otp_expire_min} min={1} max={60} step={1} unit="min"
+                onChange={(v) => setReopenForm((f) => ({ ...f, otp_expire_min: v }))} />
+              <Slider label="Late After" value={reopenForm.late_after_min} min={1} max={60} step={1} unit="min"
+                onChange={(v) => setReopenForm((f) => ({ ...f, late_after_min: v }))} />
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => setShowReopenSettings(false)} className="btn-outline flex-1">Cancel</button>
+              <button onClick={handleReopen} disabled={reopening} className="btn-primary flex-1 flex items-center justify-center gap-2">
+                {reopening && <Spinner className="h-4 w-4" />}
+                Re-Generate
               </button>
             </div>
           </div>

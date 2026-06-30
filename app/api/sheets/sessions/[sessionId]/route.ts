@@ -19,21 +19,31 @@ export async function PATCH(
   if (!session?.access_token) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   try {
     const { sessionId } = await params;
-    const { week_label, date, period, week_number, reopen, activate } = await req.json();
+    const { week_label, date, period, week_number, reopen, activate, radius_m, late_after_min, otp_expire_min } = await req.json();
 
     const spreadsheetId = await initializeSpreadsheet(session.access_token);
     const current = await getSessionById(session.access_token, spreadsheetId, sessionId);
     if (!current) return NextResponse.json({ error: "Session not found" }, { status: 404 });
 
     if (reopen) {
-      const ok = await reopenSession(session.access_token, spreadsheetId, sessionId);
-      if (!ok) return NextResponse.json({ error: "Session not found" }, { status: 404 });
+      const result = await reopenSession(session.access_token, spreadsheetId, sessionId, {
+        radius_m, late_after_min, otp_expire_min,
+      });
+      if (!result) return NextResponse.json({ error: "Session not found" }, { status: 404 });
+      registerSession(sessionId, spreadsheetId, session.access_token, result.otp);
       await appendAuditLog(session.access_token, spreadsheetId, {
         action: "update", entity_type: "session", entity_id: sessionId,
-        changed_from: { closed_at: current.closed_at }, changed_to: { closed_at: "" },
-        note: "Session reopened",
+        changed_from: { closed_at: current.closed_at, otp: current.otp },
+        changed_to: { closed_at: "", otp: result.otp },
+        note: "Session reopened with new OTP",
       });
-      return NextResponse.json({ success: true, action: "reopened" });
+      return NextResponse.json({
+        success: true, action: "reopened",
+        otp: result.otp, opened_at: result.opened_at,
+        radius_m: radius_m ?? current.radius_m,
+        late_after_min: late_after_min ?? current.late_after_min,
+        otp_expire_min: otp_expire_min ?? current.otp_expire_min,
+      });
     }
 
     // Activate Part 2 (set opened_at = now, register in session-store)

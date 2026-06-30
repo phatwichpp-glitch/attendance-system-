@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from "react";
 import dynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
 import Spinner from "@/components/Spinner";
+import Slider from "@/components/Slider";
 import { IconLocation, IconRefresh, IconWarning } from "@/components/icons";
 import { Course, Settings, DEFAULT_SETTINGS, SemesterConfig } from "@/types";
 import { loadSettings, saveSettings, loadPeriodPrefs, savePeriodPrefs } from "@/lib/settings";
@@ -591,26 +592,6 @@ export default function SetupClient() {
       </div>
     )}
     </>
-  );
-}
-
-function Slider({ label, value, min, max, step, unit, onChange }: {
-  label: string; value: number; min: number; max: number; step: number; unit: string;
-  onChange: (v: number) => void;
-}) {
-  return (
-    <div>
-      <div className="flex justify-between text-[13px] mb-1">
-        <label className="text-gray-700">{label}</label>
-        <span className="font-medium" style={{ color: "#185FA5" }}>{value} {unit}</span>
-      </div>
-      <input
-        type="range" min={min} max={max} step={step} value={value}
-        onChange={(e) => onChange(parseInt(e.target.value, 10))}
-        className="w-full"
-        style={{ accentColor: "#185FA5", touchAction: "none" }}
-      />
-    </div>
   );
 }
 
