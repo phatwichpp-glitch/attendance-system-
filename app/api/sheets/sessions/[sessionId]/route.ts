@@ -35,7 +35,7 @@ export async function PATCH(
         action: "update", entity_type: "session", entity_id: sessionId,
         changed_from: { closed_at: current.closed_at, otp: current.otp },
         changed_to: { closed_at: "", otp: result.otp },
-        note: "Session reopened with new OTP",
+        note: "Session reopened with new OTP — auto-marked absences cleared so students can check in again",
       });
       return NextResponse.json({
         success: true, action: "reopened",

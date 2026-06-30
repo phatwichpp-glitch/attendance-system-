@@ -1070,6 +1070,7 @@ export async function reopenSession(
   const ok = await updateSessionById(accessToken, spreadsheetId, sessionId, {
     closed_at: "", opened_at, otp, ...overrides,
   });
+  if (ok) await deleteAutoAbsentForSession(accessToken, spreadsheetId, sessionId);
   return ok ? { otp, opened_at } : null;
 }
 
@@ -1085,6 +1086,20 @@ export async function deleteAttendanceById(
     (r) => r[0] === attendanceId
   );
   return deleted > 0;
+}
+
+// Removes the "absent" rows auto-written by markAbsentStudents when a session closes,
+// so students can check in normally after the session is reopened. Manually-entered or
+// overridden absences (a teacher's explicit action) are left untouched.
+export async function deleteAutoAbsentForSession(
+  accessToken: string,
+  spreadsheetId: string,
+  sessionId: string
+): Promise<number> {
+  return deleteMatchingRows(
+    accessToken, spreadsheetId, "attendance!A2:Z",
+    (r) => r[1] === sessionId && r[6] === "absent" && r[17] !== "TRUE" && r[10] !== "TRUE"
+  );
 }
 
 // ─── Course stats ─────────────────────────────────────────────────────────────
