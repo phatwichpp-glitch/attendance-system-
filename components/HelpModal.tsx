@@ -288,9 +288,9 @@ export default function HelpModal({ onClose }: { onClose: () => void }) {
 
               <Section title="3a. Review / ⋯ — แก้สถานะรายคน" color="#185FA5">
                 <Row label="คลิกป้ายสถานะ">เปลี่ยน Present/Late/Absent/GPS fail ตรง ๆ พร้อมใส่เหตุผล (ถ้ามี)</Row>
-                <Row label="ปุ่ม Review"><strong>Approve</strong> — ยืนยันว่าถูกต้อง (เช่น GPS fail แต่จริง ๆ อยู่ในห้อง) ต้องพิมพ์เหตุผลก่อนกดเสมอ | <strong>Mark Absent</strong> — เปลี่ยนเป็นขาดทันที</Row>
+                <Row label="ปุ่ม Review"><strong>Approve</strong> — กดครั้งเดียว ยืนยันว่าถูกต้อง (เช่น GPS fail แต่จริง ๆ อยู่ในห้อง) | <strong>Mark Absent</strong> — เปลี่ยนเป็นขาดทันที</Row>
                 <Row label="เมนู ⋯">action ที่ใช้ไม่บ่อย — <strong>Flag</strong> (ตั้งข้อสงสัยไว้ตรวจสอบ), <strong>Revoke Approval</strong> (ยกเลิกการ Approve ที่เคยกด), <strong>Delete Record</strong> (ลบ record ทิ้ง กลับเป็น Pending)</Row>
-                <Note>เหตุผลที่พิมพ์ตอนกด Approve จะถูกบันทึกใน Audit Log ด้วย — ช่วยให้ตรวจสอบย้อนหลังได้ว่าทำไมต้องอนุมัติเคสนั้น</Note>
+                <Note>กด Approve แล้วระบบจะติดป้าย ✓ พร้อมปัญหาที่เจอ (เช่น &quot;✓ GPS Fail&quot;) ไว้ข้างชื่อให้อัตโนมัติ และบันทึกลง Audit Log ด้วย — ไม่ต้องพิมพ์อะไรเอง</Note>
               </Section>
 
               <Section title="3b. OTP Duration &amp; Late Threshold" color="#185FA5">
@@ -388,10 +388,10 @@ export default function HelpModal({ onClose }: { onClose: () => void }) {
                 — จะพาเข้าหน้า session โดยตรง แล้วกด <em>Re-Generate OTP</em> เพื่อเปิดรับเช็คชื่อต่อได้ทันที
                 ไม่ต้องสนใจว่าจะปิดไปนานแค่ไหนหรือข้ามวันแล้ว (ยกเว้น session แบบบันทึกย้อนหลัง)
               </FAQ>
-              <FAQ q="ทำไมกด Approve แล้วต้องพิมพ์เหตุผลก่อนถึงจะกดได้?">
-                ป้องกันการกด Approve มั่ว ๆ โดยไม่มีบันทึกว่าทำไมต้องอนุมัติเคสนั้น — เหตุผลที่พิมพ์จะถูกบันทึกเข้า
-                Audit Log ทันที ทำให้ตรวจสอบย้อนหลังได้ว่าทำไมนักศึกษาคนนี้ถึงได้รับการอนุมัติทั้งที่มีปัญหา
-                (เช่น GPS fail, Flagged) ส่วน Mark Absent ไม่ต้องใส่เหตุผลเพราะเป็นการกลับไปสถานะ Default
+              <FAQ q="กด Approve แล้ว ทำไมป้าย GPS Fail / Late หายไป?">
+                สถานะเปลี่ยนเป็น Present/Approved แล้ว แต่ระบบยังจำไว้ให้ — จะเห็นเครื่องหมาย
+                <em> ✓ GPS Fail</em> (หรือปัญหาที่เจอ) ตัวเล็ก ๆ สีเทาโผล่ข้างชื่อแทน เป็นการบันทึกอัตโนมัติว่า
+                เคสนี้ approve เพราะอะไร โดยไม่ต้องพิมพ์อะไรเอง — ข้อมูลเดียวกันนี้ถูกบันทึกลง Audit Log ด้วย
               </FAQ>
               <FAQ q="ปุ่ม Flag, Revoke Approval, Delete Record หายไปไหน?">
                 ย้ายไปอยู่ในเมนู <Chip>⋯</Chip> ท้ายแถวแล้ว เพราะใช้ไม่บ่อยเท่า Approve/Mark Absent — Flag

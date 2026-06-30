@@ -40,12 +40,6 @@ type UndoState = {
   previousStatus: string;
 };
 
-type ApproveTarget = {
-  attendanceId: string;
-  studentName: string;
-  issues: IssueType[];
-};
-
 type RowMenuState = {
   studentId: string;
   top: number;
@@ -62,6 +56,16 @@ const BORDER_COLORS: Record<IssueType, string> = {
   late: "#eab308",
   manual: "#3b82f6",
   flagged: "#a855f7",
+};
+
+// Short labels auto-attached when approving — so the row keeps a record of
+// *what* was overridden without the teacher typing anything.
+const ISSUE_LABELS: Record<IssueType, string> = {
+  gps_fail: "GPS Fail",
+  device_conflict: "Same Device",
+  late: "Late",
+  manual: "Manual",
+  flagged: "Flagged",
 };
 
 const ISSUE_FILTER_LABELS: Partial<Record<IssueType, string>> = {
@@ -135,12 +139,6 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
   // Delete attendance
   const [deleteAttId, setDeleteAttId] = useState<string | null>(null);
   const [deletingAtt, setDeletingAtt] = useState(false);
-
-  // Approve attendance — requires a short reason so there's a record of why
-  // a manual override was needed (not just "approved" with no context)
-  const [approveTarget, setApproveTarget] = useState<ApproveTarget | null>(null);
-  const [approveNote, setApproveNote]     = useState("");
-  const [approveSaving, setApproveSaving] = useState(false);
 
   // Row ⋯ menu (portal)
   const [rowMenu, setRowMenu]   = useState<RowMenuState | null>(null);
@@ -337,13 +335,13 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
     }
   };
 
-  const handleAction = async (attendanceId: string, action: ActionType, studentName: string) => {
+  const handleAction = async (attendanceId: string, action: ActionType, studentName: string, note?: string) => {
     setActioning(attendanceId);
     try {
       const res = await fetch(`/api/sheets/attendance/${attendanceId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action }),
+        body: JSON.stringify({ action, ...(note ? { note } : {}) }),
       });
       const d = await res.json();
       if (!res.ok) { setActionError("Action failed"); return; }
@@ -353,24 +351,6 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
       await fetchData();
     } finally {
       setActioning(null);
-    }
-  };
-
-  const submitApprove = async () => {
-    if (!approveTarget) return;
-    setApproveSaving(true);
-    try {
-      const res = await fetch(`/api/sheets/attendance/${approveTarget.attendanceId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "approve", note: approveNote.trim() }),
-      });
-      if (!res.ok) { setActionError("Action failed"); return; }
-      setApproveTarget(null);
-      setApproveNote("");
-      await fetchData();
-    } finally {
-      setApproveSaving(false);
     }
   };
 
@@ -991,20 +971,20 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
                               actionTaken={att.action_taken}
                               onAction={(action) => {
                                 const studentName = `${stu.firstname} ${stu.lastname}`;
-                                if (action === "approve") {
-                                  setApproveTarget({ attendanceId: att.attendance_id, studentName, issues });
-                                  setApproveNote("");
-                                  return;
-                                }
-                                handleAction(att.attendance_id, action, studentName);
+                                const note = action === "approve" && issues.length > 0
+                                  ? issues.filter((i) => i !== "manual").map((i) => ISSUE_LABELS[i]).join(", ")
+                                  : undefined;
+                                handleAction(att.attendance_id, action, studentName, note);
                               }}
                               disabled={!!actioning}
                             />
                           )
                         )}
 
-                        {att.overridden && !hasIssues && (
-                          <span className="text-[15px] text-gray-400 shrink-0">✓</span>
+                        {att.overridden && (
+                          <span className="text-[13px] text-gray-400 shrink-0 italic" title="Approved by teacher">
+                            ✓{att.edit_note ? ` ${att.edit_note}` : ""}
+                          </span>
                         )}
 
                         {/* ⋯ row menu trigger */}
@@ -1063,45 +1043,6 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
                 style={{ minHeight: 36 }}
               >
                 {editSaving ? <Spinner className="h-4 w-4" /> : "Save"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Approve modal — requires a short reason so the override has context */}
-      {approveTarget && (
-        <div className="fixed inset-0 flex items-center justify-center z-50 p-4" style={{ backgroundColor: "rgba(0,0,0,0.4)" }}>
-          <div className="card max-w-sm w-full space-y-4">
-            <div>
-              <h3 className="font-medium text-gray-900">Approve Check-in</h3>
-              <p className="text-[12px] mt-0.5" style={{ color: "#5F5E5A" }}>{approveTarget.studentName}</p>
-            </div>
-            {approveTarget.issues.length > 0 && (
-              <div className="flex flex-wrap gap-1">
-                {approveTarget.issues.map((issue) => <IssueBadge key={issue} type={issue} />)}
-              </div>
-            )}
-            <div>
-              <label className="block text-[12px] font-medium text-gray-700 mb-1">เหตุผลที่อนุมัติ</label>
-              <textarea
-                className="input text-[13px]"
-                rows={3}
-                value={approveNote}
-                onChange={(e) => setApproveNote(e.target.value)}
-                placeholder="เช่น ตรวจสอบแล้วว่านักศึกษาอยู่ในห้องจริง แต่ GPS อ่านพิกัดผิดพลาด"
-                autoFocus
-              />
-            </div>
-            <div className="flex gap-2">
-              <button onClick={() => setApproveTarget(null)} className="btn-outline flex-1 text-[13px]" style={{ minHeight: 36 }}>Cancel</button>
-              <button
-                onClick={submitApprove}
-                disabled={approveSaving || !approveNote.trim()}
-                className="btn-primary flex-1 text-[13px]"
-                style={{ minHeight: 36 }}
-              >
-                {approveSaving ? <Spinner className="h-4 w-4" /> : "Approve"}
               </button>
             </div>
           </div>
