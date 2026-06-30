@@ -8,7 +8,7 @@ import Spinner from "@/components/Spinner";
 import Slider from "@/components/Slider";
 import Toggle from "@/components/Toggle";
 import IssueBadge, { IssueType } from "@/components/IssueBadge";
-import ActionDropdown, { ActionType } from "@/components/ActionDropdown";
+import ActionButtons, { ActionType } from "@/components/ActionButtons";
 import UndoToast from "@/components/UndoToast";
 import {
   IconScreen, IconStop, IconDownload, IconWarning,
@@ -45,6 +45,7 @@ type RowMenuState = {
   top: number;
   left: number;
   openUpward: boolean;
+  onEdit: () => void;
   onFlag?: () => void;
   onRevoke?: () => void;
   onDelete: () => void;
@@ -253,7 +254,7 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
     const att = stu.attendance!;
     if (rowMenu?.studentId === stu.student_id) { setRowMenu(null); return; }
     const studentName = `${stu.firstname} ${stu.lastname}`;
-    const itemCount = 1 + (!att.flagged ? 1 : 0) + (att.overridden ? 1 : 0); // Delete + optional Flag/Revoke
+    const itemCount = 2 + (!att.flagged ? 1 : 0) + (att.overridden ? 1 : 0); // Edit Status + Delete + optional Flag/Revoke
     const rect     = e.currentTarget.getBoundingClientRect();
     const menuH    = itemCount * 38 + 8;
     const menuW    = 160;
@@ -266,6 +267,7 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
       top:  openUpward ? rect.top - menuH - 4 : rect.bottom + 4,
       left: alignRight ? rect.right - menuW   : rect.left,
       openUpward,
+      onEdit:   () => { openEditPopover(stu); setRowMenu(null); },
       onFlag:   !att.flagged    ? () => { handleAction(att.attendance_id, "flag", studentName); setRowMenu(null); } : undefined,
       onRevoke: att.overridden  ? () => { handleAction(att.attendance_id, "revoke", studentName); setRowMenu(null); } : undefined,
       onDelete: () => { setDeleteAttId(att.attendance_id); setRowMenu(null); },
@@ -945,30 +947,24 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
                     </span>
                     {att ? (
                       <>
-                        <button
-                          onClick={() => openEditPopover(stu)}
+                        <span
                           className={`${
                             att.status === "present" ? "badge-present" :
                             att.status === "late"    ? "badge-late"    :
                             att.status === "absent"  ? "badge-absent"  : "badge-gps"
-                          } cursor-pointer shrink-0 text-[15px] px-3 py-1.5`}
-                          title="Click to edit status"
-                          style={{ border: "none" }}
+                          } shrink-0 text-[15px] px-3 py-1.5`}
                         >
                           {att.status === "present" ? "Present" :
                            att.status === "late"    ? "Late"    :
                            att.status === "absent"  ? "Absent"  : "GPS fail"}
-                        </button>
+                        </span>
 
                         {hasIssues && (
                           isActioning ? (
                             <Spinner className="h-4 w-4 shrink-0" />
                           ) : (
-                            <ActionDropdown
-                              status={att.status}
+                            <ActionButtons
                               overridden={att.overridden}
-                              flagged={att.flagged}
-                              actionTaken={att.action_taken}
                               onAction={(action) => {
                                 const studentName = `${stu.firstname} ${stu.lastname}`;
                                 const note = action === "approve" && issues.length > 0
@@ -1239,6 +1235,13 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
           }}
         >
           <style>{`@keyframes dd-appear{from{opacity:0;transform:scaleY(0.92)}to{opacity:1;transform:scaleY(1)}}`}</style>
+          <button
+            onClick={rowMenu.onEdit}
+            className="block w-full text-left px-3 py-2 text-[13px] hover:bg-gray-50 transition-colors"
+            style={{ background: "none", border: "none", cursor: "pointer", color: "#374151" }}
+          >
+            Edit Status
+          </button>
           {rowMenu.onFlag && (
             <button
               onClick={rowMenu.onFlag}
