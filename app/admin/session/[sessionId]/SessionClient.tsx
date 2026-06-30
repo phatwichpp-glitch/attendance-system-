@@ -929,17 +929,21 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
                 return (
                   <div
                     key={stu.student_id}
-                    className="py-3 flex items-center gap-3 text-[16px]"
-                    style={hasIssues
-                      ? { borderLeft: `3px solid ${BORDER_COLORS[primaryIssue]}`, paddingLeft: 8 }
-                      : { paddingLeft: 8 }
-                    }
+                    className="py-3 grid items-center gap-3 text-[16px]"
+                    style={{
+                      gridTemplateColumns: "2rem 7rem 12rem minmax(0,1fr) auto 2rem",
+                      ...(hasIssues
+                        ? { borderLeft: `3px solid ${BORDER_COLORS[primaryIssue]}`, paddingLeft: 8 }
+                        : { paddingLeft: 8 }),
+                    }}
                   >
-                    <span className="text-gray-300 text-[16px] w-8 text-right font-mono">{stu.order_num}</span>
-                    <span className="font-mono text-[16px] text-gray-500 w-28">{stu.student_id}</span>
-                    <span className="flex-1 min-w-0 flex items-center gap-2 flex-wrap">
-                      <span className="truncate shrink">{stu.firstname} {stu.lastname}</span>
-                      {att && (
+                    <span className="text-gray-300 text-[16px] text-right font-mono">{stu.order_num}</span>
+                    <span className="font-mono text-[16px] text-gray-500">{stu.student_id}</span>
+                    <span className="truncate">{stu.firstname} {stu.lastname}</span>
+
+                    {/* Descriptive column — status + issue tags + approval note, never clickable */}
+                    <span className="flex flex-wrap items-center gap-1.5 min-w-0">
+                      {att ? (
                         <span
                           className={`${
                             att.status === "present" ? "badge-present" :
@@ -951,52 +955,50 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
                            att.status === "late"    ? "Late"    :
                            att.status === "absent"  ? "Absent"  : "GPS fail"}
                         </span>
+                      ) : (
+                        <span className="badge-waiting text-[15px] px-3 py-1.5 shrink-0">Pending</span>
                       )}
-                      {!att && <span className="badge-waiting text-[15px] px-3 py-1.5 shrink-0">Pending</span>}
-                      {issueTags.length > 0 && (
-                        <span className="flex flex-wrap gap-1 shrink-0">
-                          {issueTags.map((issue) => <IssueBadge key={issue} type={issue} />)}
+                      {issueTags.map((issue) => <IssueBadge key={issue} type={issue} />)}
+                      {att?.overridden && (
+                        <span className="badge-waiting text-[12px] px-2 py-1 shrink-0" title="Approved by teacher">
+                          ✓ Approved{att.edit_note ? ` — ${att.edit_note}` : ""}
                         </span>
                       )}
                     </span>
-                    {att && (
-                      <>
-                        {hasIssues && (
-                          isActioning ? (
-                            <Spinner className="h-4 w-4 shrink-0" />
-                          ) : (
-                            <ActionButtons
-                              overridden={att.overridden}
-                              onAction={(action) => {
-                                const studentName = `${stu.firstname} ${stu.lastname}`;
-                                const note = action === "approve" && issues.length > 0
-                                  ? issues.filter((i) => i !== "manual").map((i) => ISSUE_LABELS[i]).join(", ")
-                                  : undefined;
-                                handleAction(att.attendance_id, action, studentName, note);
-                              }}
-                              disabled={!!actioning}
-                            />
-                          )
-                        )}
 
-                        {att.overridden && (
-                          <span className="text-[13px] text-gray-400 shrink-0 italic" title="Approved by teacher">
-                            ✓{att.edit_note ? ` ${att.edit_note}` : ""}
-                          </span>
-                        )}
+                    {/* Action column — the only clickable controls in the row */}
+                    <div className="flex items-center justify-end gap-1.5">
+                      {att && hasIssues && (
+                        isActioning ? (
+                          <Spinner className="h-4 w-4 shrink-0" />
+                        ) : (
+                          <ActionButtons
+                            overridden={att.overridden}
+                            onAction={(action) => {
+                              const studentName = `${stu.firstname} ${stu.lastname}`;
+                              const note = action === "approve" && issues.length > 0
+                                ? issues.filter((i) => i !== "manual").map((i) => ISSUE_LABELS[i]).join(", ")
+                                : undefined;
+                              handleAction(att!.attendance_id, action, studentName, note);
+                            }}
+                            disabled={!!actioning}
+                          />
+                        )
+                      )}
+                    </div>
 
-                        {/* ⋯ row menu trigger */}
-                        <div className="shrink-0">
-                          <button
-                            onClick={(e) => openRowMenu(e, stu)}
-                            style={{ background: "none", border: "none", cursor: "pointer", color: "#9ca3af", fontSize: 22, lineHeight: 1, padding: "6px 8px" }}
-                            title="More"
-                          >
-                            ⋯
-                          </button>
-                        </div>
-                      </>
-                    )}
+                    {/* ⋯ row menu trigger */}
+                    <div className="flex justify-end">
+                      {att && (
+                        <button
+                          onClick={(e) => openRowMenu(e, stu)}
+                          style={{ background: "none", border: "none", cursor: "pointer", color: "#9ca3af", fontSize: 22, lineHeight: 1, padding: "6px 8px" }}
+                          title="More"
+                        >
+                          ⋯
+                        </button>
+                      )}
+                    </div>
                   </div>
                 );
               })}
