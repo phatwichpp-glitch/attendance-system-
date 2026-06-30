@@ -837,6 +837,8 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
                 const issues = att ? getIssues(stu, conflictSet) : [];
                 const hasIssues    = issues.length > 0;
                 const primaryIssue = issues[0];
+                // "late" already shown by the status pill on the right — don't repeat it as a tag
+                const issueTags    = issues.filter((issue) => issue !== "late");
                 const isActioning  = actioning === att?.attendance_id;
 
                 return (
@@ -850,11 +852,11 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
                   >
                     <span className="text-gray-300 text-[16px] w-8 text-right font-mono">{stu.order_num}</span>
                     <span className="font-mono text-[16px] text-gray-500 w-28">{stu.student_id}</span>
-                    <span className="flex-1 min-w-0">
-                      <span className="truncate block">{stu.firstname} {stu.lastname}</span>
-                      {hasIssues && (
-                        <span className="flex flex-wrap gap-1 mt-1">
-                          {issues.map((issue) => <IssueBadge key={issue} type={issue} />)}
+                    <span className="flex-1 min-w-0 flex items-center gap-2">
+                      <span className="truncate shrink">{stu.firstname} {stu.lastname}</span>
+                      {issueTags.length > 0 && (
+                        <span className="flex flex-wrap gap-1 shrink-0">
+                          {issueTags.map((issue) => <IssueBadge key={issue} type={issue} />)}
                         </span>
                       )}
                     </span>
