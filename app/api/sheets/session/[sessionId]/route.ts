@@ -7,7 +7,7 @@ import {
   getAttendanceForSession,
 } from "@/lib/sheets";
 import { registerSession } from "@/lib/session-store";
-import { DeviceConflict } from "@/types";
+import { buildDeviceConflicts } from "@/lib/conflict-detection";
 
 export async function GET(
   _req: NextRequest,
@@ -59,18 +59,8 @@ export async function GET(
       .sort((a, b) => a.order_num - b.order_num)
       .map((s) => ({ ...s, attendance: attMap.get(s.student_id) ?? null }));
 
-    // Build device conflict groups
-    const fpMap = new Map<string, { student_id: string; firstname: string; lastname: string; checked_at: string; status?: string }[]>();
-    for (const a of attendance) {
-      const fp = a.device_fingerprint;
-      if (!fp) continue;
-      if (!fpMap.has(fp)) fpMap.set(fp, []);
-      fpMap.get(fp)!.push({ student_id: a.student_id, firstname: a.firstname, lastname: a.lastname, checked_at: a.checked_at, status: a.status });
-    }
-    const device_conflicts: DeviceConflict[] = [];
-    for (const [fingerprint, studs] of fpMap) {
-      if (studs.length > 1) device_conflicts.push({ fingerprint, students: studs });
-    }
+    // Build device conflict groups (confirmed: same fingerprint/GPU hash; possible: same IP + close time/GPS)
+    const device_conflicts = buildDeviceConflicts(attendance);
 
     // For Part 2 sessions: fetch Part 1 attendance for comparison panel
     let part1_attendance = null;

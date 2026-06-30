@@ -58,6 +58,12 @@ export interface AttendanceRecord {
   overridden: boolean;
   overridden_at: string;
   device_fingerprint?: string;
+  // GPU-level fingerprint (canvas + WebGL renderer) — stable across browsers/incognito
+  // on the same physical device, unlike device_fingerprint which is UA-based.
+  device_fingerprint_gpu?: string;
+  ip_address?: string;
+  lat?: number;
+  lng?: number;
   // Part 5 audit trail
   edited_at?: string;
   edited_from?: string;
@@ -71,8 +77,13 @@ export interface AttendanceRecord {
   action_taken_at?: string;
 }
 
+export type ConflictReason = "fingerprint" | "fingerprint_gpu" | "ip_proximity";
+
 export interface DeviceConflict {
+  id: string;
   fingerprint: string;
+  tier: "confirmed" | "possible";
+  reasons: ConflictReason[];
   students: {
     student_id: string;
     firstname: string;

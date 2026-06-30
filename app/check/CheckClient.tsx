@@ -5,6 +5,15 @@ import { CheckInState } from "@/types";
 import { useClock } from "@/lib/hooks/useClock";
 
 // ── Fingerprint ──────────────────────────────────────────────────────────────
+function djb2(str: string): string {
+  let hash = 5381;
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) + hash) + str.charCodeAt(i);
+    hash = hash & hash;
+  }
+  return Math.abs(hash).toString(36);
+}
+
 function generateFingerprint(): string {
   const components = [
     navigator.userAgent,
@@ -14,13 +23,7 @@ function generateFingerprint(): string {
     navigator.hardwareConcurrency?.toString() || "",
     navigator.platform || "",
   ];
-  const str = components.join("|");
-  let hash = 5381;
-  for (let i = 0; i < str.length; i++) {
-    hash = ((hash << 5) + hash) + str.charCodeAt(i);
-    hash = hash & hash;
-  }
-  return Math.abs(hash).toString(36);
+  return djb2(components.join("|"));
 }
 
 function getOrCreateFingerprint(): string {
@@ -32,6 +35,49 @@ function getOrCreateFingerprint(): string {
     const fp = generateFingerprint();
     localStorage.setItem(KEY, fp);
     return fp;
+  } catch {
+    return "";
+  }
+}
+
+// GPU-level fingerprint: canvas render quirks + WebGL renderer/vendor strings.
+// Unlike generateFingerprint() (UA-based), this is driven by the GPU/driver, so it
+// stays the same across different browsers or incognito mode on the same physical
+// device — closing the "switch browser to dodge the same-device check" loophole.
+function generateGpuFingerprint(): string {
+  try {
+    const canvas = document.createElement("canvas");
+    canvas.width = 220;
+    canvas.height = 30;
+
+    let canvasStr = "";
+    const ctx = canvas.getContext("2d");
+    if (ctx) {
+      ctx.textBaseline = "top";
+      ctx.font = "14px Arial";
+      ctx.fillStyle = "#f60";
+      ctx.fillRect(0, 0, 100, 20);
+      ctx.fillStyle = "#069";
+      ctx.fillText("device-check αβγ", 2, 2);
+      ctx.strokeStyle = "rgba(102, 204, 0, 0.7)";
+      ctx.strokeRect(10, 10, 150, 10);
+      canvasStr = canvas.toDataURL();
+    }
+
+    let glStr = "";
+    const gl = (canvas.getContext("webgl") ?? canvas.getContext("experimental-webgl")) as WebGLRenderingContext | null;
+    if (gl) {
+      const dbg = gl.getExtension("WEBGL_debug_renderer_info");
+      if (dbg) {
+        glStr = [
+          gl.getParameter(dbg.UNMASKED_VENDOR_WEBGL),
+          gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL),
+        ].join("|");
+      }
+    }
+
+    if (!canvasStr && !glStr) return "";
+    return djb2(canvasStr + "|" + glStr);
   } catch {
     return "";
   }
@@ -193,6 +239,7 @@ export default function CheckClient() {
   const [session, setSession]         = useState<SessionInfo | null>(null);
   const inputRef     = useRef<HTMLInputElement>(null);
   const fingerprintRef = useRef("");
+  const gpuFingerprintRef = useRef("");
   const clock = useClock();
 
   const requestGps = useCallback(() => {
@@ -210,6 +257,7 @@ export default function CheckClient() {
 
   useEffect(() => {
     fingerprintRef.current = getOrCreateFingerprint();
+    gpuFingerprintRef.current = generateGpuFingerprint();
     requestGps();
 
     if (isManual) { setState("ready"); return; }
@@ -240,8 +288,8 @@ export default function CheckClient() {
     setState("submitting");
     try {
       const body = isManual
-        ? { otp: manualOtp, student_id: studentId, lat: gpsCoords?.lat ?? null, lng: gpsCoords?.lng ?? null, device_fingerprint: fingerprintRef.current }
-        : { session_id: sessionId, otp, student_id: studentId, lat: gpsCoords?.lat ?? null, lng: gpsCoords?.lng ?? null, spreadsheet_id: sid, device_fingerprint: fingerprintRef.current };
+        ? { otp: manualOtp, student_id: studentId, lat: gpsCoords?.lat ?? null, lng: gpsCoords?.lng ?? null, device_fingerprint: fingerprintRef.current, device_fingerprint_gpu: gpuFingerprintRef.current }
+        : { session_id: sessionId, otp, student_id: studentId, lat: gpsCoords?.lat ?? null, lng: gpsCoords?.lng ?? null, spreadsheet_id: sid, device_fingerprint: fingerprintRef.current, device_fingerprint_gpu: gpuFingerprintRef.current };
 
       const res  = await fetchCheckin(body);
       const data = await res.json() as Result;

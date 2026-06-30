@@ -56,6 +56,7 @@ export async function POST(req: NextRequest) {
       lng,
       spreadsheet_id: bodySpreadsheetId,
       device_fingerprint,
+      device_fingerprint_gpu,
     } = body;
     let session_id: string = body.session_id ?? "";
 
@@ -184,6 +185,10 @@ export async function POST(req: NextRequest) {
       overridden: false,
       overridden_at: "",
       device_fingerprint: device_fingerprint ?? "",
+      device_fingerprint_gpu: device_fingerprint_gpu ?? "",
+      ip_address: ip !== "unknown" ? ip : "",
+      lat: lat ?? undefined,
+      lng: lng ?? undefined,
     };
 
     await addAttendance(accessToken, spreadsheetId, record);

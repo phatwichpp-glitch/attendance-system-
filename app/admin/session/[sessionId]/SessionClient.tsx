@@ -85,6 +85,8 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
   const [undoToast, setUndoToast]   = useState<UndoState | null>(null);
   const [conflictDismissed, setConflictDismissed] = useState(false);
   const [conflictsExpanded, setConflictsExpanded] = useState(false);
+  const [possibleDismissed, setPossibleDismissed] = useState(false);
+  const [possibleExpanded, setPossibleExpanded] = useState(false);
   const [showManualQR, setShowManualQR] = useState(false);
   const [manualQrDataUrl, setManualQrDataUrl] = useState("");
 
@@ -142,6 +144,7 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
   // Restore conflict banner dismiss state from sessionStorage
   useEffect(() => {
     setConflictDismissed(sessionStorage.getItem(`conflict_dismissed_${sessionId}`) === "1");
+    setPossibleDismissed(sessionStorage.getItem(`conflict_possible_dismissed_${sessionId}`) === "1");
   }, [sessionId]);
 
   // OTP countdown — auto-closes session when timer hits zero
@@ -439,9 +442,13 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
   const isClosed = !!s.closed_at;
   const isToday  = s.date === new Date().toISOString().split("T")[0];
 
-  // Conflict set
+  // Device conflicts: "confirmed" = same fingerprint/GPU hash, "possible" = same IP
+  // + close time/GPS only (heuristic — shown separately since it can false-positive
+  // on shared campus WiFi). Row badges/borders only reflect confirmed matches.
+  const confirmedConflicts = device_conflicts.filter((c) => c.tier === "confirmed");
+  const possibleConflicts  = device_conflicts.filter((c) => c.tier === "possible");
   const conflictSet = new Set<string>(
-    device_conflicts.flatMap((c) => c.students.map((st) => st.student_id))
+    confirmedConflicts.flatMap((c) => c.students.map((st) => st.student_id))
   );
 
   // Double period helpers
@@ -705,8 +712,8 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
             </div>
           )}
 
-          {/* Simplified device conflict banner */}
-          {device_conflicts.length > 0 && !conflictDismissed && (
+          {/* Confirmed device conflict banner — same fingerprint or GPU hash */}
+          {confirmedConflicts.length > 0 && !conflictDismissed && (
             <div className="rounded-xl px-4 py-2.5" style={{ backgroundColor: "#FAEEDA", border: "1px solid #EF9F27" }}>
               <div className="flex items-center gap-2">
                 <IconWarning size={13} className="text-[#854F0B] shrink-0" />
@@ -733,8 +740,8 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
               </div>
               {conflictsExpanded && (
                 <div className="mt-2 space-y-2">
-                  {device_conflicts.map((c) => (
-                    <div key={c.fingerprint}>
+                  {confirmedConflicts.map((c) => (
+                    <div key={c.id}>
                       <p className="text-[11px] font-medium mb-1" style={{ color: "#78350F" }}>
                         {c.students.length} students — same device:
                       </p>
@@ -743,6 +750,59 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
                           <span key={st.student_id}
                             className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px]"
                             style={{ backgroundColor: "rgba(0,0,0,0.08)", color: "#78350F" }}>
+                            {st.firstname} {st.lastname}
+                            {st.status && <span className="opacity-60">({st.status})</span>}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Possible conflict banner — same IP + checked in close together in time/location, but no device-level match */}
+          {possibleConflicts.length > 0 && !possibleDismissed && (
+            <div className="rounded-xl px-4 py-2.5" style={{ backgroundColor: "#E6F1FB", border: "1px solid #7AB8F5" }}>
+              <div className="flex items-center gap-2">
+                <IconWarning size={13} className="text-[#185FA5] shrink-0" />
+                <span className="text-[12px] font-medium flex-1" style={{ color: "#1e3a5f" }}>
+                  {possibleConflicts.reduce((sum, c) => sum + c.students.length, 0)} students checked in unusually close together — worth a look
+                </span>
+                <button
+                  onClick={() => setPossibleExpanded((v) => !v)}
+                  className="text-[11px] underline shrink-0"
+                  style={{ color: "#185FA5", background: "none", border: "none", cursor: "pointer" }}
+                >
+                  {possibleExpanded ? <>Hide <IconChevronUp size={10} className="inline" /></> : <>Details <IconChevronDown size={10} className="inline" /></>}
+                </button>
+                <button
+                  onClick={() => {
+                    setPossibleDismissed(true);
+                    sessionStorage.setItem(`conflict_possible_dismissed_${sessionId}`, "1");
+                  }}
+                  className="text-gray-400 hover:text-gray-600 shrink-0"
+                  style={{ background: "none", border: "none", cursor: "pointer", lineHeight: 1 }}
+                >
+                  ✕
+                </button>
+              </div>
+              {possibleExpanded && (
+                <div className="mt-2 space-y-2">
+                  <p className="text-[11px]" style={{ color: "#1e3a5f" }}>
+                    Same network, checked in within ~30s and ~10m of each other — different devices, so not certain. Verify manually if needed.
+                  </p>
+                  {possibleConflicts.map((c) => (
+                    <div key={c.id}>
+                      <p className="text-[11px] font-medium mb-1" style={{ color: "#1e3a5f" }}>
+                        {c.students.length} students:
+                      </p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {c.students.map((st) => (
+                          <span key={st.student_id}
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px]"
+                            style={{ backgroundColor: "rgba(24,95,165,0.1)", color: "#1e3a5f" }}>
                             {st.firstname} {st.lastname}
                             {st.status && <span className="opacity-60">({st.status})</span>}
                           </span>

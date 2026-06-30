@@ -79,12 +79,13 @@ export async function initializeSpreadsheet(
           ]],
         },
         {
-          range: "attendance!A1:V1",
+          range: "attendance!A1:Z1",
           values: [[
             "attendance_id", "session_id", "course_id", "student_id", "firstname", "lastname",
             "status", "gps_pass", "distance_m", "checked_at", "overridden", "overridden_at",
             "device_fingerprint", "edited_at", "edited_from", "edited_to", "edit_note", "is_manual_entry",
             "flagged", "flagged_at", "action_taken", "action_taken_at",
+            "device_fingerprint_gpu", "ip_address", "lat", "lng",
           ]],
         },
         {
@@ -434,7 +435,7 @@ export async function getAttendanceForSession(
 ): Promise<AttendanceRecord[]> {
   const sheets = getSheetsClient(accessToken);
   const res = await sheets.spreadsheets.values.get({
-    spreadsheetId, range: "attendance!A2:V",
+    spreadsheetId, range: "attendance!A2:Z",
   });
   return (res.data.values ?? [])
     .filter((r) => r[1] === sessionId)
@@ -448,7 +449,7 @@ export async function getAttendanceForCourse(
 ): Promise<AttendanceRecord[]> {
   const sheets = getSheetsClient(accessToken);
   const res = await sheets.spreadsheets.values.get({
-    spreadsheetId, range: "attendance!A2:V",
+    spreadsheetId, range: "attendance!A2:Z",
   });
   return (res.data.values ?? [])
     .filter((r) => r[2] === courseId)
@@ -463,7 +464,7 @@ export async function addAttendance(
   const sheets = getSheetsClient(accessToken);
   await sheets.spreadsheets.values.append({
     spreadsheetId,
-    range: "attendance!A:V",
+    range: "attendance!A:Z",
     valueInputOption: "RAW",
     requestBody: {
       values: [[
@@ -484,6 +485,10 @@ export async function addAttendance(
         record.flagged_at ?? "",
         record.action_taken ?? "",
         record.action_taken_at ?? "",
+        record.device_fingerprint_gpu ?? "",
+        record.ip_address ?? "",
+        record.lat ?? "",
+        record.lng ?? "",
       ]],
     },
   });
@@ -497,7 +502,7 @@ export async function overrideAttendanceRecord(
 ): Promise<void> {
   const sheets = getSheetsClient(accessToken);
   const res = await sheets.spreadsheets.values.get({
-    spreadsheetId, range: "attendance!A2:V",
+    spreadsheetId, range: "attendance!A2:Z",
   });
   const rows = res.data.values ?? [];
   const idx = rows.findIndex((r) => r[0] === attendanceId);
@@ -530,7 +535,7 @@ export async function editAttendanceRecord(
 ): Promise<{ editedFrom: string; editedAt: string } | null> {
   const sheets = getSheetsClient(accessToken);
   const res = await sheets.spreadsheets.values.get({
-    spreadsheetId, range: "attendance!A2:V",
+    spreadsheetId, range: "attendance!A2:Z",
   });
   const rows = res.data.values ?? [];
   const idx = rows.findIndex((r) => r[0] === attendanceId);
@@ -578,7 +583,7 @@ export async function markAbsentStudents(
   // Batch all absent rows into a single append call
   await sheets.spreadsheets.values.append({
     spreadsheetId,
-    range: "attendance!A:V",
+    range: "attendance!A:Z",
     valueInputOption: "RAW",
     requestBody: {
       values: absentStudents.map((s) => [
@@ -604,6 +609,10 @@ export async function markAbsentStudents(
         "", // flagged_at
         "", // action_taken
         "", // action_taken_at
+        "", // device_fingerprint_gpu
+        "", // ip_address
+        "", // lat
+        "", // lng
       ]),
     },
   });
@@ -633,6 +642,10 @@ function rowToAttendance(r: string[]): AttendanceRecord {
     flagged_at: r[19] || undefined,
     action_taken: (r[20] as AttendanceRecord["action_taken"]) || null,
     action_taken_at: r[21] || undefined,
+    device_fingerprint_gpu: r[22] || undefined,
+    ip_address: r[23] || undefined,
+    lat: r[24] ? parseFloat(r[24]) : undefined,
+    lng: r[25] ? parseFloat(r[25]) : undefined,
   };
 }
 
@@ -654,7 +667,7 @@ export async function updateAttendanceFields(
 ): Promise<{ found: boolean; previousStatus: string; previousOverridden: string }> {
   const sheets = getSheetsClient(accessToken);
   const res = await sheets.spreadsheets.values.get({
-    spreadsheetId, range: "attendance!A2:V",
+    spreadsheetId, range: "attendance!A2:Z",
   });
   const rows = (res.data.values ?? []) as string[][];
   const idx = rows.findIndex((r) => r[0] === attendanceId);
@@ -907,7 +920,7 @@ export async function deleteAttendanceForStudent(
   courseId: string
 ): Promise<number> {
   return deleteMatchingRows(
-    accessToken, spreadsheetId, "attendance!A2:V",
+    accessToken, spreadsheetId, "attendance!A2:Z",
     (r) => r[3] === studentId && r[2] === courseId
   );
 }
@@ -961,7 +974,7 @@ export async function deleteCourseById(
   section: string
 ): Promise<void> {
   // Attendance must be deleted first (references sessions/students); the rest can run in parallel.
-  await deleteMatchingRows(accessToken, spreadsheetId, "attendance!A2:V", (r) => r[2] === courseId);
+  await deleteMatchingRows(accessToken, spreadsheetId, "attendance!A2:Z", (r) => r[2] === courseId);
   await Promise.all([
     deleteMatchingRows(accessToken, spreadsheetId, "sessions!A2:U", (r) => r[1] === courseId && r[2] === section),
     deleteMatchingRows(accessToken, spreadsheetId, "students!A2:F", (r) => r[3] === courseId && r[4] === section),
@@ -1038,7 +1051,7 @@ export async function deleteSessionById(
   spreadsheetId: string,
   sessionId: string
 ): Promise<void> {
-  await deleteMatchingRows(accessToken, spreadsheetId, "attendance!A2:V", (r) => r[1] === sessionId);
+  await deleteMatchingRows(accessToken, spreadsheetId, "attendance!A2:Z", (r) => r[1] === sessionId);
   await deleteMatchingRows(accessToken, spreadsheetId, "sessions!A2:U", (r) => r[0] === sessionId);
 }
 
@@ -1064,7 +1077,7 @@ export async function deleteAttendanceById(
   attendanceId: string
 ): Promise<boolean> {
   const deleted = await deleteMatchingRows(
-    accessToken, spreadsheetId, "attendance!A2:V",
+    accessToken, spreadsheetId, "attendance!A2:Z",
     (r) => r[0] === attendanceId
   );
   return deleted > 0;
@@ -1088,7 +1101,7 @@ export async function getCourseStats(
   const [stuRes, sessRes, attRes] = await Promise.all([
     sheets.spreadsheets.values.get({ spreadsheetId, range: "students!A2:F" }),
     sheets.spreadsheets.values.get({ spreadsheetId, range: "sessions!A2:U" }),
-    sheets.spreadsheets.values.get({ spreadsheetId, range: "attendance!A2:V" }),
+    sheets.spreadsheets.values.get({ spreadsheetId, range: "attendance!A2:Z" }),
   ]);
 
   const stats: Record<string, CourseStats> = {};
