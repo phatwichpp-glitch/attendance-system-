@@ -278,6 +278,12 @@ export default function CourseList() {
                           >
                             View Students
                           </MenuItem>
+                          <MenuItem
+                            href={`/admin/courses/${c.course_id}/semester`}
+                            onClick={() => setMenuOpen(null)}
+                          >
+                            Semester Settings
+                          </MenuItem>
                           <MenuItem onClick={() => openEdit(c)}>
                             Edit Course Info
                           </MenuItem>

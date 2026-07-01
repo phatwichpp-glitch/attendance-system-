@@ -1,5 +1,7 @@
 import NextAuth from "next-auth";
 import Google from "next-auth/providers/google";
+import { refreshGoogleAccessToken } from "@/lib/google-token";
+import { saveAdminRefreshToken } from "@/lib/token-registry";
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
   providers: [
@@ -30,9 +32,19 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   },
 
   callbacks: {
-    async jwt({ token, account }) {
+    async jwt({ token, account, profile }) {
       // ── Login ครั้งแรก: เก็บ token ทั้งหมด ────────────────────────────────
       if (account) {
+        // Best-effort: persist the refresh_token server-side so the auto-open
+        // scheduler (lib/scheduler.ts) can act without a browser session present.
+        // Never blocks/breaks login — failures are only logged.
+        const email = (token.email as string | undefined) ?? profile?.email ?? undefined;
+        if (email && account.refresh_token) {
+          saveAdminRefreshToken(email, account.refresh_token).catch((e) => {
+            console.error("[auth] failed to persist refresh token", e);
+          });
+        }
+
         return {
           ...token,
           access_token:  account.access_token,
@@ -48,25 +60,20 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
 
       // ── Access token หมดอายุ: refresh อัตโนมัติ ────────────────────────────
       try {
-        const res = await fetch("https://oauth2.googleapis.com/token", {
-          method: "POST",
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: new URLSearchParams({
-            client_id:     process.env.GOOGLE_CLIENT_ID!,
-            client_secret: process.env.GOOGLE_CLIENT_SECRET!,
-            grant_type:    "refresh_token",
-            refresh_token: token.refresh_token as string,
-          }),
-        });
-        const refreshed = await res.json();
-        if (!res.ok) throw refreshed;
+        const refreshed = await refreshGoogleAccessToken(token.refresh_token as string);
+
+        const email = token.email as string | undefined;
+        if (email) {
+          saveAdminRefreshToken(email, refreshed.refresh_token).catch((e) => {
+            console.error("[auth] failed to persist refreshed token", e);
+          });
+        }
 
         return {
           ...token,
           access_token:  refreshed.access_token,
-          expires_at:    Math.floor(Date.now() / 1000) + (refreshed.expires_in as number),
-          // Google ไม่ส่ง refresh_token ใหม่เสมอ — เก็บอันเดิมไว้ถ้าไม่มีอันใหม่
-          refresh_token: refreshed.refresh_token ?? token.refresh_token,
+          expires_at:    refreshed.expires_at,
+          refresh_token: refreshed.refresh_token,
         };
       } catch {
         // Refresh ล้มเหลว (revoked / expired) → บังคับ re-login ครั้งต่อไป

@@ -90,11 +90,12 @@ export async function initializeSpreadsheet(
           ]],
         },
         {
-          range: "semester_config!A1:K1",
+          range: "semester_config!A1:N1",
           values: [[
             "course_id", "section", "semester_start", "total_weeks", "teaching_schedule",
             "default_gps_radius", "default_otp_min", "default_late_min",
             "attendance_threshold", "created_at", "updated_at",
+            "auto_open_enabled", "default_lat", "default_lng",
           ]],
         },
       ],
@@ -127,13 +128,14 @@ async function ensureSemesterConfigSheet(
     });
     await sheets.spreadsheets.values.update({
       spreadsheetId,
-      range: "semester_config!A1:K1",
+      range: "semester_config!A1:N1",
       valueInputOption: "RAW",
       requestBody: {
         values: [[
           "course_id", "section", "semester_start", "total_weeks", "teaching_schedule",
           "default_gps_radius", "default_otp_min", "default_late_min",
           "attendance_threshold", "created_at", "updated_at",
+          "auto_open_enabled", "default_lat", "default_lng",
         ]],
       },
     });
@@ -150,7 +152,7 @@ export async function getSemesterConfig(
   const sheets = getSheetsClient(accessToken);
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId,
-    range: "semester_config!A2:K",
+    range: "semester_config!A2:N",
   });
   const rows = res.data.values ?? [];
   const row = section
@@ -169,7 +171,7 @@ export async function upsertSemesterConfig(
   const sheets = getSheetsClient(accessToken);
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId,
-    range: "semester_config!A2:K",
+    range: "semester_config!A2:N",
   });
   const rows = res.data.values ?? [];
   const idx = rows.findIndex(
@@ -188,19 +190,22 @@ export async function upsertSemesterConfig(
     config.attendance_threshold,
     idx === -1 ? now : (config.created_at || now),
     now,
+    config.auto_open_enabled ? "TRUE" : "FALSE",
+    config.default_lat ?? "",
+    config.default_lng ?? "",
   ];
 
   if (idx === -1) {
     await sheets.spreadsheets.values.append({
       spreadsheetId,
-      range: "semester_config!A:K",
+      range: "semester_config!A:N",
       valueInputOption: "RAW",
       requestBody: { values: [row] },
     });
   } else {
     await sheets.spreadsheets.values.update({
       spreadsheetId,
-      range: `semester_config!A${idx + 2}:K${idx + 2}`,
+      range: `semester_config!A${idx + 2}:N${idx + 2}`,
       valueInputOption: "RAW",
       requestBody: { values: [row] },
     });
@@ -222,6 +227,9 @@ function rowToSemesterConfig(r: string[]): SemesterConfig {
     attendance_threshold: parseInt(r[8] ?? "80", 10),
     created_at: r[9] ?? "",
     updated_at: r[10] ?? "",
+    auto_open_enabled: r[11] === "TRUE",
+    default_lat: r[12] ? parseFloat(r[12]) : undefined,
+    default_lng: r[13] ? parseFloat(r[13]) : undefined,
   };
 }
 

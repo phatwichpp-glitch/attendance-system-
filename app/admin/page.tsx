@@ -5,6 +5,7 @@ import CourseList from "./CourseList";
 import ActiveSessionBanner from "./ActiveSessionBanner";
 import ManualQRCard from "./ManualQRCard";
 import HolidayBanner from "./HolidayBanner";
+import AutoOpenTokenBanner from "./AutoOpenTokenBanner";
 
 export default async function AdminPage() {
   const session = await auth();
@@ -15,6 +16,7 @@ export default async function AdminPage() {
       <AdminNav email={session.user?.email} />
       <main className="max-w-5xl mx-auto px-4 py-8 space-y-4">
         <HolidayBanner />
+        <AutoOpenTokenBanner />
         <ActiveSessionBanner />
         <div className="flex items-center justify-between">
           <h1 className="text-[18px] font-medium text-gray-900">My Courses</h1>

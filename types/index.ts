@@ -164,6 +164,9 @@ export interface SemesterConfig {
   attendance_threshold: number;
   created_at: string;
   updated_at: string;
+  auto_open_enabled?: boolean;   // scheduler opens/closes sessions automatically at class time
+  default_lat?: number;          // classroom location used for auto-opened sessions (no device present)
+  default_lng?: number;
 }
 
 export type CheckInState =
