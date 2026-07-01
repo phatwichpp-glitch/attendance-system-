@@ -26,6 +26,8 @@ import {
 } from "@/lib/token-registry";
 import { getBangkokNow, isWithinOpenWindow } from "@/lib/schedule-time";
 import { getWeekLabel } from "@/lib/week-utils";
+import { getPeriodLabel } from "@/lib/period-utils";
+import { notifyAdminOnOpen } from "@/lib/notify";
 import { Course, Session, SemesterConfig } from "@/types";
 
 const TICK_INTERVAL_MS = 60_000;
@@ -115,7 +117,7 @@ async function processAdmin(email: string): Promise<void> {
     try {
       const config = await loadConfig(course);
       if (!config?.auto_open_enabled) continue;
-      await processCourseOpen(accessToken, spreadsheetId, course, config, allSessions, dayOfWeek, hhmm, dateStr);
+      await processCourseOpen(accessToken, spreadsheetId, email, course, config, allSessions, dayOfWeek, hhmm, dateStr);
     } catch (e) {
       console.error(`[scheduler] course ${course.course_id}/${course.section} open-check failed`, e);
     }
@@ -135,6 +137,7 @@ async function processAdmin(email: string): Promise<void> {
 async function processCourseOpen(
   accessToken: string,
   spreadsheetId: string,
+  email: string,
   course: Course,
   config: SemesterConfig,
   allSessions: Session[],
@@ -171,7 +174,7 @@ async function processCourseOpen(
       config.teaching_schedule.map((d) => d.day)
     );
 
-    await openSessionForCourse(accessToken, spreadsheetId, {
+    const result = await openSessionForCourse(accessToken, spreadsheetId, {
       course_id: course.course_id,
       section: course.section,
       period: td.period,
@@ -188,6 +191,24 @@ async function processCourseOpen(
     });
 
     console.log(`[scheduler] auto-opened ${course.course_id}/${course.section} period ${td.period} on ${dateStr}`);
+
+    try {
+      const periodNum = parseInt(td.period, 10);
+      const periodLabel = getPeriodLabel(periodNum, td.period_end, td.start_time, td.end_time);
+      const checkUrl = process.env.NEXTAUTH_URL
+        ? `${process.env.NEXTAUTH_URL}/check?session_id=${result.session.session_id}`
+        : undefined;
+      const message = [
+        `เปิดคาบเรียนอัตโนมัติแล้ว: ${course.title} (${course.course_id}) Sec.${course.section}`,
+        `${periodLabel} · ${dateStr}`,
+        `OTP: ${result.session.otp} (หมดอายุใน ${config.default_otp_min} นาที)`,
+        checkUrl ? `ลิงก์เช็คชื่อ: ${checkUrl}` : undefined,
+      ].filter(Boolean).join("\n");
+
+      await notifyAdminOnOpen(email, `เปิดคาบ ${course.title} อัตโนมัติแล้ว`, message);
+    } catch (e) {
+      console.error(`[scheduler] failed to notify admin for session ${result.session.session_id}`, e);
+    }
   }
 }
 

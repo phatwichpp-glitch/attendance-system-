@@ -42,6 +42,7 @@ export default function AdminNav({ email }: { email?: string | null }) {
               {link("/admin/import", "Import")}
               {link("/admin/setup", "Open Session")}
               {link("/admin/audit", "Audit Log")}
+              {link("/admin/notifications", "Notifications")}
             </nav>
             <div className="absolute right-0 top-0 h-full w-6 bg-gradient-to-l from-white to-transparent pointer-events-none sm:hidden" aria-hidden="true" />
           </div>

@@ -25,6 +25,18 @@ interface AdminEntry {
   status: TokenStatus;
   last_error: string | null;
   last_error_at: string | null;
+  // Auto-open notification prefs (Deliver the OTP feature)
+  email_notify: boolean;
+  notify_email: string | null; // destination address; null = use the Google login email
+  line_notify: boolean;
+  line_user_id: string | null;
+}
+
+export interface NotificationPrefs {
+  email_notify: boolean;
+  notify_email: string; // resolved — always has a value (falls back to the login email)
+  line_notify: boolean;
+  line_linked: boolean;
 }
 
 interface RegistryFile {
@@ -89,7 +101,14 @@ export async function saveAdminRefreshToken(email: string, refreshToken: string)
   const key = normalizeEmail(email);
   await withLock(async () => {
     const data = await readFile();
+    const existing = data.admins[key];
     data.admins[key] = {
+      // Preserve notification prefs across token refreshes — this runs roughly
+      // hourly while the admin is active, so it must never clobber them.
+      email_notify: existing?.email_notify ?? true,
+      notify_email: existing?.notify_email ?? null,
+      line_notify: existing?.line_notify ?? false,
+      line_user_id: existing?.line_user_id ?? null,
       encrypted_refresh_token: encrypt(refreshToken),
       updated_at: new Date().toISOString(),
       status: "ok",
@@ -146,4 +165,72 @@ export async function getAdminTokenStatus(email: string): Promise<TokenStatus | 
   const data = await readFile();
   const entry = data.admins[normalizeEmail(email)];
   return entry?.status ?? "unknown";
+}
+
+export async function getNotificationPrefs(email: string): Promise<NotificationPrefs> {
+  const data = await readFile();
+  const entry = data.admins[normalizeEmail(email)];
+  return {
+    email_notify: entry?.email_notify ?? true,
+    notify_email: entry?.notify_email || normalizeEmail(email),
+    line_notify: entry?.line_notify ?? false,
+    line_linked: !!entry?.line_user_id,
+  };
+}
+
+export async function setNotificationPrefs(
+  email: string,
+  prefs: { email_notify?: boolean; notify_email?: string | null; line_notify?: boolean }
+): Promise<void> {
+  const key = normalizeEmail(email);
+  await withLock(async () => {
+    const data = await readFile();
+    const entry = data.admins[key];
+    if (!entry) return; // admin must have logged in at least once (registers via saveAdminRefreshToken)
+    if (prefs.email_notify !== undefined) entry.email_notify = prefs.email_notify;
+    if (prefs.notify_email !== undefined) {
+      const trimmed = prefs.notify_email?.trim();
+      // Empty/omitted or equal to the login email → store null so it always tracks
+      // the login email (e.g. if the admin later changes Google accounts).
+      entry.notify_email = trimmed && normalizeEmail(trimmed) !== key ? trimmed : null;
+    }
+    if (prefs.line_notify !== undefined) entry.line_notify = prefs.line_notify && !!entry.line_user_id;
+    await writeFile(data);
+  });
+}
+
+export async function linkLineUserId(email: string, lineUserId: string): Promise<void> {
+  const key = normalizeEmail(email);
+  await withLock(async () => {
+    const data = await readFile();
+    const entry = data.admins[key];
+    if (!entry) return;
+    entry.line_user_id = lineUserId;
+    entry.line_notify = true;
+    await writeFile(data);
+  });
+}
+
+export async function unlinkLine(email: string): Promise<void> {
+  const key = normalizeEmail(email);
+  await withLock(async () => {
+    const data = await readFile();
+    const entry = data.admins[key];
+    if (!entry) return;
+    entry.line_user_id = null;
+    entry.line_notify = false;
+    await writeFile(data);
+  });
+}
+
+/** For the scheduler: resolve where (if anywhere) to send an auto-open notification. */
+export async function getNotifyTargets(
+  email: string
+): Promise<{ notify_email: string | null; line_user_id: string | null }> {
+  const data = await readFile();
+  const entry = data.admins[normalizeEmail(email)];
+  return {
+    notify_email: entry?.email_notify ? (entry.notify_email || normalizeEmail(email)) : null,
+    line_user_id: entry?.line_notify ? entry.line_user_id ?? null : null,
+  };
 }

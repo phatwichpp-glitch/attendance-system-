@@ -284,6 +284,12 @@ export default function CourseList() {
                           >
                             Semester Settings
                           </MenuItem>
+                          <MenuItem
+                            href={`/projector/course/${c.course_id}?section=${c.section}`}
+                            onClick={() => setMenuOpen(null)}
+                          >
+                            Classroom Display
+                          </MenuItem>
                           <MenuItem onClick={() => openEdit(c)}>
                             Edit Course Info
                           </MenuItem>
