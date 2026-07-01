@@ -24,6 +24,8 @@ export default function NotificationsClient() {
   const [emailSaved, setEmailSaved] = useState(false);
   const [linkCode, setLinkCode] = useState("");
   const [generatingCode, setGeneratingCode] = useState(false);
+  const [testingEmail, setTestingEmail] = useState(false);
+  const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [error, setError] = useState("");
 
   const load = useCallback(async () => {
@@ -73,6 +75,21 @@ export default function NotificationsClient() {
       return;
     }
     save({ notify_email: trimmed });
+  };
+
+  const sendTestEmail = async () => {
+    setTestingEmail(true);
+    setTestResult(null);
+    try {
+      const res = await fetch("/api/sheets/notification-prefs/test-email", { method: "POST" });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || "failed");
+      setTestResult({ ok: true, message: `ส่งอีเมลทดสอบไปที่ ${d.sent_to} แล้ว — ลองเช็คกล่องจดหมาย` });
+    } catch {
+      setTestResult({ ok: false, message: "ส่งอีเมลทดสอบไม่สำเร็จ — ตรวจสอบ RESEND_API_KEY อีกครั้ง" });
+    } finally {
+      setTestingEmail(false);
+    }
   };
 
   const generateCode = async () => {
@@ -148,6 +165,21 @@ export default function NotificationsClient() {
               <p className="text-[11px] mt-1" style={{ color: "#9ca3af" }}>
                 ค่าเริ่มต้นคืออีเมลที่ใช้ล็อกอิน — เปลี่ยนได้ถ้าต้องการส่งไปที่อื่น
               </p>
+            </div>
+            <div>
+              <button
+                onClick={sendTestEmail}
+                disabled={testingEmail}
+                className="btn-outline text-[13px]"
+                style={{ minHeight: 36 }}
+              >
+                {testingEmail && <Spinner className="h-4 w-4" />} ส่งอีเมลทดสอบ
+              </button>
+              {testResult && (
+                <p className="text-[11px] mt-1" style={{ color: testResult.ok ? "#3B6D11" : "#A32D2D" }}>
+                  {testResult.message}
+                </p>
+              )}
             </div>
           </>
         )}
