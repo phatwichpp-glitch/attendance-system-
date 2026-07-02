@@ -4,6 +4,30 @@ import { calculateDistance } from "@/lib/haversine";
 const PROXIMITY_TIME_MS = 30_000; // checked in within 30s of each other
 const PROXIMITY_DISTANCE_M = 10;  // and within 10m of each other
 
+// Pairwise check shared by buildDeviceConflicts() (session-wide, computed on read)
+// and the checkin route (single new record vs. the session's existing records,
+// checked synchronously at write time so a match can be persisted immediately).
+export function findConflictReason(
+  a: AttendanceRecord,
+  b: AttendanceRecord
+): ConflictReason | null {
+  if (a.device_fingerprint && a.device_fingerprint === b.device_fingerprint) {
+    return "fingerprint";
+  }
+  if (a.device_fingerprint_gpu && a.device_fingerprint_gpu === b.device_fingerprint_gpu) {
+    return "fingerprint_gpu";
+  }
+  if (
+    a.ip_address && a.ip_address === b.ip_address &&
+    a.lat != null && a.lng != null && b.lat != null && b.lng != null &&
+    Math.abs(new Date(a.checked_at).getTime() - new Date(b.checked_at).getTime()) <= PROXIMITY_TIME_MS &&
+    calculateDistance(a.lat, a.lng, b.lat, b.lng) <= PROXIMITY_DISTANCE_M
+  ) {
+    return "ip_proximity";
+  }
+  return null;
+}
+
 // Groups attendance records into device-conflict clusters using whichever signal
 // matches: exact device_fingerprint (UA-based), exact device_fingerprint_gpu
 // (canvas/WebGL — stable across browsers/incognito on the same hardware), or the
@@ -28,21 +52,7 @@ export function buildDeviceConflicts(attendance: AttendanceRecord[]): DeviceConf
 
   for (let i = 0; i < n; i++) {
     for (let j = i + 1; j < n; j++) {
-      const a = attendance[i], b = attendance[j];
-      let reason: ConflictReason | null = null;
-
-      if (a.device_fingerprint && a.device_fingerprint === b.device_fingerprint) {
-        reason = "fingerprint";
-      } else if (a.device_fingerprint_gpu && a.device_fingerprint_gpu === b.device_fingerprint_gpu) {
-        reason = "fingerprint_gpu";
-      } else if (
-        a.ip_address && a.ip_address === b.ip_address &&
-        a.lat != null && a.lng != null && b.lat != null && b.lng != null &&
-        Math.abs(new Date(a.checked_at).getTime() - new Date(b.checked_at).getTime()) <= PROXIMITY_TIME_MS &&
-        calculateDistance(a.lat, a.lng, b.lat, b.lng) <= PROXIMITY_DISTANCE_M
-      ) {
-        reason = "ip_proximity";
-      }
+      const reason = findConflictReason(attendance[i], attendance[j]);
 
       if (reason) {
         union(i, j);

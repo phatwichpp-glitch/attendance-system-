@@ -57,6 +57,7 @@ const BORDER_COLORS: Record<IssueType, string> = {
   late: "#eab308",
   manual: "#3b82f6",
   flagged: "#a855f7",
+  auto_flag: "#991b1b",
 };
 
 // Short labels auto-attached when approving — so the row keeps a record of
@@ -67,6 +68,7 @@ const ISSUE_LABELS: Record<IssueType, string> = {
   late: "Late",
   manual: "Manual",
   flagged: "Flagged",
+  auto_flag: "Auto-Flagged",
 };
 
 const ISSUE_FILTER_LABELS: Partial<Record<IssueType, string>> = {
@@ -74,6 +76,7 @@ const ISSUE_FILTER_LABELS: Partial<Record<IssueType, string>> = {
   device_conflict: "Same Device",
   late: "Late",
   flagged: "Flagged",
+  auto_flag: "Auto-Flagged",
 };
 
 function IssueChip({ active, color, onClick, children }: {
@@ -103,7 +106,8 @@ function getIssues(stu: StudentWithAttendance, conflictSet: Set<string>): IssueT
   if (conflictSet.has(stu.student_id)) issues.push("device_conflict");
   if (att.status === "late") issues.push("late");
   if (att.is_manual_entry) issues.push("manual");
-  if (att.flagged) issues.push("flagged");
+  if (att.flagged && att.action_taken === "auto_flag") issues.push("auto_flag");
+  else if (att.flagged) issues.push("flagged");
   return issues;
 }
 
@@ -519,8 +523,9 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
   const gpsFailCount       = students.filter((x) => x.attendance?.status === "gps_fail").length;
   const deviceConflictCount = conflictSet.size;
   const lateCount          = students.filter((x) => x.attendance?.status === "late").length;
-  const flaggedCount        = students.filter((x) => x.attendance?.flagged).length;
-  const totalIssues        = gpsFailCount + deviceConflictCount + lateCount + flaggedCount;
+  const autoFlagCount      = students.filter((x) => x.attendance?.flagged && x.attendance.action_taken === "auto_flag").length;
+  const flaggedCount        = students.filter((x) => x.attendance?.flagged && x.attendance.action_taken !== "auto_flag").length;
+  const totalIssues        = gpsFailCount + deviceConflictCount + lateCount + flaggedCount + autoFlagCount;
   const visibleStudents    = issueFilter
     ? students.filter((stu) => getIssues(stu, conflictSet).includes(issueFilter))
     : students;
@@ -892,6 +897,12 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
                   Flagged {flaggedCount}
                 </IssueChip>
               )}
+              {autoFlagCount > 0 && (
+                <IssueChip active={issueFilter === "auto_flag"} color="#991b1b"
+                  onClick={() => setIssueFilter((f) => f === "auto_flag" ? null : "auto_flag")}>
+                  Auto-Flagged {autoFlagCount}
+                </IssueChip>
+              )}
               {issueFilter && (
                 <button
                   onClick={() => setIssueFilter(null)}
@@ -958,7 +969,13 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
                       ) : (
                         <span className="badge-waiting text-[15px] px-3 py-1.5 shrink-0">Pending</span>
                       )}
-                      {issueTags.map((issue) => <IssueBadge key={issue} type={issue} />)}
+                      {issueTags.map((issue) => (
+                        <IssueBadge
+                          key={issue}
+                          type={issue}
+                          title={issue === "auto_flag" ? att?.edit_note : undefined}
+                        />
+                      ))}
                       {att?.overridden && (
                         <span className="badge-waiting text-[12px] px-2 py-1 shrink-0" title="Approved by teacher">
                           ✓ Approved{att.edit_note ? ` — ${att.edit_note}` : ""}

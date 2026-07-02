@@ -3,6 +3,23 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import { CheckInState } from "@/types";
 import { useClock } from "@/lib/hooks/useClock";
+import { calculateDistance } from "@/lib/haversine";
+
+// Largest pairwise distance between GPS samples taken a few seconds apart. Real
+// GPS fixes drift slightly even when stationary; a perfectly static reading
+// combined with unrealistically high accuracy is a pattern seen with mock-location
+// tools. This is a weak, best-effort heuristic — used server-side only to flag a
+// check-in for teacher review, never to block it.
+function computeJitterM(samples: { lat: number; lng: number }[]): number {
+  let max = 0;
+  for (let i = 0; i < samples.length; i++) {
+    for (let j = i + 1; j < samples.length; j++) {
+      const d = calculateDistance(samples[i].lat, samples[i].lng, samples[j].lat, samples[j].lng);
+      if (d > max) max = d;
+    }
+  }
+  return Math.round(max);
+}
 
 // ── Fingerprint ──────────────────────────────────────────────────────────────
 function djb2(str: string): string {
@@ -240,19 +257,32 @@ export default function CheckClient() {
   const inputRef     = useRef<HTMLInputElement>(null);
   const fingerprintRef = useRef("");
   const gpuFingerprintRef = useRef("");
+  const gpsSamplesRef = useRef<{ lat: number; lng: number; accuracy: number }[]>([]);
   const clock = useClock();
 
   const requestGps = useCallback(() => {
     setGpsStatus("loading");
-    navigator.geolocation.getCurrentPosition(
+    gpsSamplesRef.current = [];
+    // Watch (not single-shot) for a few seconds so we can measure jitter between
+    // fixes — a real GPS receiver drifts a little even standing still, which is a
+    // useful (soft) signal against a fixed/mocked coordinate. Keeps reporting the
+    // most accurate fix seen so far as soon as one arrives.
+    const watchId = navigator.geolocation.watchPosition(
       (pos) => {
-        setGpsCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
-        setGpsAccuracy(pos.coords.accuracy);
+        gpsSamplesRef.current.push({
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+          accuracy: pos.coords.accuracy,
+        });
+        const best = gpsSamplesRef.current.reduce((a, b) => (b.accuracy < a.accuracy ? b : a));
+        setGpsCoords({ lat: best.lat, lng: best.lng });
+        setGpsAccuracy(best.accuracy);
         setGpsStatus("ready");
       },
-      () => setGpsStatus("denied"),
+      () => setGpsStatus((s) => (s === "ready" ? s : "denied")),
       { enableHighAccuracy: true, timeout: 15000 }
     );
+    setTimeout(() => navigator.geolocation.clearWatch(watchId), 3000);
   }, []);
 
   useEffect(() => {
@@ -287,9 +317,15 @@ export default function CheckClient() {
     if (isManual && !/^\d{6}$/.test(manualOtp)) return;
     setState("submitting");
     try {
+      const samples = gpsSamplesRef.current;
+      const locationSignals = {
+        accuracy: gpsAccuracy ?? undefined,
+        location_jitter_m: samples.length >= 2 ? computeJitterM(samples) : undefined,
+        location_samples: samples.length,
+      };
       const body = isManual
-        ? { otp: manualOtp, student_id: studentId, lat: gpsCoords?.lat ?? null, lng: gpsCoords?.lng ?? null, device_fingerprint: fingerprintRef.current, device_fingerprint_gpu: gpuFingerprintRef.current }
-        : { session_id: sessionId, otp, student_id: studentId, lat: gpsCoords?.lat ?? null, lng: gpsCoords?.lng ?? null, spreadsheet_id: sid, device_fingerprint: fingerprintRef.current, device_fingerprint_gpu: gpuFingerprintRef.current };
+        ? { otp: manualOtp, student_id: studentId, lat: gpsCoords?.lat ?? null, lng: gpsCoords?.lng ?? null, device_fingerprint: fingerprintRef.current, device_fingerprint_gpu: gpuFingerprintRef.current, ...locationSignals }
+        : { session_id: sessionId, otp, student_id: studentId, lat: gpsCoords?.lat ?? null, lng: gpsCoords?.lng ?? null, spreadsheet_id: sid, device_fingerprint: fingerprintRef.current, device_fingerprint_gpu: gpuFingerprintRef.current, ...locationSignals };
 
       const res  = await fetchCheckin(body);
       const data = await res.json() as Result;

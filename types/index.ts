@@ -74,7 +74,7 @@ export interface AttendanceRecord {
   // Unified action system
   flagged?: boolean;
   flagged_at?: string;
-  action_taken?: "approve" | "flag" | "mark_absent" | "revoke" | null;
+  action_taken?: "approve" | "flag" | "mark_absent" | "revoke" | "auto_flag" | null;
   action_taken_at?: string;
 }
 
