@@ -200,7 +200,12 @@ async function processCourseOpen(
       s.date === dateStr &&
       s.period === td.period
     );
-    if (alreadyExists) continue;
+    if (alreadyExists) {
+      console.log(
+        `[scheduler] skip ${course.course_id}/${course.section} ${dateStr} period ${td.period} — a session for this course+date+period already exists`
+      );
+      continue;
+    }
 
     if (config.default_lat == null || config.default_lng == null) {
       console.warn(
