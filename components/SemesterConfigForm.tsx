@@ -1,5 +1,6 @@
 "use client";
 import dynamic from "next/dynamic";
+import { useEffect, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import Toggle from "@/components/Toggle";
 import { DAY_NAMES, TeachingDay } from "@/types";
@@ -102,6 +103,18 @@ export default function SemesterConfigForm({
   onChange: setSemester,
   showAutoOpenToggle = false,
 }: SemesterConfigFormProps) {
+  // "ok" = the scheduler holds a working refresh token for this account,
+  // "unknown" = never registered (needs one fresh login), "invalid" = token died.
+  const [tokenStatus, setTokenStatus] = useState<"ok" | "invalid" | "unknown" | null>(null);
+
+  useEffect(() => {
+    if (!showAutoOpenToggle) return;
+    fetch("/api/sheets/token-status")
+      .then((r) => r.json())
+      .then((d) => setTokenStatus(d.status ?? null))
+      .catch(() => {});
+  }, [showAutoOpenToggle]);
+
   return (
     <>
       <div className="card space-y-4">
@@ -288,6 +301,18 @@ export default function SemesterConfigForm({
           />
           {semester.auto_open_enabled && (
             <>
+              {tokenStatus === "ok" && (
+                <p className="text-[12px]" style={{ color: "#3B6D11" }}>
+                  ✓ ระบบพร้อมเปิดคาบอัตโนมัติแทนบัญชีนี้แล้ว
+                </p>
+              )}
+              {(tokenStatus === "unknown" || tokenStatus === "invalid") && (
+                <div className="rounded-lg px-3 py-2 text-[12px]" style={{ backgroundColor: "#FCEBEB", color: "#A32D2D" }}>
+                  {tokenStatus === "invalid"
+                    ? "สิทธิ์เปิดคาบอัตโนมัติของบัญชีนี้หมดอายุ — กรุณาออกจากระบบแล้วเข้าสู่ระบบใหม่"
+                    : "ระบบยังไม่ได้รับสิทธิ์เปิดคาบแทนบัญชีนี้ — กรุณาออกจากระบบแล้วเข้าสู่ระบบใหม่ 1 ครั้ง"}
+                </div>
+              )}
               <p className="text-[11px]" style={{ color: "#5F5E5A" }}>
                 เลือกตำแหน่งห้องเรียนบนแผนที่ ใช้สำหรับตรวจ GPS ตอนระบบเปิดคาบให้อัตโนมัติ (ไม่มีอุปกรณ์ ณ ตอนเปิด)
               </p>

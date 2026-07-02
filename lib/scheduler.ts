@@ -58,8 +58,24 @@ export function startScheduler(): void {
   console.log("[scheduler] started, interval =", TICK_INTERVAL_MS, "ms");
 }
 
+// Logged on state change only (empty ↔ non-empty), not every 60s tick.
+let lastRegistryWasEmpty: boolean | null = null;
+
 async function runTick(): Promise<void> {
   const emails = await listKnownAdminEmails();
+
+  const isEmpty = emails.length === 0;
+  if (isEmpty !== lastRegistryWasEmpty) {
+    if (isEmpty) {
+      console.warn(
+        "[scheduler] token registry is empty — auto-open is idle. An admin must sign in (fresh login) once to register."
+      );
+    } else {
+      console.log(`[scheduler] token registry has ${emails.length} admin(s) — auto-open active`);
+    }
+    lastRegistryWasEmpty = isEmpty;
+  }
+
   for (const email of emails) {
     try {
       await processAdmin(email);
