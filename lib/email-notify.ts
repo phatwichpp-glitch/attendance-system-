@@ -16,7 +16,9 @@ export async function sendEmail(to: string, subject: string, html: string): Prom
   }
 
   const resend = new Resend(apiKey);
-  const from = process.env.NOTIFY_FROM_EMAIL || "onboarding@resend.dev";
+  const email = process.env.NOTIFY_FROM_EMAIL || "onboarding@resend.dev";
+  // If NOTIFY_FROM_NAME is set, format as "Name <email>"; otherwise just email.
+  const from = process.env.NOTIFY_FROM_NAME ? `${process.env.NOTIFY_FROM_NAME} <${email}>` : email;
 
   const { error } = await resend.emails.send({ from, to, subject, html });
   if (error) {
