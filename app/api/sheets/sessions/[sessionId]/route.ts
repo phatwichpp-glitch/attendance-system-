@@ -30,7 +30,7 @@ export async function PATCH(
         radius_m, late_after_min, otp_expire_min, late_enabled,
       });
       if (!result) return NextResponse.json({ error: "Session not found" }, { status: 404 });
-      registerSession(sessionId, spreadsheetId, session.access_token, result.otp);
+      await registerSession(sessionId, spreadsheetId, session.access_token, result.otp);
       await appendAuditLog(session.access_token, spreadsheetId, {
         action: "update", entity_type: "session", entity_id: sessionId,
         changed_from: { closed_at: current.closed_at, otp: current.otp },
@@ -53,7 +53,7 @@ export async function PATCH(
       const openedAt = new Date().toISOString();
       const ok = await updateSessionById(session.access_token, spreadsheetId, sessionId, { opened_at: openedAt });
       if (!ok) return NextResponse.json({ error: "Session not found" }, { status: 404 });
-      registerSession(sessionId, spreadsheetId, session.access_token, current.otp);
+      await registerSession(sessionId, spreadsheetId, session.access_token, current.otp);
       await appendAuditLog(session.access_token, spreadsheetId, {
         action: "update", entity_type: "session", entity_id: sessionId,
         changed_from: { opened_at: "" }, changed_to: { opened_at: openedAt },

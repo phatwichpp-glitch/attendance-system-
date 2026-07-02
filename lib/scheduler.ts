@@ -25,6 +25,7 @@ import {
   markAdminTokenOk,
 } from "@/lib/token-registry";
 import { getBangkokNow, isWithinOpenWindow } from "@/lib/schedule-time";
+import { getRedis } from "@/lib/redis";
 import { getWeekLabel } from "@/lib/week-utils";
 import { getPeriodLabel } from "@/lib/period-utils";
 import { notifyAdminOnOpen } from "@/lib/notify";
@@ -33,8 +34,40 @@ import { Course, Session, SemesterConfig } from "@/types";
 const TICK_INTERVAL_MS = 60_000;
 const OPEN_WINDOW_TOLERANCE_MIN = 2; // a tick can be up to 2 min "late" and still catch the open
 
+// Held (not released) until just under the tick interval, so duplicate triggers within
+// the same minute — two cron hits, or cron + a second instance — collapse into one run.
+const TICK_LOCK_KEY = "attendance:tick-lock";
+const TICK_LOCK_TTL_S = 55;
+
 declare global {
   var __attendanceSchedulerStarted: boolean | undefined;
+}
+
+let ticking = false;
+
+/**
+ * One guarded tick — shared by the in-process interval (persistent hosts) and
+ * GET /api/cron/tick (serverless, driven by an external cron).
+ */
+export async function runSchedulerTick(): Promise<{ ran: boolean; skipped?: string }> {
+  if (ticking) {
+    console.warn("[scheduler] previous tick still running, skipping this tick");
+    return { ran: false, skipped: "previous tick still running" };
+  }
+
+  const redis = getRedis();
+  if (redis) {
+    const acquired = await redis.set(TICK_LOCK_KEY, Date.now(), { nx: true, ex: TICK_LOCK_TTL_S });
+    if (!acquired) return { ran: false, skipped: "another instance ticked within the last minute" };
+  }
+
+  ticking = true;
+  try {
+    await runTick();
+    return { ran: true };
+  } finally {
+    ticking = false;
+  }
 }
 
 export function startScheduler(): void {
@@ -43,16 +76,8 @@ export function startScheduler(): void {
   if (globalThis.__attendanceSchedulerStarted) return;
   globalThis.__attendanceSchedulerStarted = true;
 
-  let ticking = false;
   setInterval(() => {
-    if (ticking) {
-      console.warn("[scheduler] previous tick still running, skipping this tick");
-      return;
-    }
-    ticking = true;
-    runTick()
-      .catch((e) => console.error("[scheduler] tick failed", e))
-      .finally(() => { ticking = false; });
+    runSchedulerTick().catch((e) => console.error("[scheduler] tick failed", e));
   }, TICK_INTERVAL_MS);
 
   console.log("[scheduler] started, interval =", TICK_INTERVAL_MS, "ms");

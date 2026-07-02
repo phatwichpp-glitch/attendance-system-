@@ -1,9 +1,17 @@
-// In-memory store for LINE account-linking codes. A teacher generates a short code in
+// Store for LINE account-linking codes. A teacher generates a short code in
 // /admin/notifications, sends it as a LINE message to the shared Official Account, and
 // the webhook (app/api/line/webhook/route.ts) exchanges it for their LINE userId.
-// Mirrors the in-process Map pattern in lib/session-store.ts — single-process only.
+//
+// Uses Upstash Redis when configured (required on Vercel — the webhook request rarely
+// lands on the instance that generated the code), falling back to an in-process Map
+// for local dev. Codes are single-use and expire after 15 minutes.
+
+import { getRedis } from "@/lib/redis";
 
 const CODE_TTL_MS = 15 * 60 * 1000; // 15 minutes
+const CODE_TTL_S = CODE_TTL_MS / 1000;
+
+const codeKey = (code: string) => `attendance:linkcode:${code}`;
 
 interface Entry {
   email: string;
@@ -26,18 +34,35 @@ function randomCode(): string {
   return code;
 }
 
-export function generateLinkCode(email: string): string {
-  evictExpired();
+export async function generateLinkCode(email: string): Promise<string> {
   const code = randomCode();
-  codes.set(code, { email: email.trim().toLowerCase(), expiresAt: Date.now() + CODE_TTL_MS });
+  const normalized = email.trim().toLowerCase();
+
+  const redis = getRedis();
+  if (redis) {
+    await redis.set(codeKey(code), normalized, { ex: CODE_TTL_S });
+    return code;
+  }
+
+  evictExpired();
+  codes.set(code, { email: normalized, expiresAt: Date.now() + CODE_TTL_MS });
   return code;
 }
 
 /** Single-use: consuming a code removes it. Returns the associated email, or undefined if unknown/expired. */
-export function consumeLinkCode(code: string): string | undefined {
+export async function consumeLinkCode(code: string): Promise<string | undefined> {
+  const normalized = code.trim().toUpperCase();
+
+  const redis = getRedis();
+  if (redis) {
+    // GETDEL: atomic read-and-remove, so a code can never be redeemed twice.
+    const email = await redis.getdel<string>(codeKey(normalized));
+    return email ?? undefined;
+  }
+
   evictExpired();
-  const entry = codes.get(code.trim().toUpperCase());
+  const entry = codes.get(normalized);
   if (!entry) return undefined;
-  codes.delete(code.trim().toUpperCase());
+  codes.delete(normalized);
   return entry.email;
 }

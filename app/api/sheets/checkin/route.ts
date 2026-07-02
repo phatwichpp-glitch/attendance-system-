@@ -79,11 +79,11 @@ export async function POST(req: NextRequest) {
     let accessToken: string | undefined;
 
     if (session_id) {
-      const stored = lookupSession(session_id);
+      const stored = await lookupSession(session_id);
       spreadsheetId = bodySpreadsheetId ?? stored?.spreadsheetId ?? "";
       accessToken = stored?.accessToken;
     } else if (otp) {
-      const byOtp = lookupByOTP(otp);
+      const byOtp = await lookupByOTP(otp);
       if (byOtp) {
         session_id = byOtp.sessionId;
         spreadsheetId = byOtp.spreadsheetId;

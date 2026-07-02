@@ -31,7 +31,7 @@ export async function GET(
 
     // Only register in session-store if the session is active (opened but not closed)
     if (sessionData.opened_at && !sessionData.closed_at) {
-      registerSession(sessionId, spreadsheetId, session.access_token, sessionData.otp);
+      await registerSession(sessionId, spreadsheetId, session.access_token, sessionData.otp);
     }
 
     // Fetch linked session if this is a two-check-in double period

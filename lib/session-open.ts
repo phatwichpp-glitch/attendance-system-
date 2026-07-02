@@ -165,7 +165,7 @@ export async function openSessionForCourse(
     }
 
     // Only register Part 1 in session-store (Part 2 opens later)
-    registerSession(part1Data.session_id, spreadsheetId, accessToken, part1Data.otp);
+    await registerSession(part1Data.session_id, spreadsheetId, accessToken, part1Data.otp);
 
     return { mode: "double", session: part1Data, linked_session: part2Data, spreadsheetId };
   }
@@ -201,7 +201,7 @@ export async function openSessionForCourse(
   await createSession(accessToken, spreadsheetId, sessionData);
 
   // Register in session-store
-  registerSession(sessionData.session_id, spreadsheetId, accessToken, sessionData.otp);
+  await registerSession(sessionData.session_id, spreadsheetId, accessToken, sessionData.otp);
 
   return { mode: "single", session: sessionData, spreadsheetId };
 }

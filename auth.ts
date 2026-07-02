@@ -40,9 +40,16 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         // Never blocks/breaks login — failures are only logged.
         const email = (token.email as string | undefined) ?? profile?.email ?? undefined;
         if (email && account.refresh_token) {
-          saveAdminRefreshToken(email, account.refresh_token).catch((e) => {
-            console.error("[auth] failed to persist refresh token", e);
-          });
+          saveAdminRefreshToken(email, account.refresh_token)
+            .then(() => console.log(`[auth] refresh token persisted for ${email} — scheduler can now act for this admin`))
+            .catch((e) => {
+              console.error("[auth] failed to persist refresh token", e);
+            });
+        } else {
+          // Without this, the scheduler silently never learns about the admin.
+          console.warn(
+            `[auth] sign-in did not register with the scheduler: ${!email ? "no email on token/profile" : "no refresh_token from Google"}`
+          );
         }
 
         return {

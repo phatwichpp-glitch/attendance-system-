@@ -7,6 +7,6 @@ export async function POST() {
   if (!session?.user?.email) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  const code = generateLinkCode(session.user.email);
+  const code = await generateLinkCode(session.user.email);
   return NextResponse.json({ code });
 }

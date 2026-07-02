@@ -1,20 +1,40 @@
-// In-memory store mapping sessionId → { spreadsheetId, accessToken, expiresAt }
-// Also indexes OTP → sessionId for manual check-in mode.
-// Populated when a teacher opens a session. Works for single-process deployments.
+// Store mapping sessionId → { spreadsheetId, accessToken } so the public
+// (unauthenticated) check-in endpoint can write to the teacher's spreadsheet.
+// Also indexes OTP → sessionId for manual check-in mode. Populated when a teacher
+// opens a session (and refreshed by the admin browser's polling).
 //
-// NOTE: This is intentionally in-process. Multi-instance deployments (e.g. Vercel
-// serverless) must replace this with a shared store (Redis / KV). Sessions expire
-// after SESSION_TTL_MS to prevent unbounded memory growth and stale token retention.
+// Two backends behind the same async API:
+//   - Upstash Redis when configured (required on Vercel — serverless instances
+//     don't share memory, so the instance that serves a student's check-in is
+//     rarely the one where the session was registered). Entries carry a TTL and
+//     the access token is sealed (AES-256-GCM) before leaving the process.
+//   - In-process Map otherwise (local dev, single-process hosts).
+//
+// Entries expire after SESSION_TTL to prevent stale token retention.
 
-const SESSION_TTL_MS = 4 * 60 * 60 * 1000; // 4 hours
+import { getRedis } from "@/lib/redis";
+import { sealSecret, openSecret } from "@/lib/secret-box";
 
-interface Entry {
+const SESSION_TTL_S = 4 * 60 * 60; // 4 hours
+const SESSION_TTL_MS = SESSION_TTL_S * 1000;
+
+const sessionKey = (sessionId: string) => `attendance:session:${sessionId}`;
+const otpKey = (otp: string) => `attendance:otp:${otp}`;
+
+interface RedisEntry {
+  spreadsheetId: string;
+  sealedAccessToken: string;
+}
+
+// ─── In-memory fallback ───────────────────────────────────────────────────────
+
+interface MemEntry {
   spreadsheetId: string;
   accessToken: string;
   expiresAt: number;
 }
 
-const store = new Map<string, Entry>();
+const store = new Map<string, MemEntry>();
 const otpIndex = new Map<string, string>(); // OTP → sessionId
 
 function evictExpired(): void {
@@ -31,20 +51,41 @@ function evictExpired(): void {
   }
 }
 
-export function registerSession(
+// ─── Public API ───────────────────────────────────────────────────────────────
+
+export async function registerSession(
   sessionId: string,
   spreadsheetId: string,
   accessToken: string,
   otp?: string
-): void {
+): Promise<void> {
+  const redis = getRedis();
+  if (redis) {
+    const entry: RedisEntry = { spreadsheetId, sealedAccessToken: sealSecret(accessToken) };
+    await redis.set(sessionKey(sessionId), entry, { ex: SESSION_TTL_S });
+    if (otp) await redis.set(otpKey(otp), sessionId, { ex: SESSION_TTL_S });
+    return;
+  }
+
   evictExpired();
   store.set(sessionId, { spreadsheetId, accessToken, expiresAt: Date.now() + SESSION_TTL_MS });
   if (otp) otpIndex.set(otp, sessionId);
 }
 
-export function lookupSession(
+export async function lookupSession(
   sessionId: string
-): { spreadsheetId: string; accessToken: string } | undefined {
+): Promise<{ spreadsheetId: string; accessToken: string } | undefined> {
+  const redis = getRedis();
+  if (redis) {
+    const entry = await redis.get<RedisEntry>(sessionKey(sessionId));
+    if (!entry) return undefined;
+    try {
+      return { spreadsheetId: entry.spreadsheetId, accessToken: openSecret(entry.sealedAccessToken) };
+    } catch {
+      return undefined; // NEXTAUTH_SECRET changed since the entry was written
+    }
+  }
+
   const entry = store.get(sessionId);
   if (!entry) return undefined;
   if (entry.expiresAt <= Date.now()) {
@@ -54,12 +95,21 @@ export function lookupSession(
   return { spreadsheetId: entry.spreadsheetId, accessToken: entry.accessToken };
 }
 
-export function lookupByOTP(
+export async function lookupByOTP(
   otp: string
-): { sessionId: string; spreadsheetId: string; accessToken: string } | undefined {
+): Promise<{ sessionId: string; spreadsheetId: string; accessToken: string } | undefined> {
+  const redis = getRedis();
+  if (redis) {
+    const sessionId = await redis.get<string>(otpKey(otp));
+    if (!sessionId) return undefined;
+    const data = await lookupSession(sessionId);
+    if (!data) return undefined;
+    return { sessionId, ...data };
+  }
+
   const sessionId = otpIndex.get(otp);
   if (!sessionId) return undefined;
-  const data = lookupSession(sessionId);
+  const data = await lookupSession(sessionId);
   if (!data) return undefined;
   return { sessionId, ...data };
 }

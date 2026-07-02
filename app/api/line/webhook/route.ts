@@ -45,7 +45,7 @@ export async function POST(req: NextRequest) {
       if (event.type !== "message" || event.message?.type !== "text" || !event.source?.userId) continue;
 
       const code = event.message.text?.trim() ?? "";
-      const email = consumeLinkCode(code);
+      const email = await consumeLinkCode(code);
 
       if (email) {
         await linkLineUserId(email, event.source.userId);

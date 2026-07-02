@@ -1,17 +1,27 @@
-// Local encrypted store for admin Google refresh_tokens, persisted server-side so the
-// auto-open scheduler (lib/scheduler.ts) can mint fresh access tokens with no browser
-// session in flight. Keyed by admin email — its keys also double as the registry of
-// "which admins the scheduler knows about", since there's no other way to discover
-// admins across separate per-user spreadsheets.
+// Store for admin Google refresh_tokens, persisted server-side so the auto-open
+// scheduler (lib/scheduler.ts) can mint fresh access tokens with no browser session
+// in flight. Keyed by admin email — its keys also double as the registry of "which
+// admins the scheduler knows about", since there's no other way to discover admins
+// across separate per-user spreadsheets.
 //
-// Encrypted at rest (AES-256-GCM) with a key derived from NEXTAUTH_SECRET (no new
-// secret). Writes are serialized through an in-process mutex and go through a
-// temp-file + rename so a scheduler tick and a browser login can never race into a
-// corrupt file.
+// Two backends behind the same async API:
+//   - Upstash Redis (hash `attendance:admins`, field = email, value = entry JSON)
+//     when UPSTASH_REDIS_REST_URL/TOKEN are set — required on Vercel, where the
+//     filesystem is read-only/ephemeral and instances don't share memory.
+//   - Local JSON file (data/admin-tokens.json) otherwise, for local dev with zero
+//     setup. Writes are serialized through an in-process mutex and go through a
+//     temp-file + rename so a scheduler tick and a browser login can never race
+//     into a corrupt file.
+//
+// In both backends the refresh token itself is encrypted at rest (AES-256-GCM)
+// with a key derived from NEXTAUTH_SECRET (no new secret).
 
 import { promises as fs } from "fs";
 import path from "path";
-import { randomBytes, createCipheriv, createDecipheriv, scryptSync } from "crypto";
+import { sealSecret, openSecret } from "@/lib/secret-box";
+import { getRedis } from "@/lib/redis";
+
+const REDIS_KEY = "attendance:admins";
 
 const DATA_DIR = path.join(process.cwd(), "data");
 const FILE_PATH = path.join(DATA_DIR, "admin-tokens.json");
@@ -44,26 +54,11 @@ interface RegistryFile {
   admins: Record<string, AdminEntry>;
 }
 
-function getKey(): Buffer {
-  const secret = process.env.NEXTAUTH_SECRET;
-  if (!secret) throw new Error("NEXTAUTH_SECRET is required to encrypt the token registry");
-  return scryptSync(secret, "attendance-token-registry", 32);
+function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase();
 }
 
-function encrypt(plain: string): string {
-  const iv = randomBytes(12);
-  const cipher = createCipheriv("aes-256-gcm", getKey(), iv);
-  const ciphertext = Buffer.concat([cipher.update(plain, "utf8"), cipher.final()]);
-  const authTag = cipher.getAuthTag();
-  return `${iv.toString("base64")}:${authTag.toString("base64")}:${ciphertext.toString("base64")}`;
-}
-
-function decrypt(payload: string): string {
-  const [ivB64, tagB64, dataB64] = payload.split(":");
-  const decipher = createDecipheriv("aes-256-gcm", getKey(), Buffer.from(ivB64, "base64"));
-  decipher.setAuthTag(Buffer.from(tagB64, "base64"));
-  return Buffer.concat([decipher.update(Buffer.from(dataB64, "base64")), decipher.final()]).toString("utf8");
-}
+// ─── File backend (local dev fallback) ────────────────────────────────────────
 
 async function readFile(): Promise<RegistryFile> {
   try {
@@ -93,86 +88,111 @@ function withLock<T>(fn: () => Promise<T>): Promise<T> {
   return result;
 }
 
-function normalizeEmail(email: string): string {
-  return email.trim().toLowerCase();
+// ─── Backend-dispatching entry access ─────────────────────────────────────────
+
+async function loadEntry(emailKey: string): Promise<AdminEntry | null> {
+  const redis = getRedis();
+  if (redis) {
+    return (await redis.hget<AdminEntry>(REDIS_KEY, emailKey)) ?? null;
+  }
+  const data = await readFile();
+  return data.admins[emailKey] ?? null;
 }
 
-export async function saveAdminRefreshToken(email: string, refreshToken: string): Promise<void> {
-  const key = normalizeEmail(email);
+/**
+ * Read-modify-write for one admin's entry. `mutate` returns the entry to store,
+ * or null to leave the registry unchanged.
+ * File backend: whole cycle runs inside the process mutex. Redis backend: the write
+ * is field-scoped (HSET on this admin only), so concurrent updates to *different*
+ * admins never collide; same-admin races are last-write-wins, same as before.
+ */
+async function updateEntry(
+  emailKey: string,
+  mutate: (existing: AdminEntry | null) => AdminEntry | null
+): Promise<void> {
+  const redis = getRedis();
+  if (redis) {
+    const next = mutate((await redis.hget<AdminEntry>(REDIS_KEY, emailKey)) ?? null);
+    if (next) await redis.hset(REDIS_KEY, { [emailKey]: next });
+    return;
+  }
   await withLock(async () => {
     const data = await readFile();
-    const existing = data.admins[key];
-    data.admins[key] = {
-      // Preserve notification prefs across token refreshes — this runs roughly
-      // hourly while the admin is active, so it must never clobber them.
-      email_notify: existing?.email_notify ?? true,
-      notify_email: existing?.notify_email ?? null,
-      line_notify: existing?.line_notify ?? false,
-      line_user_id: existing?.line_user_id ?? null,
-      encrypted_refresh_token: encrypt(refreshToken),
-      updated_at: new Date().toISOString(),
-      status: "ok",
-      last_error: null,
-      last_error_at: null,
-    };
+    const next = mutate(data.admins[emailKey] ?? null);
+    if (!next) return;
+    data.admins[emailKey] = next;
     await writeFile(data);
   });
 }
 
+// ─── Public API (unchanged signatures) ────────────────────────────────────────
+
+export async function saveAdminRefreshToken(email: string, refreshToken: string): Promise<void> {
+  await updateEntry(normalizeEmail(email), (existing) => ({
+    // Preserve notification prefs across token refreshes — this runs roughly
+    // hourly while the admin is active, so it must never clobber them.
+    email_notify: existing?.email_notify ?? true,
+    notify_email: existing?.notify_email ?? null,
+    line_notify: existing?.line_notify ?? false,
+    line_user_id: existing?.line_user_id ?? null,
+    encrypted_refresh_token: sealSecret(refreshToken),
+    updated_at: new Date().toISOString(),
+    status: "ok",
+    last_error: null,
+    last_error_at: null,
+  }));
+}
+
 export async function getAdminRefreshToken(email: string): Promise<string | null> {
-  const data = await readFile();
-  const entry = data.admins[normalizeEmail(email)];
+  const entry = await loadEntry(normalizeEmail(email));
   if (!entry) return null;
   try {
-    return decrypt(entry.encrypted_refresh_token);
+    return openSecret(entry.encrypted_refresh_token);
   } catch {
     return null;
   }
 }
 
 export async function listKnownAdminEmails(): Promise<string[]> {
+  const redis = getRedis();
+  if (redis) {
+    return await redis.hkeys(REDIS_KEY);
+  }
   const data = await readFile();
   return Object.keys(data.admins);
 }
 
 export async function markAdminTokenInvalid(email: string, errorMessage: string): Promise<void> {
-  const key = normalizeEmail(email);
-  await withLock(async () => {
-    const data = await readFile();
-    const entry = data.admins[key];
-    if (!entry) return;
+  await updateEntry(normalizeEmail(email), (entry) => {
+    if (!entry) return null;
     entry.status = "invalid";
     entry.last_error = errorMessage;
     entry.last_error_at = new Date().toISOString();
-    await writeFile(data);
+    return entry;
   });
 }
 
 export async function markAdminTokenOk(email: string): Promise<void> {
-  const key = normalizeEmail(email);
-  await withLock(async () => {
-    const data = await readFile();
-    const entry = data.admins[key];
-    if (!entry || entry.status === "ok") return;
+  await updateEntry(normalizeEmail(email), (entry) => {
+    if (!entry || entry.status === "ok") return null;
     entry.status = "ok";
     entry.last_error = null;
     entry.last_error_at = null;
-    await writeFile(data);
+    return entry;
   });
 }
 
 export async function getAdminTokenStatus(email: string): Promise<TokenStatus | "unknown"> {
-  const data = await readFile();
-  const entry = data.admins[normalizeEmail(email)];
+  const entry = await loadEntry(normalizeEmail(email));
   return entry?.status ?? "unknown";
 }
 
 export async function getNotificationPrefs(email: string): Promise<NotificationPrefs> {
-  const data = await readFile();
-  const entry = data.admins[normalizeEmail(email)];
+  const key = normalizeEmail(email);
+  const entry = await loadEntry(key);
   return {
     email_notify: entry?.email_notify ?? true,
-    notify_email: entry?.notify_email || normalizeEmail(email),
+    notify_email: entry?.notify_email || key,
     line_notify: entry?.line_notify ?? false,
     line_linked: !!entry?.line_user_id,
   };
@@ -183,10 +203,8 @@ export async function setNotificationPrefs(
   prefs: { email_notify?: boolean; notify_email?: string | null; line_notify?: boolean }
 ): Promise<void> {
   const key = normalizeEmail(email);
-  await withLock(async () => {
-    const data = await readFile();
-    const entry = data.admins[key];
-    if (!entry) return; // admin must have logged in at least once (registers via saveAdminRefreshToken)
+  await updateEntry(key, (entry) => {
+    if (!entry) return null; // admin must have logged in at least once (registers via saveAdminRefreshToken)
     if (prefs.email_notify !== undefined) entry.email_notify = prefs.email_notify;
     if (prefs.notify_email !== undefined) {
       const trimmed = prefs.notify_email?.trim();
@@ -195,31 +213,25 @@ export async function setNotificationPrefs(
       entry.notify_email = trimmed && normalizeEmail(trimmed) !== key ? trimmed : null;
     }
     if (prefs.line_notify !== undefined) entry.line_notify = prefs.line_notify && !!entry.line_user_id;
-    await writeFile(data);
+    return entry;
   });
 }
 
 export async function linkLineUserId(email: string, lineUserId: string): Promise<void> {
-  const key = normalizeEmail(email);
-  await withLock(async () => {
-    const data = await readFile();
-    const entry = data.admins[key];
-    if (!entry) return;
+  await updateEntry(normalizeEmail(email), (entry) => {
+    if (!entry) return null;
     entry.line_user_id = lineUserId;
     entry.line_notify = true;
-    await writeFile(data);
+    return entry;
   });
 }
 
 export async function unlinkLine(email: string): Promise<void> {
-  const key = normalizeEmail(email);
-  await withLock(async () => {
-    const data = await readFile();
-    const entry = data.admins[key];
-    if (!entry) return;
+  await updateEntry(normalizeEmail(email), (entry) => {
+    if (!entry) return null;
     entry.line_user_id = null;
     entry.line_notify = false;
-    await writeFile(data);
+    return entry;
   });
 }
 
@@ -227,10 +239,10 @@ export async function unlinkLine(email: string): Promise<void> {
 export async function getNotifyTargets(
   email: string
 ): Promise<{ notify_email: string | null; line_user_id: string | null }> {
-  const data = await readFile();
-  const entry = data.admins[normalizeEmail(email)];
+  const key = normalizeEmail(email);
+  const entry = await loadEntry(key);
   return {
-    notify_email: entry?.email_notify ? (entry.notify_email || normalizeEmail(email)) : null,
+    notify_email: entry?.email_notify ? (entry.notify_email || key) : null,
     line_user_id: entry?.line_notify ? entry.line_user_id ?? null : null,
   };
 }
