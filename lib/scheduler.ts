@@ -192,17 +192,27 @@ async function processCourseOpen(
     if (!td.start_time) continue; // can't schedule without a start time
     if (!isWithinOpenWindow(hhmm, td.start_time, OPEN_WINDOW_TOLERANCE_MIN)) continue;
 
-    // Idempotency: never create a second row for the same course+section+date+period,
-    // no matter how many ticks land inside the open window.
-    const alreadyExists = allSessions.some((s) =>
+    // Idempotency — but scoped to this occurrence, not the whole day, so teachers can
+    // re-run a class (or a test) later the same day. Skip only when a same-period session
+    //   (a) is still open right now (e.g. manually opened just before the scheduled time
+    //       — don't stack a duplicate on top of a running class), or
+    //   (b) was opened at/after this occurrence's scheduled start minus tolerance
+    //       (covers both ticks that land inside the same open window).
+    // Bangkok is UTC+7 year-round, so the fixed offset is safe.
+    const windowStartMs =
+      new Date(`${dateStr}T${td.start_time}:00+07:00`).getTime() -
+      OPEN_WINDOW_TOLERANCE_MIN * 60_000;
+    const blocked = allSessions.some((s) =>
       s.course_id === course.course_id &&
       s.section === course.section &&
       s.date === dateStr &&
-      s.period === td.period
+      s.period === td.period &&
+      !!s.opened_at &&
+      (!s.closed_at || new Date(s.opened_at).getTime() >= windowStartMs)
     );
-    if (alreadyExists) {
+    if (blocked) {
       console.log(
-        `[scheduler] skip ${course.course_id}/${course.section} ${dateStr} period ${td.period} — a session for this course+date+period already exists`
+        `[scheduler] skip ${course.course_id}/${course.section} ${dateStr} period ${td.period} — a same-period session is still open or was already opened for this scheduled time`
       );
       continue;
     }
