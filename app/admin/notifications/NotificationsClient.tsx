@@ -85,8 +85,13 @@ export default function NotificationsClient() {
       const d = await res.json();
       if (!res.ok) throw new Error(d.error || "failed");
       setTestResult({ ok: true, message: `ส่งอีเมลทดสอบไปที่ ${d.sent_to} แล้ว — ลองเช็คกล่องจดหมาย` });
-    } catch {
-      setTestResult({ ok: false, message: "ส่งอีเมลทดสอบไม่สำเร็จ — ตรวจสอบ RESEND_API_KEY อีกครั้ง" });
+    } catch (e) {
+      setTestResult({
+        ok: false,
+        message: e instanceof Error && e.message !== "failed"
+          ? e.message
+          : "ส่งอีเมลทดสอบไม่สำเร็จ — ตรวจสอบ RESEND_API_KEY อีกครั้ง",
+      });
     } finally {
       setTestingEmail(false);
     }

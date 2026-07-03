@@ -24,6 +24,15 @@ export async function POST() {
     return NextResponse.json({ success: true, sent_to: prefs.notify_email });
   } catch (err) {
     console.error("[test-email]", err);
-    return NextResponse.json({ error: "Failed to send test email" }, { status: 500 });
+    const detail = err instanceof Error ? err.message : "";
+    // Resend without a verified domain can only deliver to the Resend account
+    // owner's own address — the most common "works for me, fails for colleagues"
+    // cause, so name it explicitly instead of a generic failure.
+    const testingMode = /testing emails|verify a domain|own email/i.test(detail);
+    return NextResponse.json({
+      error: testingMode
+        ? "Resend ยังอยู่ในโหมดทดสอบ — ส่งได้เฉพาะอีเมลของเจ้าของบัญชี Resend เท่านั้น ต้อง verify domain ที่ resend.com/domains แล้วตั้ง NOTIFY_FROM_EMAIL เป็นอีเมลบน domain นั้น (หรือใช้แจ้งเตือนทาง LINE แทน)"
+        : `ส่งไม่สำเร็จ: ${detail || "unknown error"}`,
+    }, { status: 500 });
   }
 }
