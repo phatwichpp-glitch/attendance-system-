@@ -4,8 +4,15 @@
 
 import { Resend } from "resend";
 
+// Turned off at the user's request (2026-07-03): without a verified custom
+// domain, Resend can only deliver to the account owner's own address, and
+// buying a domain just to unlock email wasn't worth it. This is the single
+// switch — flip back to `!!process.env.RESEND_API_KEY` if a domain gets
+// sorted out later. LINE notifications are unaffected and keep working.
+const EMAIL_DISABLED = true;
+
 export function isEmailConfigured(): boolean {
-  return !!process.env.RESEND_API_KEY;
+  return !EMAIL_DISABLED && !!process.env.RESEND_API_KEY;
 }
 
 export async function sendEmail(to: string, subject: string, html: string): Promise<void> {

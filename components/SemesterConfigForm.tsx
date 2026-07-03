@@ -347,7 +347,7 @@ export default function SemesterConfigForm({
               <p className="font-medium" style={{ color: "#374151" }}>ใช้คู่กับ auto-open:</p>
               <p style={{ color: "#5F5E5A" }}>
                 <Link href="/admin/notifications" className="underline" style={{ color: "#185FA5" }}>
-                  ตั้งค่าแจ้งเตือน Email / LINE
+                  ตั้งค่าแจ้งเตือนทาง LINE
                 </Link>
                 {" "}— รับ OTP และลิงก์เช็คชื่อทันทีที่ระบบเปิดคาบให้
               </p>
