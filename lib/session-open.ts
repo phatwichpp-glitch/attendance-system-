@@ -8,6 +8,7 @@ import { generateOTP } from "@/lib/otp";
 import { Session } from "@/types";
 import { getWeekLabel } from "@/lib/week-utils";
 import { calcPeriodEnd } from "@/lib/period-utils";
+import { getBangkokNow } from "@/lib/schedule-time";
 
 export interface OpenSessionInput {
   course_id: string;
@@ -58,7 +59,9 @@ export async function openSessionForCourse(
     check_in_mode,
   } = input;
 
-  const today = bodyDate ?? new Date().toISOString().split("T")[0];
+  // Server clock may be UTC (Vercel) — fall back to the Bangkok-local date,
+  // not toISOString(), which is a day behind Thailand until 07:00.
+  const today = bodyDate ?? getBangkokNow().dateStr;
 
   let resolvedWeekNumber: number | undefined = week_number;
   let resolvedWeekLabel: string | undefined = week_label;

@@ -1,12 +1,16 @@
 "use client";
 import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import Spinner from "@/components/Spinner";
 import { IconList } from "@/components/icons";
-import { Course } from "@/types";
+import { Course, SemesterConfig, TeachingDay } from "@/types";
 import { CourseStats } from "@/lib/sheets";
+import { PERIOD_STARTS } from "@/lib/period-utils";
+import { todayLocalISO } from "@/lib/local-date";
 
 type CourseStatsMap = Record<string, CourseStats>;
+type ConfigMap = Record<string, SemesterConfig>;
 
 async function fetchWithRetry(url: string, opts?: RequestInit, retries = 3): Promise<Response> {
   try {
@@ -44,8 +48,12 @@ function MenuItem({
 }
 
 export default function CourseList() {
+  const router = useRouter();
   const [courses, setCourses] = useState<Course[]>([]);
   const [stats, setStats] = useState<CourseStatsMap>({});
+  const [configs, setConfigs] = useState<ConfigMap>({});
+  const [quickOpening, setQuickOpening] = useState<string | null>(null);
+  const [quickError, setQuickError] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [menuOpen, setMenuOpen] = useState<string | null>(null);
@@ -64,7 +72,7 @@ export default function CourseList() {
     fetchWithRetry("/api/sheets/init", { method: "POST" })
       .then(() => fetchWithRetry("/api/sheets/courses"))
       .then((r) => r.json())
-      .then((d) => { setCourses(d.courses ?? []); setStats(d.stats ?? {}); })
+      .then((d) => { setCourses(d.courses ?? []); setStats(d.stats ?? {}); setConfigs(d.configs ?? {}); })
       .catch(() => setError("โหลดข้อมูลไม่สำเร็จ"))
       .finally(() => setLoading(false));
   }, []);
@@ -78,6 +86,77 @@ export default function CourseList() {
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, [menuOpen]);
+
+  // ── Today's schedule + quick open ─────────────────────────────────────────
+  const todayDow = new Date().getDay();
+
+  const todayEntryFor = (key: string): TeachingDay | null =>
+    configs[key]?.teaching_schedule.find((t) => t.day === todayDow) ?? null;
+
+  /** Quick open needs a pinned classroom location + today being a teaching day. */
+  const canQuickOpen = (key: string): boolean => {
+    const cfg = configs[key];
+    return !!cfg && !!todayEntryFor(key) && cfg.default_lat != null && cfg.default_lng != null;
+  };
+
+  /** One-tap open using the semester config's defaults and pinned GPS location —
+   *  same values the auto-open scheduler would use, no form and no GPS wait. */
+  const quickOpen = async (c: Course) => {
+    const key = `${c.course_id}__${c.section}`;
+    const cfg = configs[key];
+    const td = todayEntryFor(key);
+    if (!cfg || !td || cfg.default_lat == null || cfg.default_lng == null) return;
+    setQuickOpening(key);
+    setQuickError("");
+    try {
+      const pc = td.period_count ?? 1;
+      const res = await fetch("/api/sheets/sessions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          course_id: c.course_id,
+          section: c.section,
+          period: td.period,
+          lat: cfg.default_lat,
+          lng: cfg.default_lng,
+          radius_m: cfg.default_gps_radius,
+          otp_expire_min: cfg.default_otp_min,
+          late_after_min: cfg.default_late_min,
+          late_enabled: true,
+          date: todayLocalISO(),
+          is_past_session: false,
+          semester_start: cfg.semester_start,
+          teaching_days: cfg.teaching_schedule.map((t) => t.day),
+          period_count: pc,
+          check_in_mode: pc >= 2 ? (td.check_in_mode ?? "single") : undefined,
+        }),
+      });
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      localStorage.setItem("active_session", JSON.stringify({
+        session_id: data.session.session_id,
+        course_id: data.session.course_id,
+        course_title: c.title,
+        section: data.session.section,
+        period: data.session.period,
+        opened_at: new Date().toISOString(),
+      }));
+      router.push(`/admin/session/${data.session.session_id}`);
+    } catch {
+      setQuickError("เปิดคาบไม่สำเร็จ — ลองเปิดผ่านหน้า Open Session แทน");
+      setQuickOpening(null);
+    }
+  };
+
+  const startTimeOf = (td: TeachingDay) => td.start_time ?? PERIOD_STARTS[td.period] ?? "";
+
+  const todayItems = courses
+    .flatMap((c) => {
+      const key = `${c.course_id}__${c.section}`;
+      const td = todayEntryFor(key);
+      return td ? [{ c, key, td, cfg: configs[key] }] : [];
+    })
+    .sort((a, b) => startTimeOf(a.td).localeCompare(startTimeOf(b.td)));
 
   const openEdit = (c: Course) => {
     setEditTarget(c);
@@ -159,6 +238,70 @@ export default function CourseList() {
 
   return (
     <>
+      {/* Today's teaching schedule — the first thing a teacher checks each morning */}
+      {todayItems.length > 0 && (
+        <div className="card">
+          <p className="text-[13px] font-semibold mb-1" style={{ color: "#185FA5" }}>
+            คาบสอนวันนี้ · {new Date().toLocaleDateString("th-TH", { weekday: "long", day: "numeric", month: "long" })}
+          </p>
+          <div className="divide-y divide-gray-50">
+            {todayItems.map(({ c, key, td, cfg }) => {
+              const st = stats[key];
+              const start = startTimeOf(td);
+              const end = td.end_time ?? "";
+              return (
+                <div key={key} className="flex items-center gap-3 py-2.5 flex-wrap">
+                  <span className="font-mono text-[13px] w-24 shrink-0" style={{ color: "#5F5E5A" }}>
+                    {start}{end && `–${end}`}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[13px] font-medium text-gray-900 truncate">{c.title}</p>
+                    <p className="text-[11px] text-gray-400">
+                      {c.course_id} · Sec.{c.section}
+                      {cfg.auto_open_enabled && !st?.open_session_id && (
+                        <span className="ml-2" style={{ color: "#3B6D11" }}>● เปิดอัตโนมัติเวลา {start}</span>
+                      )}
+                    </p>
+                  </div>
+                  {st?.open_session_id ? (
+                    <Link
+                      href={`/admin/session/${st.open_session_id}`}
+                      className="text-[12px] px-3 rounded-lg font-medium flex items-center gap-1.5 shrink-0"
+                      style={{ minHeight: 32, backgroundColor: "#DCFCE7", color: "#166534", border: "1px solid #86EFAC" }}
+                    >
+                      <span className="inline-block w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+                      กำลังเปิด — เข้าดู
+                    </Link>
+                  ) : canQuickOpen(key) ? (
+                    <button
+                      onClick={() => quickOpen(c)}
+                      disabled={quickOpening !== null}
+                      className="btn-primary text-[12px] px-3 shrink-0"
+                      style={{ minHeight: 32 }}
+                    >
+                      {quickOpening === key ? <Spinner className="h-3.5 w-3.5" /> : "เปิดคาบทันที"}
+                    </button>
+                  ) : (
+                    <Link
+                      href={`/admin/setup?course_id=${c.course_id}&section=${c.section}`}
+                      className="btn-outline text-[12px] px-3 shrink-0"
+                      style={{ minHeight: 32 }}
+                    >
+                      เปิดคาบ
+                    </Link>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          {quickError && (
+            <p className="text-[12px] mt-2 rounded-lg px-3 py-2" style={{ backgroundColor: "#FCEBEB", color: "#A32D2D" }}>
+              {quickError}
+            </p>
+          )}
+        </div>
+      )}
+
       <div className="grid gap-3 sm:grid-cols-2">
         {courses.map((c) => {
           const key = `${c.course_id}__${c.section}`;
@@ -230,6 +373,16 @@ export default function CourseList() {
                         <span className="inline-block w-2 h-2 rounded-full bg-green-500 animate-pulse" />
                         View Active Session
                       </Link>
+                    ) : canQuickOpen(key) ? (
+                      <button
+                        onClick={() => quickOpen(c)}
+                        disabled={quickOpening !== null}
+                        className="btn-primary text-[13px] px-3"
+                        style={{ minHeight: 36 }}
+                        title="เปิดด้วยค่าจาก Semester Settings + หมุดห้องเรียนที่ปักไว้ — ไม่ต้องรอ GPS"
+                      >
+                        {quickOpening === key ? <Spinner className="h-4 w-4" /> : "เปิดคาบทันที"}
+                      </button>
                     ) : (
                       <Link
                         href={`/admin/setup?course_id=${c.course_id}&section=${c.section}`}
@@ -267,7 +420,7 @@ export default function CourseList() {
                             </>
                           )}
                           <MenuItem
-                            href={`/admin/summary/${c.course_id}`}
+                            href={`/admin/summary/${c.course_id}?section=${encodeURIComponent(c.section)}`}
                             onClick={() => setMenuOpen(null)}
                           >
                             View Summary
@@ -310,9 +463,17 @@ export default function CourseList() {
                     >
                       Open Another Session
                     </Link>
+                  ) : canQuickOpen(key) ? (
+                    <Link
+                      href={`/admin/setup?course_id=${c.course_id}&section=${c.section}`}
+                      className="btn-outline text-[13px] px-3 w-full text-center"
+                      style={{ minHeight: 36 }}
+                    >
+                      เปิดแบบกำหนดเอง
+                    </Link>
                   ) : (
                     <Link
-                      href={`/admin/summary/${c.course_id}`}
+                      href={`/admin/summary/${c.course_id}?section=${encodeURIComponent(c.section)}`}
                       className="btn-outline text-[13px] px-3 w-full text-center"
                       style={{ minHeight: 36 }}
                     >

@@ -117,6 +117,8 @@ export default function HelpModal({ onClose }: { onClose: () => void }) {
               </FeatureGroup>
 
               <FeatureGroup icon="🔓" title="เปิดคาบเรียน (Open Session)" color="#185FA5">
+                <Li>แถบ &quot;คาบสอนวันนี้&quot; บนหน้า Courses — เห็นทุกคาบของวันนั้นเรียงตามเวลา พร้อมสถานะ (กำลังเปิด / เปิดอัตโนมัติกี่โมง)</Li>
+                <Li>ปุ่ม &quot;เปิดคาบทันที&quot; — เปิดในคลิกเดียวด้วยค่าจาก Semester Settings + หมุดห้องเรียนที่ปักไว้ ไม่ต้องกรอกฟอร์มหรือรอ GPS (ขึ้นเฉพาะวันที่มีสอนและปักหมุดแล้ว)</Li>
                 <Li>กรอกเวลาเรียนจริง (HH:MM) — auto-fill จาก semester config ถ้ามี</Li>
                 <Li>Single period (90 นาที) หรือ Double period (180 นาที)</Li>
                 <Li>Double period มี 2 โหมด: OTP เดียว หรือ แยก OTP ต่อคาบ</Li>
@@ -135,6 +137,7 @@ export default function HelpModal({ onClose }: { onClose: () => void }) {
 
               <FeatureGroup icon="📡" title="ระหว่างคาบ (Session Dashboard)" color="#185FA5">
                 <Li>OTP 6 หลัก — แสดง countdown MM:SS แบบ real-time บนหน้าจอ</Li>
+                <Li>ระหว่างคาบเปิด ช่องสถิติแสดง <strong>Pending (ยังไม่เช็คชื่อ)</strong> แทน Absent — กดป้าย &quot;ยังไม่เช็คชื่อ&quot; ในแถบ Issues เพื่อกรองรายชื่อคนที่ยังไม่เช็ค ใช้ขานชื่อท้ายคาบได้</Li>
                 <Li>OTP หมดอายุ → session ปิดอัตโนมัติ ไม่ต้องกลับมากด</Li>
                 <Li>Re-Generate OTP — เปิด session ที่ปิดไปแล้วได้ทุกเมื่อ (ยกเว้น session แบบบันทึกย้อนหลัง) พร้อมปรับ GPS Radius / OTP Duration / Late threshold / เปิดปิดสถานะสาย ก่อนออกรหัสใหม่ — มีเตือนถ้า session นั้นไม่ใช่ของวันนี้</Li>
                 <Li>Projector View — แสดงเต็มจอ พร้อม QR code และ countdown</Li>
@@ -419,6 +422,12 @@ export default function HelpModal({ onClose }: { onClose: () => void }) {
               </FAQ>
               <FAQ q="เผลอกด Open Session ซ้ำสำหรับวิชาเดิม?">
                 ระบบจะแสดงปุ่ม <em>View Active Session</em> แทน — กดเพื่อกลับไปคาบที่เปิดอยู่
+              </FAQ>
+              <FAQ q="ปุ่ม &quot;เปิดคาบทันที&quot; ต่างจาก Open Session ปกติยังไง?">
+                <strong>เปิดคาบทันที</strong> ใช้ค่าทั้งหมดจาก Semester Settings (เวลาเรียน รัศมี GPS OTP)
+                และตำแหน่งจากหมุดห้องเรียนที่ปักไว้ — คลิกเดียวจบ ไม่ต้องรอ GPS ล็อก จะขึ้นเฉพาะวันที่มีสอนตาม
+                ตารางและปักหมุดแล้ว ส่วน <strong>เปิดแบบกำหนดเอง / Open Session</strong> เข้าฟอร์มเต็ม
+                ใช้ตอนอยากเปลี่ยนเวลา ตำแหน่ง หรือบันทึกย้อนหลัง
               </FAQ>
               <FAQ q="ต้องการลบวิชาทั้งหมดและ import ใหม่?">
                 กดเมนู ⋯ บนการ์ดวิชา แล้วเลือก <em>Delete Course</em> — ต้องยืนยันด้วยรหัสวิชา

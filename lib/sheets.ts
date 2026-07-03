@@ -162,6 +162,23 @@ export async function getSemesterConfig(
   return rowToSemesterConfig(row);
 }
 
+/**
+ * All semester configs in one sheet read — used by the courses page to render
+ * today's teaching schedule and quick-open without a request per course.
+ */
+export async function getAllSemesterConfigs(
+  accessToken: string,
+  spreadsheetId: string
+): Promise<SemesterConfig[]> {
+  await ensureSemesterConfigSheet(accessToken, spreadsheetId);
+  const sheets = getSheetsClient(accessToken);
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: "semester_config!A2:N",
+  });
+  return (res.data.values ?? []).map(rowToSemesterConfig);
+}
+
 export async function upsertSemesterConfig(
   accessToken: string,
   spreadsheetId: string,

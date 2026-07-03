@@ -11,7 +11,7 @@ import {
 import { AttendanceStatus } from "@/types";
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ courseId: string }> }
 ) {
   const session = await auth();
@@ -20,20 +20,30 @@ export async function GET(
   }
   try {
     const { courseId } = await params;
+    // Without a section filter, two sections of the same course would merge
+    // into one grid — every other query in the app is keyed course+section.
+    const section = req.nextUrl.searchParams.get("section") ?? undefined;
     const spreadsheetId = await initializeSpreadsheet(session.access_token);
 
-    const [courses, students, allSessions, attendance, semesterConfig] = await Promise.all([
+    const [courses, students, allSessions, attendanceAll, semesterConfig] = await Promise.all([
       getCourses(session.access_token, spreadsheetId),
-      getStudents(session.access_token, spreadsheetId, courseId),
+      getStudents(session.access_token, spreadsheetId, courseId, section),
       getAllSessions(session.access_token, spreadsheetId),
       getAttendanceForCourse(session.access_token, spreadsheetId, courseId),
-      getSemesterConfig(session.access_token, spreadsheetId, courseId).catch(() => null),
+      getSemesterConfig(session.access_token, spreadsheetId, courseId, section).catch(() => null),
     ]);
 
-    const course = courses.find((c) => c.course_id === courseId);
+    const course = courses.find(
+      (c) => c.course_id === courseId && (!section || c.section === section)
+    );
     const sessions = allSessions
-      .filter((s) => s.course_id === courseId && s.closed_at)
+      .filter((s) => s.course_id === courseId && (!section || s.section === section) && s.closed_at)
       .sort((a, b) => a.date.localeCompare(b.date) || a.opened_at.localeCompare(b.opened_at));
+
+    const sessionIds = new Set(sessions.map((s) => s.session_id));
+    const attendance = section
+      ? attendanceAll.filter((r) => sessionIds.has(r.session_id))
+      : attendanceAll;
 
     const sortedStudents = students.sort((a, b) => a.order_num - b.order_num);
 

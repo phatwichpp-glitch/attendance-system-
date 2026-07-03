@@ -9,6 +9,7 @@ import { IconLocation, IconRefresh, IconWarning } from "@/components/icons";
 import { Course, Settings, DEFAULT_SETTINGS, SemesterConfig } from "@/types";
 import { loadSettings, saveSettings, loadPeriodPrefs, savePeriodPrefs } from "@/lib/settings";
 import { getWeekLabel } from "@/lib/week-utils";
+import { todayLocalISO } from "@/lib/local-date";
 import { getPeriodLabel, calcPeriodEnd, nearestPeriod, addMinutes, PERIOD_STARTS } from "@/lib/period-utils";
 
 const GpsMapPicker = dynamic(() => import("./GpsMapPicker"), {
@@ -44,7 +45,7 @@ export default function SetupClient() {
   const [semesterConfig, setSemesterConfig] = useState<SemesterConfig | null>(null);
 
   // Week / date fields
-  const todayIso = new Date().toISOString().split("T")[0];
+  const todayIso = todayLocalISO();
   const [sessionDate, setSessionDate] = useState(todayIso);
   const [weekNumber, setWeekNumber] = useState<number | undefined>(undefined);
   const [weekLabel, setWeekLabel] = useState("");

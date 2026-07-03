@@ -41,7 +41,7 @@ const STATUS_LABELS: Record<string, string> = {
   gps_fail: "GPS ⚠",
 };
 
-export default function SummaryClient({ courseId }: { courseId: string }) {
+export default function SummaryClient({ courseId, section }: { courseId: string; section?: string }) {
   const router = useRouter();
   const [data, setData] = useState<SummaryData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -60,7 +60,7 @@ export default function SummaryClient({ courseId }: { courseId: string }) {
   const popoverRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    fetch(`/api/sheets/summary/${courseId}`)
+    fetch(`/api/sheets/summary/${courseId}${section ? `?section=${encodeURIComponent(section)}` : ""}`)
       .then((r) => r.json())
       .then((d: SummaryData) => {
         setData(d);
@@ -74,7 +74,7 @@ export default function SummaryClient({ courseId }: { courseId: string }) {
       .then((r) => r.json())
       .then((d) => setHolidays(d.holidays ?? []))
       .catch(() => {});
-  }, [courseId]);
+  }, [courseId, section]);
 
   // Close popover on outside click
   useEffect(() => {

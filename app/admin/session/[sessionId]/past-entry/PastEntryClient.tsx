@@ -69,7 +69,7 @@ export default function PastEntryClient({ sessionId }: { sessionId: string }) {
         body: JSON.stringify(body),
       });
       if (!res.ok) throw new Error("บันทึกไม่สำเร็จ");
-      router.push(`/admin/summary/${sessionInfo.course_id}`);
+      router.push(`/admin/summary/${sessionInfo.course_id}?section=${encodeURIComponent(sessionInfo.section)}`);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "เกิดข้อผิดพลาด");
       setSubmitting(false);

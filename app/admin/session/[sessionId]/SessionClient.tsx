@@ -16,6 +16,7 @@ import {
 } from "@/components/icons";
 import { Session, StudentWithAttendance, DeviceConflict, AttendanceStatus, AttendanceRecord } from "@/types";
 import { getPeriodLabel } from "@/lib/period-utils";
+import { todayLocalISO } from "@/lib/local-date";
 import { useClock } from "@/lib/hooks/useClock";
 
 interface Data {
@@ -130,7 +131,7 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
   const [conflictsExpanded, setConflictsExpanded] = useState(false);
   const [possibleDismissed, setPossibleDismissed] = useState(false);
   const [possibleExpanded, setPossibleExpanded] = useState(false);
-  const [issueFilter, setIssueFilter] = useState<IssueType | null>(null);
+  const [issueFilter, setIssueFilter] = useState<IssueType | "pending" | null>(null);
   const [showManualQR, setShowManualQR] = useState(false);
   const [manualQrDataUrl, setManualQrDataUrl] = useState("");
 
@@ -489,7 +490,7 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
 
   const { session: s, students, spreadsheetId, device_conflicts, linked_session, part1_attendance } = data;
   const isClosed = !!s.closed_at;
-  const isToday  = s.date === new Date().toISOString().split("T")[0];
+  const isToday  = s.date === todayLocalISO();
 
   // Device conflicts: "confirmed" = same fingerprint/GPU hash, "possible" = same IP
   // + close time/GPS only (heuristic — shown separately since it can false-positive
@@ -526,7 +527,9 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
   const autoFlagCount      = students.filter((x) => x.attendance?.flagged && x.attendance.action_taken === "auto_flag").length;
   const flaggedCount        = students.filter((x) => x.attendance?.flagged && x.attendance.action_taken !== "auto_flag").length;
   const totalIssues        = gpsFailCount + deviceConflictCount + lateCount + flaggedCount + autoFlagCount;
-  const visibleStudents    = issueFilter
+  const visibleStudents    = issueFilter === "pending"
+    ? students.filter((stu) => !stu.attendance)
+    : issueFilter
     ? students.filter((stu) => getIssues(stu, conflictSet).includes(issueFilter))
     : students;
 
@@ -623,7 +626,13 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
         <div className="grid grid-cols-2 lg:grid-cols-[repeat(4,1fr)_2fr] gap-2">
           <Stat label="Total"    value={total}   caption="enrolled"   color="#374151" />
           <Stat label="Present"  value={present} caption="checked in" color="#3B6D11" />
-          <Stat label="Absent"   value={absent}  caption="no show"    color="#A32D2D" />
+          {/* While the session is open, "Absent" is always ~0 (students are marked
+              absent at close) — the number a teacher actually needs live is Pending. */}
+          {isClosed ? (
+            <Stat label="Absent"  value={absent}                 caption="no show"     color="#A32D2D" />
+          ) : (
+            <Stat label="Pending" value={pendingStudents.length} caption="ยังไม่เช็คชื่อ" color="#6b7280" />
+          )}
           <Stat label="GPS fail" value={gpsFail} caption="flagged"    color="#854F0B" />
 
           <div className="col-span-2 lg:col-span-1 rounded-xl px-3 py-2.5 flex items-center justify-between gap-3"
@@ -869,10 +878,16 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
           )}
 
           {/* Issue summary bar — click a chip to filter the list below, click again to clear */}
-          {totalIssues > 0 && (
+          {(totalIssues > 0 || (!isClosed && pendingStudents.length > 0)) && (
             <div className="flex flex-wrap items-center gap-2 px-3 py-2.5 rounded-lg text-[15px]"
               style={{ backgroundColor: "#f9fafb", border: "0.5px solid rgba(0,0,0,0.08)" }}>
               <span className="font-medium text-gray-500">Issues:</span>
+              {!isClosed && pendingStudents.length > 0 && (
+                <IssueChip active={issueFilter === "pending"} color="#6b7280"
+                  onClick={() => setIssueFilter((f) => f === "pending" ? null : "pending")}>
+                  ยังไม่เช็คชื่อ {pendingStudents.length}
+                </IssueChip>
+              )}
               {gpsFailCount > 0 && (
                 <IssueChip active={issueFilter === "gps_fail"} color="#ef4444"
                   onClick={() => setIssueFilter((f) => f === "gps_fail" ? null : "gps_fail")}>
@@ -920,7 +935,7 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
               Student List
               {issueFilter && (
                 <span className="text-[13px] font-normal text-gray-400 ml-2">
-                  — filtered by {ISSUE_FILTER_LABELS[issueFilter]}
+                  — filtered by {issueFilter === "pending" ? "ยังไม่เช็คชื่อ" : ISSUE_FILTER_LABELS[issueFilter]}
                 </span>
               )}
             </h2>
