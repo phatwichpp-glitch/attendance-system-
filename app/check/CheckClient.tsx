@@ -129,9 +129,29 @@ async function fetchCheckin(body: object, retries = 3): Promise<Response> {
   }
 }
 
+// In-app browsers (LINE especially, since check-in links are routinely shared
+// in LINE chats/groups) frequently have broken or restricted Geolocation
+// support in their embedded WebView — the permission prompt may never appear,
+// or "Allow" silently does nothing. All of them expose their own "open in
+// browser" option in their UI, which reliably works where a JS redirect
+// wouldn't (most in-app browsers block/ignore those). Detecting this up front
+// and pointing the student at that built-in escape hatch heads off the
+// problem before they ever hit the GPS step.
+function detectInAppBrowser(): string | null {
+  const ua = navigator.userAgent;
+  if (/\bLine\//i.test(ua)) return "LINE";
+  if (/FBAN|FBAV|FB_IAB/i.test(ua)) return "Facebook";
+  if (/Instagram/i.test(ua)) return "Instagram";
+  return null;
+}
+
 // ── Types ────────────────────────────────────────────────────────────────────
 interface SessionInfo { courseId: string; period: string; section: string; }
-type GpsStatus = "loading" | "ready" | "denied";
+// "denied" = user/browser explicitly refused permission (retry won't re-prompt,
+// needs a manual settings change). "unavailable" = permission is fine but no
+// fix could be obtained (weak signal, timeout) — retrying can genuinely help.
+// "unsupported" = this browser/WebView has no Geolocation API at all.
+type GpsStatus = "loading" | "ready" | "denied" | "unavailable" | "unsupported";
 type PreviewState =
   | { status: "idle" }
   | { status: "loading" }
@@ -259,6 +279,7 @@ export default function CheckClient() {
   const [showHelp, setShowHelp]       = useState(false);
   const [result, setResult]           = useState<Result | null>(null);
   const [session, setSession]         = useState<SessionInfo | null>(null);
+  const [inAppBrowser, setInAppBrowser] = useState<string | null>(null);
   // Keyed by the input it was fetched for — stale results are ignored by
   // derivation instead of being cleared with a synchronous setState in an effect.
   const [previewResult, setPreviewResult] = useState<{ key: string; state: PreviewState } | null>(null);
@@ -269,14 +290,20 @@ export default function CheckClient() {
   const clock = useClock();
 
   const requestGps = useCallback(() => {
+    if (!("geolocation" in navigator)) {
+      setGpsStatus("unsupported");
+      return;
+    }
     setGpsStatus("loading");
     gpsSamplesRef.current = [];
-    // Watch (not single-shot) for a few seconds so we can measure jitter between
-    // fixes — a real GPS receiver drifts a little even standing still, which is a
-    // useful (soft) signal against a fixed/mocked coordinate. Keeps reporting the
-    // most accurate fix seen so far as soon as one arrives.
+    let settled = false;
+    // Watch (not single-shot) so we can measure jitter between fixes — a real
+    // GPS receiver drifts a little even standing still, a useful (soft) signal
+    // against a fixed/mocked coordinate. Keeps reporting the most accurate fix
+    // seen so far as soon as one arrives.
     const watchId = navigator.geolocation.watchPosition(
       (pos) => {
+        settled = true;
         gpsSamplesRef.current.push({
           lat: pos.coords.latitude,
           lng: pos.coords.longitude,
@@ -287,15 +314,34 @@ export default function CheckClient() {
         setGpsAccuracy(best.accuracy);
         setGpsStatus("ready");
       },
-      () => setGpsStatus((s) => (s === "ready" ? s : "denied")),
-      { enableHighAccuracy: true, timeout: 15000 }
+      (err) => {
+        settled = true;
+        // code 1 = PERMISSION_DENIED (needs a settings change); codes 2/3 =
+        // POSITION_UNAVAILABLE/TIMEOUT (permission is fine, signal isn't —
+        // showing "enable permission" instructions here would be actively
+        // wrong and is exactly the kind of thing that reads as "I granted it
+        // and it still doesn't work").
+        setGpsStatus((s) => (s === "ready" ? s : err.code === 1 ? "denied" : "unavailable"));
+      },
+      { enableHighAccuracy: true, timeout: 12000 }
     );
-    setTimeout(() => navigator.geolocation.clearWatch(watchId), 3000);
+    // Indoor/classroom GPS fixes routinely take 5-15s to lock (weak signal
+    // through walls/roof) — the previous 3s cutoff killed the watch before a
+    // real fix (or even the browser's own timeout error) had a chance to land,
+    // leaving the UI stuck on "Getting Location..." forever with no error and
+    // no way to retry. This is a safety net for WebViews that silently never
+    // call either callback; the 1s margin over the request's own `timeout`
+    // lets a normal timeout error fire and be handled above first.
+    setTimeout(() => {
+      navigator.geolocation.clearWatch(watchId);
+      if (!settled) setGpsStatus((s) => (s === "loading" ? "unavailable" : s));
+    }, 13000);
   }, []);
 
   useEffect(() => {
     fingerprintRef.current = getOrCreateFingerprint();
     gpuFingerprintRef.current = generateGpuFingerprint();
+    setInAppBrowser(detectInAppBrowser());
     requestGps();
 
     if (isManual) { setState("ready"); return; }
@@ -429,6 +475,19 @@ export default function CheckClient() {
               </p>
             )}
           </div>
+
+          {/* ── In-app browser warning ───────────────────────────────────── */}
+          {inAppBrowser && (
+            <div style={{
+              backgroundColor: "#FAEEDA", border: "1px solid #EF9F27", borderRadius: 12,
+              padding: "12px 14px", fontSize: 12, color: "#78350F", lineHeight: 1.6,
+            }}>
+              <strong>⚠ เปิดผ่านแอป {inAppBrowser} อยู่ — ระบบตำแหน่งอาจไม่ทำงาน</strong>
+              <br />
+              กดปุ่มเมนู (⋯ หรือจุดสามจุด) ที่มุมหน้าจอ แล้วเลือก &quot;เปิดด้วยเบราว์เซอร์&quot;
+              หรือ &quot;Open in Browser&quot; เพื่อเปิดหน้านี้ใน Chrome/Safari แทน
+            </div>
+          )}
 
           {/* ── Loading (pre-check) ─────────────────────────────────────── */}
           {state === "loading" && (
@@ -668,9 +727,11 @@ function GpsRow({ status, accuracy, showHelp, onToggleHelp, onRetry }: {
   onRetry: () => void;
 }) {
   const cfg = {
-    loading: { dot: "#854F0B", bg: "#fffbeb", label: "Getting Location...", sub: "\u0e23\u0e2d\u0e2a\u0e31\u0e01\u0e04\u0e23\u0e39\u0e48 \u0e23\u0e30\u0e1a\u0e1a\u0e01\u0e33\u0e25\u0e31\u0e07\u0e23\u0e30\u0e1a\u0e38\u0e15\u0e33\u0e41\u0e2b\u0e19\u0e48\u0e07\u0e02\u0e2d\u0e07\u0e04\u0e38\u0e13", pulse: true },
-    ready:   { dot: "#3B6D11", bg: "#f0fdf4", label: `Location Ready${accuracy ? `  \u00b1${Math.round(accuracy)} m` : ""}`, sub: "\u0e1e\u0e23\u0e49\u0e2d\u0e21\u0e40\u0e0a\u0e47\u0e04\u0e0a\u0e37\u0e48\u0e2d", pulse: false },
-    denied:  { dot: "#A32D2D", bg: "#fff1f1", label: "Location Denied", sub: "\u0e01\u0e23\u0e38\u0e13\u0e32\u0e2d\u0e19\u0e38\u0e0d\u0e32\u0e15 Location \u0e43\u0e19\u0e01\u0e32\u0e23\u0e15\u0e31\u0e49\u0e07\u0e04\u0e48\u0e32\u0e40\u0e1a\u0e23\u0e32\u0e27\u0e4c\u0e40\u0e0b\u0e2d\u0e23\u0e4c", pulse: false },
+    loading:     { dot: "#854F0B", bg: "#fffbeb", label: "Getting Location...", sub: "\u0e23\u0e2d\u0e2a\u0e31\u0e01\u0e04\u0e23\u0e39\u0e48 \u0e23\u0e30\u0e1a\u0e1a\u0e01\u0e33\u0e25\u0e31\u0e07\u0e23\u0e30\u0e1a\u0e38\u0e15\u0e33\u0e41\u0e2b\u0e19\u0e48\u0e07\u0e02\u0e2d\u0e07\u0e04\u0e38\u0e13 (\u0e43\u0e19\u0e2d\u0e32\u0e04\u0e32\u0e23\u0e2d\u0e32\u0e08\u0e43\u0e0a\u0e49\u0e40\u0e27\u0e25\u0e32\u0e16\u0e36\u0e07 10-15 \u0e27\u0e34\u0e19\u0e32\u0e17\u0e35)", pulse: true },
+    ready:       { dot: "#3B6D11", bg: "#f0fdf4", label: `Location Ready${accuracy ? `  \u00b1${Math.round(accuracy)} m` : ""}`, sub: "\u0e1e\u0e23\u0e49\u0e2d\u0e21\u0e40\u0e0a\u0e47\u0e04\u0e0a\u0e37\u0e48\u0e2d", pulse: false },
+    denied:      { dot: "#A32D2D", bg: "#fff1f1", label: "Location Denied", sub: "\u0e01\u0e23\u0e38\u0e13\u0e32\u0e2d\u0e19\u0e38\u0e0d\u0e32\u0e15 Location \u0e43\u0e19\u0e01\u0e32\u0e23\u0e15\u0e31\u0e49\u0e07\u0e04\u0e48\u0e32\u0e40\u0e1a\u0e23\u0e32\u0e27\u0e4c\u0e40\u0e0b\u0e2d\u0e23\u0e4c", pulse: false },
+    unavailable: { dot: "#854F0B", bg: "#fffbeb", label: "Location Unavailable", sub: "\u0e2b\u0e32\u0e15\u0e33\u0e41\u0e2b\u0e19\u0e48\u0e07\u0e44\u0e21\u0e48\u0e2a\u0e33\u0e40\u0e23\u0e47\u0e08 \u2014 \u0e2a\u0e31\u0e0d\u0e0d\u0e32\u0e13 GPS \u0e2d\u0e48\u0e2d\u0e19\u0e2b\u0e23\u0e37\u0e2d\u0e43\u0e0a\u0e49\u0e40\u0e27\u0e25\u0e32\u0e19\u0e32\u0e19\u0e40\u0e01\u0e34\u0e19\u0e44\u0e1b \u0e25\u0e2d\u0e07\u0e02\u0e22\u0e31\u0e1a\u0e44\u0e1b\u0e43\u0e01\u0e25\u0e49\u0e2b\u0e19\u0e49\u0e32\u0e15\u0e48\u0e32\u0e07\u0e41\u0e25\u0e49\u0e27\u0e25\u0e2d\u0e07\u0e43\u0e2b\u0e21\u0e48", pulse: false },
+    unsupported: { dot: "#854F0B", bg: "#fffbeb", label: "Location Not Supported", sub: "\u0e40\u0e1a\u0e23\u0e32\u0e27\u0e4c\u0e40\u0e0b\u0e2d\u0e23\u0e4c\u0e19\u0e35\u0e49\u0e44\u0e21\u0e48\u0e23\u0e2d\u0e07\u0e23\u0e31\u0e1a\u0e01\u0e32\u0e23\u0e23\u0e30\u0e1a\u0e38\u0e15\u0e33\u0e41\u0e2b\u0e19\u0e48\u0e07 \u2014 \u0e25\u0e2d\u0e07\u0e40\u0e1b\u0e34\u0e14\u0e25\u0e34\u0e07\u0e01\u0e4c\u0e19\u0e35\u0e49\u0e43\u0e19 Chrome \u0e2b\u0e23\u0e37\u0e2d Safari \u0e41\u0e17\u0e19", pulse: false },
   }[status];
 
   return (
@@ -707,6 +768,19 @@ function GpsRow({ status, accuracy, showHelp, onToggleHelp, onRetry }: {
                 Try Again
               </button>
             </>
+          )}
+          {status === "unavailable" && (
+            <button
+              onClick={onRetry}
+              style={{ fontSize: 11, color: "#374151", background: "white", border: "0.5px solid #d1d5db", borderRadius: 6, cursor: "pointer", padding: "5px 12px", marginTop: 8, display: "block" }}
+            >
+              ลองใหม่
+            </button>
+          )}
+          {(status === "denied" || status === "unavailable" || status === "unsupported") && (
+            <p style={{ fontSize: 11, color: "#9ca3af", marginTop: 8, lineHeight: 1.5 }}>
+              กดเช็คชื่อต่อได้เลย — ระบบจะบันทึกไว้ให้อาจารย์ตรวจสอบภายหลังหากไม่มีพิกัด
+            </p>
           )}
         </div>
       </div>
