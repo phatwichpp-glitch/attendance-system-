@@ -29,10 +29,16 @@ import { getRedis } from "@/lib/redis";
 import { getWeekLabel } from "@/lib/week-utils";
 import { getPeriodLabel } from "@/lib/period-utils";
 import { notifyAdminOnOpen } from "@/lib/notify";
+import { schedulePendingNotify, drainDuePendingNotifies } from "@/lib/pending-notify";
 import { Course, Session, SemesterConfig } from "@/types";
 
 const TICK_INTERVAL_MS = 60_000;
 const OPEN_WINDOW_TOLERANCE_MIN = 2; // a tick can be up to 2 min "late" and still catch the open
+
+// Notification fires this long after the session actually opens, not the instant
+// the tick catches the open window — gives the teacher a moment before OTP/LINE
+// alerts start rather than getting paged the second class begins.
+const NOTIFY_DELAY_MIN = 3;
 
 // Held (not released) until just under the tick interval, so duplicate triggers within
 // the same minute — two cron hits, or cron + a second instance — collapse into one run.
@@ -107,6 +113,19 @@ async function runTick(): Promise<void> {
     } catch (e) {
       console.error(`[scheduler] admin ${email} failed`, e);
       // one admin's failure must not block the rest
+    }
+  }
+
+  await processDueNotifications();
+}
+
+async function processDueNotifications(): Promise<void> {
+  const due = await drainDuePendingNotifies();
+  for (const item of due) {
+    try {
+      await notifyAdminOnOpen(item.email, item.subject, item.message);
+    } catch (e) {
+      console.error(`[scheduler] failed to send delayed notify for session ${item.sessionId}`, e);
     }
   }
 }
@@ -261,9 +280,14 @@ async function processCourseOpen(
         checkUrl ? `ลิงก์เช็คชื่อ: ${checkUrl}` : undefined,
       ].filter(Boolean).join("\n");
 
-      await notifyAdminOnOpen(email, `เปิดคาบ ${course.title} อัตโนมัติแล้ว`, message);
+      await schedulePendingNotify(result.session.session_id, {
+        email,
+        subject: `เปิดคาบ ${course.title} อัตโนมัติแล้ว`,
+        message,
+        dueAtMs: Date.now() + NOTIFY_DELAY_MIN * 60_000,
+      });
     } catch (e) {
-      console.error(`[scheduler] failed to notify admin for session ${result.session.session_id}`, e);
+      console.error(`[scheduler] failed to schedule notify for session ${result.session.session_id}`, e);
     }
   }
 }
