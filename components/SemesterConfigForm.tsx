@@ -34,6 +34,7 @@ export interface SemesterFormState {
   auto_open_enabled: boolean;
   default_lat?: number;
   default_lng?: number;
+  auto_open_lead_min: number;
 }
 
 export const DEFAULT_SEMESTER_FORM: SemesterFormState = {
@@ -49,6 +50,7 @@ export const DEFAULT_SEMESTER_FORM: SemesterFormState = {
   default_late_min: 15,
   attendance_threshold: 80,
   auto_open_enabled: false,
+  auto_open_lead_min: 3,
 };
 
 /** Derives the TeachingDay[] payload SemesterConfig expects from the form's per-day maps. */
@@ -316,6 +318,16 @@ export default function SemesterConfigForm({
         />
         {semester.auto_open_enabled && (
           <>
+            <SemesterSlider
+              label="เปิดคาบล่วงหน้า"
+              value={semester.auto_open_lead_min}
+              min={0} max={15} step={1} unit="นาที"
+              onChange={(v) => setSemester((s) => ({ ...s, auto_open_lead_min: v }))}
+            />
+            <p className="text-[11px] -mt-2" style={{ color: "#5F5E5A" }}>
+              ระบบจะเปิดคาบและส่งแจ้งเตือน (LINE/ลิงก์เช็คชื่อ) ก่อนเวลาเรียนจริงตามจำนวนนาทีนี้ — ตั้งเป็น 0
+              ถ้าต้องการให้เปิดตรงเวลาเรียนพอดี แก้ค่านี้ได้ตลอดเวลา
+            </p>
             {tokenStatus === "ok" && (
               <p className="text-[12px]" style={{ color: "#3B6D11" }}>
                 ✓ ระบบพร้อมเปิดคาบอัตโนมัติแทนบัญชีนี้แล้ว

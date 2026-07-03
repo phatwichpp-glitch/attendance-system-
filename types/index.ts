@@ -167,6 +167,7 @@ export interface SemesterConfig {
   auto_open_enabled?: boolean;   // scheduler opens/closes sessions automatically at class time
   default_lat?: number;          // classroom location used for auto-opened sessions (no device present)
   default_lng?: number;
+  auto_open_lead_min?: number;   // open (and notify) this many minutes before the scheduled class time
 }
 
 export type CheckInState =

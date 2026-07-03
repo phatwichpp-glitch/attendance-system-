@@ -27,18 +27,12 @@ import {
 import { getBangkokNow, isWithinOpenWindow } from "@/lib/schedule-time";
 import { getRedis } from "@/lib/redis";
 import { getWeekLabel } from "@/lib/week-utils";
-import { getPeriodLabel } from "@/lib/period-utils";
+import { getPeriodLabel, addMinutes } from "@/lib/period-utils";
 import { notifyAdminOnOpen } from "@/lib/notify";
-import { schedulePendingNotify, drainDuePendingNotifies } from "@/lib/pending-notify";
 import { Course, Session, SemesterConfig } from "@/types";
 
 const TICK_INTERVAL_MS = 60_000;
 const OPEN_WINDOW_TOLERANCE_MIN = 2; // a tick can be up to 2 min "late" and still catch the open
-
-// Notification fires this long after the session actually opens, not the instant
-// the tick catches the open window — gives the teacher a moment before OTP/LINE
-// alerts start rather than getting paged the second class begins.
-const NOTIFY_DELAY_MIN = 3;
 
 // Held (not released) until just under the tick interval, so duplicate triggers within
 // the same minute — two cron hits, or cron + a second instance — collapse into one run.
@@ -113,19 +107,6 @@ async function runTick(): Promise<void> {
     } catch (e) {
       console.error(`[scheduler] admin ${email} failed`, e);
       // one admin's failure must not block the rest
-    }
-  }
-
-  await processDueNotifications();
-}
-
-async function processDueNotifications(): Promise<void> {
-  const due = await drainDuePendingNotifies();
-  for (const item of due) {
-    try {
-      await notifyAdminOnOpen(item.email, item.subject, item.message);
-    } catch (e) {
-      console.error(`[scheduler] failed to send delayed notify for session ${item.sessionId}`, e);
     }
   }
 }
@@ -207,19 +188,25 @@ async function processCourseOpen(
 ): Promise<void> {
   const todaysSchedule = config.teaching_schedule.filter((td) => td.day === dayOfWeek);
 
+  // A course can ask to open (and be notified) a few minutes before its scheduled
+  // class time instead of exactly at it, so the teacher has the OTP in hand before
+  // students arrive rather than scrambling for it right as class starts.
+  const leadMin = config.auto_open_lead_min ?? 0;
+
   for (const td of todaysSchedule) {
     if (!td.start_time) continue; // can't schedule without a start time
-    if (!isWithinOpenWindow(hhmm, td.start_time, OPEN_WINDOW_TOLERANCE_MIN)) continue;
+    const effectiveStartTime = leadMin > 0 ? addMinutes(td.start_time, -leadMin) : td.start_time;
+    if (!isWithinOpenWindow(hhmm, effectiveStartTime, OPEN_WINDOW_TOLERANCE_MIN)) continue;
 
     // Idempotency — but scoped to this occurrence, not the whole day, so teachers can
     // re-run a class (or a test) later the same day. Skip only when a same-period session
     //   (a) is still open right now (e.g. manually opened just before the scheduled time
     //       — don't stack a duplicate on top of a running class), or
-    //   (b) was opened at/after this occurrence's scheduled start minus tolerance
+    //   (b) was opened at/after this occurrence's effective start minus tolerance
     //       (covers both ticks that land inside the same open window).
     // Bangkok is UTC+7 year-round, so the fixed offset is safe.
     const windowStartMs =
-      new Date(`${dateStr}T${td.start_time}:00+07:00`).getTime() -
+      new Date(`${dateStr}T${effectiveStartTime}:00+07:00`).getTime() -
       OPEN_WINDOW_TOLERANCE_MIN * 60_000;
     const blocked = allSessions.some((s) =>
       s.course_id === course.course_id &&
@@ -265,7 +252,7 @@ async function processCourseOpen(
       check_in_mode: td.check_in_mode,
     });
 
-    console.log(`[scheduler] auto-opened ${course.course_id}/${course.section} period ${td.period} on ${dateStr}`);
+    console.log(`[scheduler] auto-opened ${course.course_id}/${course.section} period ${td.period} on ${dateStr} (lead=${leadMin}min)`);
 
     try {
       const periodNum = parseInt(td.period, 10);
@@ -275,19 +262,14 @@ async function processCourseOpen(
         : undefined;
       const message = [
         `เปิดคาบเรียนอัตโนมัติแล้ว: ${course.title} (${course.course_id}) Sec.${course.section}`,
-        `${periodLabel} · ${dateStr}`,
+        `${periodLabel} · ${dateStr}${leadMin > 0 ? ` (เปิดล่วงหน้า ${leadMin} นาที)` : ""}`,
         `OTP: ${result.session.otp} (หมดอายุใน ${config.default_otp_min} นาที)`,
         checkUrl ? `ลิงก์เช็คชื่อ: ${checkUrl}` : undefined,
       ].filter(Boolean).join("\n");
 
-      await schedulePendingNotify(result.session.session_id, {
-        email,
-        subject: `เปิดคาบ ${course.title} อัตโนมัติแล้ว`,
-        message,
-        dueAtMs: Date.now() + NOTIFY_DELAY_MIN * 60_000,
-      });
+      await notifyAdminOnOpen(email, `เปิดคาบ ${course.title} อัตโนมัติแล้ว`, message);
     } catch (e) {
-      console.error(`[scheduler] failed to schedule notify for session ${result.session.session_id}`, e);
+      console.error(`[scheduler] failed to notify admin for session ${result.session.session_id}`, e);
     }
   }
 }

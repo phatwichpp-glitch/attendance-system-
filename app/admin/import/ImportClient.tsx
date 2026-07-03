@@ -121,6 +121,7 @@ export default function ImportClient() {
           auto_open_enabled: semester.auto_open_enabled,
           default_lat: semester.default_lat,
           default_lng: semester.default_lng,
+          auto_open_lead_min: semester.auto_open_lead_min,
         } : undefined,
       };
       const res = await fetch("/api/sheets/import", {

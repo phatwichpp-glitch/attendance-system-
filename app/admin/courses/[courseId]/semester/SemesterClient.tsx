@@ -24,6 +24,7 @@ function configToFormState(config: SemesterConfig): SemesterFormState {
     auto_open_enabled: config.auto_open_enabled ?? false,
     default_lat: config.default_lat,
     default_lng: config.default_lng,
+    auto_open_lead_min: config.auto_open_lead_min ?? DEFAULT_SEMESTER_FORM.auto_open_lead_min,
   };
 }
 
@@ -75,6 +76,7 @@ export default function SemesterClient({ courseId }: { courseId: string }) {
         auto_open_enabled: semester.auto_open_enabled,
         default_lat: semester.default_lat,
         default_lng: semester.default_lng,
+        auto_open_lead_min: semester.auto_open_lead_min,
         created_at: createdAt,
       };
       const res = await fetch("/api/sheets/semester-config", {

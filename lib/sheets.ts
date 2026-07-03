@@ -119,12 +119,12 @@ export async function initializeSpreadsheet(
           ]],
         },
         {
-          range: "semester_config!A1:N1",
+          range: "semester_config!A1:O1",
           values: [[
             "course_id", "section", "semester_start", "total_weeks", "teaching_schedule",
             "default_gps_radius", "default_otp_min", "default_late_min",
             "attendance_threshold", "created_at", "updated_at",
-            "auto_open_enabled", "default_lat", "default_lng",
+            "auto_open_enabled", "default_lat", "default_lng", "auto_open_lead_min",
           ]],
         },
       ],
@@ -269,14 +269,14 @@ async function ensureSemesterConfigSheet(
     });
     await sheets.spreadsheets.values.update({
       spreadsheetId,
-      range: "semester_config!A1:N1",
+      range: "semester_config!A1:O1",
       valueInputOption: "RAW",
       requestBody: {
         values: [[
           "course_id", "section", "semester_start", "total_weeks", "teaching_schedule",
           "default_gps_radius", "default_otp_min", "default_late_min",
           "attendance_threshold", "created_at", "updated_at",
-          "auto_open_enabled", "default_lat", "default_lng",
+          "auto_open_enabled", "default_lat", "default_lng", "auto_open_lead_min",
         ]],
       },
     });
@@ -293,7 +293,7 @@ export async function getSemesterConfig(
   const sheets = getSheetsClient(accessToken);
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId,
-    range: "semester_config!A2:N",
+    range: "semester_config!A2:O",
   });
   const rows = res.data.values ?? [];
   const row = section
@@ -315,7 +315,7 @@ export async function getAllSemesterConfigs(
   const sheets = getSheetsClient(accessToken);
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId,
-    range: "semester_config!A2:N",
+    range: "semester_config!A2:O",
   });
   return (res.data.values ?? []).map(rowToSemesterConfig);
 }
@@ -329,7 +329,7 @@ export async function upsertSemesterConfig(
   const sheets = getSheetsClient(accessToken);
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId,
-    range: "semester_config!A2:N",
+    range: "semester_config!A2:O",
   });
   const rows = res.data.values ?? [];
   const idx = rows.findIndex(
@@ -351,19 +351,20 @@ export async function upsertSemesterConfig(
     config.auto_open_enabled ? "TRUE" : "FALSE",
     config.default_lat ?? "",
     config.default_lng ?? "",
+    config.auto_open_lead_min ?? 0,
   ];
 
   if (idx === -1) {
     await sheets.spreadsheets.values.append({
       spreadsheetId,
-      range: "semester_config!A:N",
+      range: "semester_config!A:O",
       valueInputOption: "RAW",
       requestBody: { values: [row] },
     });
   } else {
     await sheets.spreadsheets.values.update({
       spreadsheetId,
-      range: `semester_config!A${idx + 2}:N${idx + 2}`,
+      range: `semester_config!A${idx + 2}:O${idx + 2}`,
       valueInputOption: "RAW",
       requestBody: { values: [row] },
     });
@@ -388,6 +389,7 @@ function rowToSemesterConfig(r: string[]): SemesterConfig {
     auto_open_enabled: r[11] === "TRUE",
     default_lat: r[12] ? parseFloat(r[12]) : undefined,
     default_lng: r[13] ? parseFloat(r[13]) : undefined,
+    auto_open_lead_min: r[14] ? parseInt(r[14], 10) : 0,
   };
 }
 
@@ -1162,11 +1164,11 @@ export async function deleteCourseById(
   // Semester config
   try {
     const sheets = getSheetsClient(accessToken);
-    const res = await sheets.spreadsheets.values.get({ spreadsheetId, range: "semester_config!A2:K" });
+    const res = await sheets.spreadsheets.values.get({ spreadsheetId, range: "semester_config!A2:O" });
     const rows = (res.data.values ?? []) as string[][];
     const kept = rows.filter((r) => !(r[0] === courseId && r[1] === section));
     if (kept.length < rows.length) {
-      await sheets.spreadsheets.values.clear({ spreadsheetId, range: "semester_config!A2:K" });
+      await sheets.spreadsheets.values.clear({ spreadsheetId, range: "semester_config!A2:O" });
       if (kept.length > 0) {
         await sheets.spreadsheets.values.update({
           spreadsheetId, range: "semester_config!A2", valueInputOption: "RAW",
