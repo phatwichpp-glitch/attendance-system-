@@ -118,6 +118,9 @@ export default function ImportClient() {
           default_otp_min: semester.default_otp_min,
           default_late_min: semester.default_late_min,
           attendance_threshold: semester.attendance_threshold,
+          auto_open_enabled: semester.auto_open_enabled,
+          default_lat: semester.default_lat,
+          default_lng: semester.default_lng,
         } : undefined,
       };
       const res = await fetch("/api/sheets/import", {
@@ -374,7 +377,7 @@ export default function ImportClient() {
       {/* ── Step 2: Semester Setup ── */}
       {step === "semester" && parsed && (
         <div className="space-y-4">
-          <SemesterConfigForm value={semester} onChange={setSemester} showAutoOpenToggle={false} />
+          <SemesterConfigForm value={semester} onChange={setSemester} />
 
           <div className="flex gap-3">
             <button onClick={() => setStep("preview")} className="btn-outline flex-1">Back</button>
@@ -384,7 +387,8 @@ export default function ImportClient() {
                 submitting ||
                 !semester.semester_start ||
                 countWeeksBetween(semester.semester_start, semester.semester_end) === 0 ||
-                semester.teaching_days.length === 0
+                semester.teaching_days.length === 0 ||
+                (semester.auto_open_enabled && (semester.default_lat == null || semester.default_lng == null))
               }
               className="btn-primary flex-1"
             >

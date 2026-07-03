@@ -95,26 +95,22 @@ export function teachingScheduleToFormFields(schedule: TeachingDay[]): Pick<
 interface SemesterConfigFormProps {
   value: SemesterFormState;
   onChange: Dispatch<SetStateAction<SemesterFormState>>;
-  /** Only meaningful once a course row exists to attach it to — false during initial import. */
-  showAutoOpenToggle?: boolean;
 }
 
 export default function SemesterConfigForm({
   value: semester,
   onChange: setSemester,
-  showAutoOpenToggle = false,
 }: SemesterConfigFormProps) {
   // "ok" = the scheduler holds a working refresh token for this account,
   // "unknown" = never registered (needs one fresh login), "invalid" = token died.
   const [tokenStatus, setTokenStatus] = useState<"ok" | "invalid" | "unknown" | null>(null);
 
   useEffect(() => {
-    if (!showAutoOpenToggle) return;
     fetch("/api/sheets/token-status")
       .then((r) => r.json())
       .then((d) => setTokenStatus(d.status ?? null))
       .catch(() => {});
-  }, [showAutoOpenToggle]);
+  }, []);
 
   return (
     <>
@@ -305,46 +301,44 @@ export default function SemesterConfigForm({
         </div>
       </div>
 
-      {showAutoOpenToggle && (
-        <div className="card space-y-4">
-          <h2 className="font-medium text-gray-900">Auto-Open</h2>
-          <Toggle
-            label="เปิดคาบเรียนอัตโนมัติตามตารางสอน"
-            checked={semester.auto_open_enabled}
-            onChange={(v) => setSemester((s) => ({ ...s, auto_open_enabled: v }))}
-          />
-          {semester.auto_open_enabled && (
-            <>
-              {tokenStatus === "ok" && (
-                <p className="text-[12px]" style={{ color: "#3B6D11" }}>
-                  ✓ ระบบพร้อมเปิดคาบอัตโนมัติแทนบัญชีนี้แล้ว
-                </p>
-              )}
-              {(tokenStatus === "unknown" || tokenStatus === "invalid") && (
-                <div className="rounded-lg px-3 py-2 text-[12px]" style={{ backgroundColor: "#FCEBEB", color: "#A32D2D" }}>
-                  {tokenStatus === "invalid"
-                    ? "สิทธิ์เปิดคาบอัตโนมัติของบัญชีนี้หมดอายุ — กรุณาออกจากระบบแล้วเข้าสู่ระบบใหม่"
-                    : "ระบบยังไม่ได้รับสิทธิ์เปิดคาบแทนบัญชีนี้ — กรุณาออกจากระบบแล้วเข้าสู่ระบบใหม่ 1 ครั้ง"}
-                </div>
-              )}
-              <p className="text-[11px]" style={{ color: "#5F5E5A" }}>
-                เลือกตำแหน่งห้องเรียนบนแผนที่ ใช้สำหรับตรวจ GPS ตอนระบบเปิดคาบให้อัตโนมัติ (ไม่มีอุปกรณ์ ณ ตอนเปิด)
+      <div className="card space-y-4">
+        <h2 className="font-medium text-gray-900">Auto-Open</h2>
+        <Toggle
+          label="เปิดคาบเรียนอัตโนมัติตามตารางสอน"
+          checked={semester.auto_open_enabled}
+          onChange={(v) => setSemester((s) => ({ ...s, auto_open_enabled: v }))}
+        />
+        {semester.auto_open_enabled && (
+          <>
+            {tokenStatus === "ok" && (
+              <p className="text-[12px]" style={{ color: "#3B6D11" }}>
+                ✓ ระบบพร้อมเปิดคาบอัตโนมัติแทนบัญชีนี้แล้ว
               </p>
-              <GpsMapPicker
-                lat={semester.default_lat ?? DEFAULT_MAP_LAT}
-                lng={semester.default_lng ?? DEFAULT_MAP_LNG}
-                radiusM={semester.default_gps_radius}
-                onPick={(coords) => setSemester((s) => ({ ...s, default_lat: coords.lat, default_lng: coords.lng }))}
-              />
-              {(semester.default_lat == null || semester.default_lng == null) && (
-                <p className="text-[12px]" style={{ color: "#A32D2D" }}>
-                  กรุณาเลือกตำแหน่งบนแผนที่ก่อนเปิดใช้งาน auto-open
-                </p>
-              )}
-            </>
-          )}
-        </div>
-      )}
+            )}
+            {(tokenStatus === "unknown" || tokenStatus === "invalid") && (
+              <div className="rounded-lg px-3 py-2 text-[12px]" style={{ backgroundColor: "#FCEBEB", color: "#A32D2D" }}>
+                {tokenStatus === "invalid"
+                  ? "สิทธิ์เปิดคาบอัตโนมัติของบัญชีนี้หมดอายุ — กรุณาออกจากระบบแล้วเข้าสู่ระบบใหม่"
+                  : "ระบบยังไม่ได้รับสิทธิ์เปิดคาบแทนบัญชีนี้ — กรุณาออกจากระบบแล้วเข้าสู่ระบบใหม่ 1 ครั้ง"}
+              </div>
+            )}
+            <p className="text-[11px]" style={{ color: "#5F5E5A" }}>
+              เลือกตำแหน่งห้องเรียนบนแผนที่ ใช้สำหรับตรวจ GPS ตอนระบบเปิดคาบให้อัตโนมัติ (ไม่มีอุปกรณ์ ณ ตอนเปิด)
+            </p>
+            <GpsMapPicker
+              lat={semester.default_lat ?? DEFAULT_MAP_LAT}
+              lng={semester.default_lng ?? DEFAULT_MAP_LNG}
+              radiusM={semester.default_gps_radius}
+              onPick={(coords) => setSemester((s) => ({ ...s, default_lat: coords.lat, default_lng: coords.lng }))}
+            />
+            {(semester.default_lat == null || semester.default_lng == null) && (
+              <p className="text-[12px]" style={{ color: "#A32D2D" }}>
+                กรุณาเลือกตำแหน่งบนแผนที่ก่อนเปิดใช้งาน auto-open
+              </p>
+            )}
+          </>
+        )}
+      </div>
     </>
   );
 }
