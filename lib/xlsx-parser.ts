@@ -155,7 +155,10 @@ export function autoDetectMapping(headers: string[], sampleRows: string[][]): De
  */
 export function parseFilenameInfo(filename: string): { course_id?: string; section?: string } {
   const base = filename.replace(/\.[^.]+$/, "");
-  const course = base.match(/\d{6}/)?.[0];
+  // Match a maximal digit run that's exactly 6 digits — /\d{6}/ alone would carve
+  // the first 6 digits out of a longer run (e.g. an 8-digit date prefix like
+  // "20260703_251363_sec001" would wrongly match "202607" instead of "251363").
+  const course = base.match(/\d+/g)?.find((n) => n.length === 6);
   const section = base.match(/sec(?:tion)?[\s_.\-]*(\d+)/i)?.[1];
   return { course_id: course, section };
 }

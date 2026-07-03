@@ -202,7 +202,7 @@ async function mergeSpreadsheetInto(
     mergeSheetRows(accessToken, targetId, sourceId, "students", "A2:F", "A:F", (r) => `${r[0]}__${r[3]}__${r[4]}`),
     mergeSheetRows(accessToken, targetId, sourceId, "sessions", "A2:V", "A:V", (r) => r[0]),
     mergeSheetRows(accessToken, targetId, sourceId, "attendance", "A2:Z", "A:Z", (r) => r[0]),
-    mergeSheetRows(accessToken, targetId, sourceId, "semester_config", "A2:N", "A:N", (r) => `${r[0]}__${r[1]}`),
+    mergeSheetRows(accessToken, targetId, sourceId, "semester_config", "A2:O", "A:O", (r) => `${r[0]}__${r[1]}`),
     mergeSheetRows(accessToken, targetId, sourceId, "audit_log", "A2:I", "A:I", (r) => r[0]),
   ]);
 }
@@ -389,6 +389,9 @@ function rowToSemesterConfig(r: string[]): SemesterConfig {
     auto_open_enabled: r[11] === "TRUE",
     default_lat: r[12] ? parseFloat(r[12]) : undefined,
     default_lng: r[13] ? parseFloat(r[13]) : undefined,
+    // 0, not the form's default of 3 — a legacy row predating this column means
+    // "never configured", which should behave exactly like auto-open did before
+    // this feature existed (open precisely on time), not silently opt in early.
     auto_open_lead_min: r[14] ? parseInt(r[14], 10) : 0,
   };
 }
@@ -1156,7 +1159,7 @@ export async function deleteCourseById(
   // Attendance must be deleted first (references sessions/students); the rest can run in parallel.
   await deleteMatchingRows(accessToken, spreadsheetId, "attendance!A2:Z", (r) => r[2] === courseId);
   await Promise.all([
-    deleteMatchingRows(accessToken, spreadsheetId, "sessions!A2:U", (r) => r[1] === courseId && r[2] === section),
+    deleteMatchingRows(accessToken, spreadsheetId, "sessions!A2:V", (r) => r[1] === courseId && r[2] === section),
     deleteMatchingRows(accessToken, spreadsheetId, "students!A2:F", (r) => r[3] === courseId && r[4] === section),
     deleteMatchingRows(accessToken, spreadsheetId, "courses!A2:F", (r) => r[0] === courseId && r[2] === section),
   ]);
@@ -1233,7 +1236,7 @@ export async function deleteSessionById(
   sessionId: string
 ): Promise<void> {
   await deleteMatchingRows(accessToken, spreadsheetId, "attendance!A2:Z", (r) => r[1] === sessionId);
-  await deleteMatchingRows(accessToken, spreadsheetId, "sessions!A2:U", (r) => r[0] === sessionId);
+  await deleteMatchingRows(accessToken, spreadsheetId, "sessions!A2:V", (r) => r[0] === sessionId);
 }
 
 export async function reopenSession(

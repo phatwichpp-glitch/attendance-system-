@@ -405,7 +405,7 @@ export default function CheckClient() {
 
   const submitting  = state === "submitting";
   const canSubmit   = studentId.length === 9 && (!isManual || manualOtp.length === 6)
-    && gpsStatus !== "loading" && preview.status !== "notfound";
+    && gpsStatus !== "loading" && preview.status !== "notfound" && preview.status !== "loading";
 
   return (
     <>

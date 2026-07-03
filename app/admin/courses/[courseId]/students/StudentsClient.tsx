@@ -10,7 +10,7 @@ type SortDir = "asc" | "desc";
 
 interface InlineEdit { studentId: string; field: "student_id" | "firstname" | "lastname"; value: string; }
 
-export default function StudentsClient({ courseId }: { courseId: string }) {
+export default function StudentsClient({ courseId, section }: { courseId: string; section?: string }) {
   const [students, setStudents] = useState<Student[]>([]);
   const [course, setCourse] = useState<Course | null>(null);
   const [loading, setLoading] = useState(true);
@@ -31,22 +31,23 @@ export default function StudentsClient({ courseId }: { courseId: string }) {
   const importRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
-    const [coursesRes, stuRes] = await Promise.all([
-      fetch("/api/sheets/courses"),
-      fetch(`/api/sheets/session/${courseId}`).catch(() => null), // won't work, use courses
-    ]);
+    const coursesRes = await fetch("/api/sheets/courses");
     const cd = await coursesRes.json();
-    const c = (cd.courses ?? []).find((x: Course) => x.course_id === courseId);
+    // Without a section filter, a course with 2+ sections resolves to whichever
+    // comes first — every mutation below (edit/add/delete) would then act on
+    // the wrong section's roster.
+    const c = (cd.courses ?? []).find(
+      (x: Course) => x.course_id === courseId && (!section || x.section === section)
+    );
     setCourse(c ?? null);
 
     if (c) {
-      // Fetch students via summary endpoint
-      const summRes = await fetch(`/api/sheets/summary/${courseId}`);
+      const summRes = await fetch(`/api/sheets/summary/${courseId}?section=${encodeURIComponent(c.section)}`);
       const sd = await summRes.json();
       setStudents(sd.students ?? []);
     }
     setLoading(false);
-  }, [courseId]);
+  }, [courseId, section]);
 
   useEffect(() => { load(); }, [load]);
 

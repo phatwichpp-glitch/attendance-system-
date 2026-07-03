@@ -426,13 +426,13 @@ export default function CourseList() {
                             View Summary
                           </MenuItem>
                           <MenuItem
-                            href={`/admin/courses/${c.course_id}/students`}
+                            href={`/admin/courses/${c.course_id}/students?section=${encodeURIComponent(c.section)}`}
                             onClick={() => setMenuOpen(null)}
                           >
                             View Students
                           </MenuItem>
                           <MenuItem
-                            href={`/admin/courses/${c.course_id}/semester`}
+                            href={`/admin/courses/${c.course_id}/semester?section=${encodeURIComponent(c.section)}`}
                             onClick={() => setMenuOpen(null)}
                           >
                             Semester Settings

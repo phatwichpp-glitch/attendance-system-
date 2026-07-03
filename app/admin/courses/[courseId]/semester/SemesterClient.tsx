@@ -28,7 +28,7 @@ function configToFormState(config: SemesterConfig): SemesterFormState {
   };
 }
 
-export default function SemesterClient({ courseId }: { courseId: string }) {
+export default function SemesterClient({ courseId, section }: { courseId: string; section?: string }) {
   const [course, setCourse] = useState<Course | null>(null);
   const [semester, setSemester] = useState<SemesterFormState>({ ...DEFAULT_SEMESTER_FORM });
   const [createdAt, setCreatedAt] = useState("");
@@ -40,7 +40,12 @@ export default function SemesterClient({ courseId }: { courseId: string }) {
   const load = useCallback(async () => {
     const coursesRes = await fetch("/api/sheets/courses");
     const cd = await coursesRes.json();
-    const c = (cd.courses ?? []).find((x: Course) => x.course_id === courseId);
+    // Without a section filter, a course with 2+ sections would resolve to
+    // whichever one happens to come first — silently editing the wrong
+    // section's semester config from this page.
+    const c = (cd.courses ?? []).find(
+      (x: Course) => x.course_id === courseId && (!section || x.section === section)
+    );
     setCourse(c ?? null);
 
     if (c) {
@@ -52,7 +57,7 @@ export default function SemesterClient({ courseId }: { courseId: string }) {
       }
     }
     setLoading(false);
-  }, [courseId]);
+  }, [courseId, section]);
 
   useEffect(() => { load(); }, [load]);
 

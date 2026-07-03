@@ -236,6 +236,13 @@ async function processCourseOpen(
       config.teaching_schedule.map((d) => d.day)
     );
 
+    // late_after_min / otp_expire_min are both measured from opened_at (see
+    // checkin route + processCourseAutoClose below). Opening `leadMin` minutes
+    // early would otherwise silently eat into both windows — a student walking
+    // in exactly at the official start time would already have burned `leadMin`
+    // minutes of their "on time" allowance, and OTP would expire that much
+    // sooner than the admin configured. Padding both by leadMin keeps them
+    // anchored to the real class start regardless of how early the session opened.
     const result = await openSessionForCourse(accessToken, spreadsheetId, {
       course_id: course.course_id,
       section: course.section,
@@ -243,8 +250,8 @@ async function processCourseOpen(
       lat: config.default_lat,
       lng: config.default_lng,
       radius_m: config.default_gps_radius,
-      late_after_min: config.default_late_min,
-      otp_expire_min: config.default_otp_min,
+      late_after_min: config.default_late_min + leadMin,
+      otp_expire_min: config.default_otp_min + leadMin,
       week_number: weekInfo.weekNumber,
       week_label: weekInfo.label,
       date: dateStr,
@@ -260,10 +267,17 @@ async function processCourseOpen(
       const checkUrl = process.env.NEXTAUTH_URL
         ? `${process.env.NEXTAUTH_URL}/check?session_id=${result.session.session_id}`
         : undefined;
+      // Absolute clock time, not "expires in N minutes" — the message can arrive
+      // up to `leadMin` minutes before class starts, so a relative countdown read
+      // at message-open time would understate how long check-in actually stays open.
+      const otpExpiresAtMs = new Date(result.session.opened_at).getTime() + (config.default_otp_min + leadMin) * 60_000;
+      const otpExpiresClock = new Date(otpExpiresAtMs).toLocaleTimeString("th-TH", {
+        timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit",
+      });
       const message = [
         `เปิดคาบเรียนอัตโนมัติแล้ว: ${course.title} (${course.course_id}) Sec.${course.section}`,
         `${periodLabel} · ${dateStr}${leadMin > 0 ? ` (เปิดล่วงหน้า ${leadMin} นาที)` : ""}`,
-        `OTP: ${result.session.otp} (หมดอายุใน ${config.default_otp_min} นาที)`,
+        `OTP: ${result.session.otp} (ใช้ได้ถึง ${otpExpiresClock} น.)`,
         checkUrl ? `ลิงก์เช็คชื่อ: ${checkUrl}` : undefined,
       ].filter(Boolean).join("\n");
 

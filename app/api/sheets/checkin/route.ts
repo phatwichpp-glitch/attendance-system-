@@ -24,8 +24,13 @@ const GPS_TOO_PRECISE_M = 5;           // suspiciously exact + perfectly static 
 // (blocks brute force / spam from one device) with a loose per-IP backstop.
 // Replace with Redis/KV for multi-instance deployments.
 const RATE_LIMIT_WINDOW_MS = 60_000;
-const RATE_LIMIT_MAX_PER_STUDENT = 10;  // same IP + same student_id
+const RATE_LIMIT_MAX_PER_STUDENT = 10;  // same IP + same student_id, real submissions only
 const RATE_LIMIT_MAX_PER_IP = 300;      // backstop across a shared campus IP
+// Separate, looser budget for name-preview lookups (see step 5b below) — these
+// share the same debounced input as a student correcting typos while typing,
+// so counting them against RATE_LIMIT_MAX_PER_STUDENT could lock a real student
+// out of their own check-in before they ever submit it.
+const PREVIEW_RATE_LIMIT_MAX_PER_IP = 30;
 const ipHits = new Map<string, { count: number; windowStart: number }>();
 
 function bumpCounter(key: string, max: number): boolean {
@@ -44,6 +49,10 @@ function checkRateLimit(ip: string, studentId?: string): boolean {
   if (!bumpCounter(ip, RATE_LIMIT_MAX_PER_IP)) return false;
   if (studentId && !bumpCounter(`${ip}|${studentId}`, RATE_LIMIT_MAX_PER_STUDENT)) return false;
   return true;
+}
+
+function checkPreviewRateLimit(ip: string): boolean {
+  return bumpCounter(`preview|${ip}`, PREVIEW_RATE_LIMIT_MAX_PER_IP);
 }
 
 // Periodically purge stale entries to prevent unbounded growth
@@ -75,7 +84,10 @@ export async function POST(req: NextRequest) {
     } = body;
     let session_id: string = body.session_id ?? "";
 
-    if (!checkRateLimit(ip, typeof student_id === "string" ? student_id : undefined)) {
+    const rateLimitOk = body.preview
+      ? checkPreviewRateLimit(ip)
+      : checkRateLimit(ip, typeof student_id === "string" ? student_id : undefined);
+    if (!rateLimitOk) {
       return NextResponse.json(
         { error: "rate_limited", message: "Too many requests — please wait before retrying" },
         { status: 429 }

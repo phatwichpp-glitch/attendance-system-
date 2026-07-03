@@ -319,9 +319,9 @@ export default function SemesterConfigForm({
         {semester.auto_open_enabled && (
           <>
             <SemesterSlider
-              label="เปิดคาบล่วงหน้า"
+              label="Auto-Open Lead Time"
               value={semester.auto_open_lead_min}
-              min={0} max={15} step={1} unit="นาที"
+              min={0} max={15} step={1} unit="min"
               onChange={(v) => setSemester((s) => ({ ...s, auto_open_lead_min: v }))}
             />
             <p className="text-[11px] -mt-2" style={{ color: "#5F5E5A" }}>

@@ -27,7 +27,10 @@ export function getWeekLabel(
   teachingDays: number[]
 ): { weekNumber: number; label: string } {
   const weekNumber = getWeekNumber(sessionDate, semesterStart);
-  const dow = sessionDate.getDay();
+  // UTC, matching weekStartIndex above — every caller builds sessionDate via
+  // new Date("YYYY-MM-DD") (parsed as UTC midnight), so .getDay() (local) would
+  // roll back a day for any negative-UTC-offset browser/OS clock.
+  const dow = sessionDate.getUTCDay();
   const suffix = teachingDays.length > 1 ? (DAY_SUFFIX[dow] ?? "") : "";
   return { weekNumber, label: `W${weekNumber}${suffix}` };
 }
