@@ -48,12 +48,23 @@ export async function initializeSpreadsheet(
   if (res.data.files && res.data.files.length > 0) {
     const canonicalId = res.data.files[0].id!;
     if (res.data.files.length > 1) {
-      // Self-heal: fold any data written to the extra copy back into the
-      // canonical one and archive it, so a duplicate never silently strands
-      // course/session data where nobody (including us) can act on it manually.
-      await mergeDuplicateSpreadsheetsLocked(
-        accessToken, canonicalId, res.data.files.slice(1).map((f) => f.id!)
+      console.warn(
+        `[initializeSpreadsheet] ${res.data.files.length} "AttendanceDB" files found: ` +
+        `${res.data.files.map((f) => f.id).join(", ")} — canonical=${canonicalId}`
       );
+      // Self-heal: fold any data written to the extra copy back into the
+      // canonical one and archive it. Never let this block the actual request —
+      // returning the (already-correct) canonical ID must succeed even if the
+      // cleanup itself fails for some reason (e.g. a transient Drive/Sheets/
+      // Redis error), otherwise a bug in best-effort cleanup would look exactly
+      // like the original "session not found" it was written to fix.
+      try {
+        await mergeDuplicateSpreadsheetsLocked(
+          accessToken, canonicalId, res.data.files.slice(1).map((f) => f.id!)
+        );
+      } catch (err) {
+        console.error("[initializeSpreadsheet] self-heal merge threw unexpectedly — continuing with canonical file only", err);
+      }
     }
     return canonicalId;
   }
@@ -532,7 +543,14 @@ export async function getSessionById(
   sessionId: string
 ): Promise<Session | null> {
   const all = await getAllSessions(accessToken, spreadsheetId);
-  return all.find((s) => s.session_id === sessionId) ?? null;
+  const found = all.find((s) => s.session_id === sessionId) ?? null;
+  if (!found) {
+    console.warn(
+      `[getSessionById] "${sessionId}" not found in ${spreadsheetId} — ` +
+      `${all.length} session(s) present, most recent: ${all.slice(-5).map((s) => s.session_id).join(", ") || "(none)"}`
+    );
+  }
+  return found;
 }
 
 export async function closeSessionInSheet(
