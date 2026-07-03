@@ -9,6 +9,7 @@ import {
   TeachingDay,
 } from "@/types";
 import { generateOTP } from "@/lib/otp";
+import { getRedis } from "@/lib/redis";
 
 function makeAuth(accessToken: string) {
   const oauth = new google.auth.OAuth2();
@@ -30,14 +31,31 @@ export async function initializeSpreadsheet(
   accessToken: string
 ): Promise<string> {
   const drive = getDriveClient(accessToken);
+  // orderBy is required for a stable pick: without it Drive's list order isn't
+  // guaranteed, so if an account ever ends up with two "AttendanceDB" files
+  // (e.g. two requests racing to create one on a brand-new account, right in
+  // the eventual-consistency window after spreadsheets.create()), different
+  // requests could resolve to different files — the exact split-brain that
+  // makes a session created in one request 404 as "not found" from the next.
+  // Oldest-first keeps every caller converging on the same file from then on.
   const res = await drive.files.list({
     q: "name='AttendanceDB' and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false",
-    fields: "files(id,name)",
+    fields: "files(id,name,createdTime)",
+    orderBy: "createdTime",
     spaces: "drive",
   });
 
   if (res.data.files && res.data.files.length > 0) {
-    return res.data.files[0].id!;
+    const canonicalId = res.data.files[0].id!;
+    if (res.data.files.length > 1) {
+      // Self-heal: fold any data written to the extra copy back into the
+      // canonical one and archive it, so a duplicate never silently strands
+      // course/session data where nobody (including us) can act on it manually.
+      await mergeDuplicateSpreadsheetsLocked(
+        accessToken, canonicalId, res.data.files.slice(1).map((f) => f.id!)
+      );
+    }
+    return canonicalId;
   }
 
   const sheets = getSheetsClient(accessToken);
@@ -103,6 +121,118 @@ export async function initializeSpreadsheet(
   });
 
   return id;
+}
+
+// ─── Duplicate "AttendanceDB" self-heal ────────────────────────────────────────
+// initializeSpreadsheet runs on nearly every request, so if an account ever ends
+// up with two "AttendanceDB" files (Drive's search index has a short eventual-
+// consistency window right after spreadsheets.create(), so two near-simultaneous
+// first-time requests can each see zero results and each create one), this fires
+// concurrently across many requests. Locked so only one merge actually runs at a
+// time — without it, concurrent runs would each read the pre-merge row set and
+// all append the same "new" rows, multiplying data instead of consolidating it.
+
+const MERGE_LOCK_TTL_S = 60;
+let mergingInProcess = false; // fallback lock when Redis isn't configured (single-process hosts)
+
+async function mergeDuplicateSpreadsheetsLocked(
+  accessToken: string,
+  canonicalId: string,
+  duplicateIds: string[]
+): Promise<void> {
+  const redis = getRedis();
+  const lockKey = `attendance:merge-lock:${canonicalId}`;
+
+  if (redis) {
+    const acquired = await redis.set(lockKey, Date.now(), { nx: true, ex: MERGE_LOCK_TTL_S });
+    if (!acquired) return; // another request is already merging, or just finished
+  } else {
+    if (mergingInProcess) return;
+    mergingInProcess = true;
+  }
+
+  try {
+    for (const dupId of duplicateIds) {
+      try {
+        await mergeSpreadsheetInto(accessToken, canonicalId, dupId);
+        const drive = getDriveClient(accessToken);
+        await drive.files.update({ fileId: dupId, requestBody: { trashed: true } });
+        console.warn(
+          `[initializeSpreadsheet] Merged and archived duplicate "AttendanceDB" (${dupId}) into canonical (${canonicalId}).`
+        );
+      } catch (err) {
+        // Leave this duplicate in place — canonical resolution (oldest-first,
+        // above) is already correct without the merge, and we retry on the
+        // next request that hits this path rather than losing data to a
+        // half-finished cleanup.
+        console.error(`[initializeSpreadsheet] Failed to merge duplicate ${dupId} — will retry later`, err);
+      }
+    }
+  } finally {
+    if (!redis) mergingInProcess = false;
+  }
+}
+
+async function mergeSpreadsheetInto(
+  accessToken: string,
+  targetId: string,
+  sourceId: string
+): Promise<void> {
+  // Tabs added after initial launch are created lazily — guarantee they exist
+  // on the target before merging into them (source's absence is handled by
+  // mergeSheetRows itself, since it treats a missing tab as "no rows").
+  await Promise.all([
+    ensureSemesterConfigSheet(accessToken, targetId),
+    ensureAuditLogSheet(accessToken, targetId),
+  ]);
+
+  await Promise.all([
+    mergeSheetRows(accessToken, targetId, sourceId, "courses", "A2:F", "A:F", (r) => `${r[0]}__${r[2]}`),
+    mergeSheetRows(accessToken, targetId, sourceId, "students", "A2:F", "A:F", (r) => `${r[0]}__${r[3]}__${r[4]}`),
+    mergeSheetRows(accessToken, targetId, sourceId, "sessions", "A2:V", "A:V", (r) => r[0]),
+    mergeSheetRows(accessToken, targetId, sourceId, "attendance", "A2:Z", "A:Z", (r) => r[0]),
+    mergeSheetRows(accessToken, targetId, sourceId, "semester_config", "A2:N", "A:N", (r) => `${r[0]}__${r[1]}`),
+    mergeSheetRows(accessToken, targetId, sourceId, "audit_log", "A2:I", "A:I", (r) => r[0]),
+  ]);
+}
+
+/**
+ * Copies rows from `source`'s `sheetName` tab into `target`'s, skipping any row
+ * whose key (per keyFn) already exists in target — additive only, never
+ * overwrites. Tolerates either spreadsheet lacking that tab entirely.
+ */
+async function mergeSheetRows(
+  accessToken: string,
+  targetId: string,
+  sourceId: string,
+  sheetName: string,
+  readRange: string,
+  appendRange: string,
+  keyFn: (row: string[]) => string
+): Promise<void> {
+  const sheets = getSheetsClient(accessToken);
+  const readTab = async (spreadsheetId: string): Promise<string[][]> => {
+    try {
+      const res = await sheets.spreadsheets.values.get({ spreadsheetId, range: `${sheetName}!${readRange}` });
+      return (res.data.values ?? []) as string[][];
+    } catch {
+      return []; // tab doesn't exist in this spreadsheet
+    }
+  };
+
+  const [targetRows, sourceRows] = await Promise.all([readTab(targetId), readTab(sourceId)]);
+  if (sourceRows.length === 0) return;
+
+  const existingKeys = new Set(targetRows.map(keyFn));
+  const newRows = sourceRows.filter((r) => !existingKeys.has(keyFn(r)));
+  if (newRows.length === 0) return;
+
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: targetId,
+    range: `${sheetName}!${appendRange}`,
+    valueInputOption: "RAW",
+    requestBody: { values: newRows },
+  });
 }
 
 // ─── Semester Config ──────────────────────────────────────────────────────────
