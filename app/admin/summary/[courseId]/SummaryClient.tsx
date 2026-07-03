@@ -468,7 +468,16 @@ export default function SummaryClient({ courseId, section }: { courseId: string;
                     }}
                     onMouseEnter={() => setTooltipSession(ss.session_id)}
                     onMouseLeave={() => setTooltipSession(null)}
-                    onClick={() => router.push(`/admin/session/${ss.session_id}`)}
+                    onClick={() => {
+                      // Touch devices have no hover: first tap reveals the tooltip
+                      // + delete button, second tap navigates.
+                      const touchOnly = typeof window !== "undefined" && window.matchMedia("(hover: none)").matches;
+                      if (touchOnly && tooltipSession !== ss.session_id) {
+                        setTooltipSession(ss.session_id);
+                        return;
+                      }
+                      router.push(`/admin/session/${ss.session_id}`);
+                    }}
                   >
                     {/* Delete button — appears on hover */}
                     {isHovered && (
@@ -480,8 +489,8 @@ export default function SummaryClient({ courseId, section }: { courseId: string;
                           setDeleteError("");
                           setDeleteTarget(ss);
                         }}
-                        className="absolute top-0.5 right-0.5 rounded flex items-center justify-center text-[10px] leading-none"
-                        style={{ width: 14, height: 14, backgroundColor: "#fee2e2", color: "#A32D2D" }}
+                        className="absolute top-0.5 right-0.5 rounded flex items-center justify-center text-[12px] leading-none"
+                        style={{ width: 22, height: 22, backgroundColor: "#fee2e2", color: "#A32D2D" }}
                         title="Delete session"
                       >
                         ×

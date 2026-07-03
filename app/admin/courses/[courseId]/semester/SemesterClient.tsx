@@ -114,7 +114,7 @@ export default function SemesterClient({ courseId }: { courseId: string }) {
         </h1>
       </div>
 
-      <SemesterConfigForm value={semester} onChange={setSemester} />
+      <SemesterConfigForm value={semester} onChange={setSemester} courseId={courseId} section={course?.section} />
 
       {error && (
         <div className="rounded-lg px-4 py-3 text-[13px]" style={{ backgroundColor: "#FCEBEB", color: "#A32D2D" }}>

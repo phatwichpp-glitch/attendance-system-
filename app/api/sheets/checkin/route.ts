@@ -18,21 +18,31 @@ import { AttendanceRecord } from "@/types";
 const GPS_ACCURACY_SUSPICIOUS_M = 100; // fix too imprecise to trust against a small geofence
 const GPS_TOO_PRECISE_M = 5;           // suspiciously exact + perfectly static readings
 
-// ── Simple in-process rate limiter (10 requests per IP per 60 s) ─────────────
+// ── Simple in-process rate limiter ────────────────────────────────────────────
+// Campus WiFi NATs an entire classroom behind one public IP, so a strict per-IP
+// cap would 429 a real class checking in together. Limit tightly per IP+student
+// (blocks brute force / spam from one device) with a loose per-IP backstop.
 // Replace with Redis/KV for multi-instance deployments.
 const RATE_LIMIT_WINDOW_MS = 60_000;
-const RATE_LIMIT_MAX = 10;
+const RATE_LIMIT_MAX_PER_STUDENT = 10;  // same IP + same student_id
+const RATE_LIMIT_MAX_PER_IP = 300;      // backstop across a shared campus IP
 const ipHits = new Map<string, { count: number; windowStart: number }>();
 
-function checkRateLimit(ip: string): boolean {
+function bumpCounter(key: string, max: number): boolean {
   const now = Date.now();
-  const hit = ipHits.get(ip);
+  const hit = ipHits.get(key);
   if (!hit || now - hit.windowStart >= RATE_LIMIT_WINDOW_MS) {
-    ipHits.set(ip, { count: 1, windowStart: now });
+    ipHits.set(key, { count: 1, windowStart: now });
     return true;
   }
-  if (hit.count >= RATE_LIMIT_MAX) return false;
+  if (hit.count >= max) return false;
   hit.count++;
+  return true;
+}
+
+function checkRateLimit(ip: string, studentId?: string): boolean {
+  if (!bumpCounter(ip, RATE_LIMIT_MAX_PER_IP)) return false;
+  if (studentId && !bumpCounter(`${ip}|${studentId}`, RATE_LIMIT_MAX_PER_STUDENT)) return false;
   return true;
 }
 
@@ -45,16 +55,9 @@ setInterval(() => {
 }, 5 * 60_000);
 
 export async function POST(req: NextRequest) {
-  // Rate limiting
   const ip = req.headers.get("x-forwarded-for")?.split(",")[0].trim()
     ?? req.headers.get("x-real-ip")
     ?? "unknown";
-  if (!checkRateLimit(ip)) {
-    return NextResponse.json(
-      { error: "rate_limited", message: "Too many requests — please wait before retrying" },
-      { status: 429 }
-    );
-  }
 
   try {
     const body = await req.json();
@@ -71,6 +74,13 @@ export async function POST(req: NextRequest) {
       location_samples,
     } = body;
     let session_id: string = body.session_id ?? "";
+
+    if (!checkRateLimit(ip, typeof student_id === "string" ? student_id : undefined)) {
+      return NextResponse.json(
+        { error: "rate_limited", message: "Too many requests — please wait before retrying" },
+        { status: 429 }
+      );
+    }
 
     // Resolve spreadsheet + access token.
     // QR mode:     session_id present  → look up by session_id
@@ -142,6 +152,17 @@ export async function POST(req: NextRequest) {
     const student = students.find((s) => s.student_id === student_id);
     if (!student) {
       return NextResponse.json({ error: "not_found" }, { status: 404 });
+    }
+
+    // 5b. Preview mode — resolve the name so the student can confirm it's really
+    // them *before* submitting (one mistyped digit can check in a classmate).
+    // Passes the same session/OTP gates above but writes nothing.
+    if (body.preview) {
+      return NextResponse.json({
+        valid: true,
+        preview: true,
+        student: { firstname: student.firstname, lastname: student.lastname },
+      });
     }
 
     // 6. Duplicate check

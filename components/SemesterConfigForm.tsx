@@ -1,5 +1,6 @@
 "use client";
 import dynamic from "next/dynamic";
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import Toggle from "@/components/Toggle";
@@ -95,11 +96,16 @@ export function teachingScheduleToFormFields(schedule: TeachingDay[]): Pick<
 interface SemesterConfigFormProps {
   value: SemesterFormState;
   onChange: Dispatch<SetStateAction<SemesterFormState>>;
+  /** When set, the Auto-Open card shows this course's Classroom Display link. */
+  courseId?: string;
+  section?: string;
 }
 
 export default function SemesterConfigForm({
   value: semester,
   onChange: setSemester,
+  courseId,
+  section,
 }: SemesterConfigFormProps) {
   // "ok" = the scheduler holds a working refresh token for this account,
   // "unknown" = never registered (needs one fresh login), "invalid" = token died.
@@ -336,6 +342,29 @@ export default function SemesterConfigForm({
                 กรุณาเลือกตำแหน่งบนแผนที่ก่อนเปิดใช้งาน auto-open
               </p>
             )}
+            <div className="rounded-lg px-3 py-2.5 space-y-1.5 text-[12px]"
+              style={{ backgroundColor: "#f9fafb", border: "0.5px solid rgba(0,0,0,0.08)" }}>
+              <p className="font-medium" style={{ color: "#374151" }}>ใช้คู่กับ auto-open:</p>
+              <p style={{ color: "#5F5E5A" }}>
+                <Link href="/admin/notifications" className="underline" style={{ color: "#185FA5" }}>
+                  ตั้งค่าแจ้งเตือน Email / LINE
+                </Link>
+                {" "}— รับ OTP และลิงก์เช็คชื่อทันทีที่ระบบเปิดคาบให้
+              </p>
+              {courseId && section && (
+                <p style={{ color: "#5F5E5A" }}>
+                  <Link
+                    href={`/projector/course/${courseId}?section=${encodeURIComponent(section)}`}
+                    target="_blank"
+                    className="underline"
+                    style={{ color: "#185FA5" }}
+                  >
+                    เปิด Classroom Display
+                  </Link>
+                  {" "}— ลิงก์คงที่สำหรับเปิดค้างบนจอห้องเรียน จะโชว์ QR/OTP เองเมื่อคาบเปิด
+                </p>
+              )}
+            </div>
           </>
         )}
       </div>

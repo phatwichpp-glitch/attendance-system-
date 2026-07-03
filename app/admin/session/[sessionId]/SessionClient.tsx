@@ -885,7 +885,7 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
               {!isClosed && pendingStudents.length > 0 && (
                 <IssueChip active={issueFilter === "pending"} color="#6b7280"
                   onClick={() => setIssueFilter((f) => f === "pending" ? null : "pending")}>
-                  ยังไม่เช็คชื่อ {pendingStudents.length}
+                  Pending {pendingStudents.length}
                 </IssueChip>
               )}
               {gpsFailCount > 0 && (
@@ -935,7 +935,7 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
               Student List
               {issueFilter && (
                 <span className="text-[13px] font-normal text-gray-400 ml-2">
-                  — filtered by {issueFilter === "pending" ? "ยังไม่เช็คชื่อ" : ISSUE_FILTER_LABELS[issueFilter]}
+                  — filtered by {issueFilter === "pending" ? "Pending (ยังไม่เช็คชื่อ)" : ISSUE_FILTER_LABELS[issueFilter]}
                 </span>
               )}
             </h2>

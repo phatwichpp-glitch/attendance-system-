@@ -132,6 +132,11 @@ async function fetchCheckin(body: object, retries = 3): Promise<Response> {
 // ── Types ────────────────────────────────────────────────────────────────────
 interface SessionInfo { courseId: string; period: string; section: string; }
 type GpsStatus = "loading" | "ready" | "denied";
+type PreviewState =
+  | { status: "idle" }
+  | { status: "loading" }
+  | { status: "found"; name: string }
+  | { status: "notfound" };
 
 // ── CSS keyframes & pseudo-class overrides ───────────────────────────────────
 const CSS = `
@@ -254,6 +259,9 @@ export default function CheckClient() {
   const [showHelp, setShowHelp]       = useState(false);
   const [result, setResult]           = useState<Result | null>(null);
   const [session, setSession]         = useState<SessionInfo | null>(null);
+  // Keyed by the input it was fetched for — stale results are ignored by
+  // derivation instead of being cleared with a synchronous setState in an effect.
+  const [previewResult, setPreviewResult] = useState<{ key: string; state: PreviewState } | null>(null);
   const inputRef     = useRef<HTMLInputElement>(null);
   const fingerprintRef = useRef("");
   const gpuFingerprintRef = useRef("");
@@ -311,6 +319,46 @@ export default function CheckClient() {
     if (state === "ready") setTimeout(() => inputRef.current?.focus(), 100);
   }, [state]);
 
+  // Name preview — once the ID (and OTP in manual mode) is complete, resolve the
+  // student's name so they can confirm it's really them before submitting.
+  // One mistyped digit that matches a classmate would otherwise check them in.
+  const previewKey = `${studentId}|${isManual ? manualOtp : ""}`;
+  const previewActive = /^\d{9}$/.test(studentId) && (!isManual || /^\d{6}$/.test(manualOtp)) && state === "ready";
+  const preview: PreviewState =
+    previewActive && previewResult?.key === previewKey ? previewResult.state : { status: "idle" };
+
+  useEffect(() => {
+    if (!previewActive) return;
+    const key = previewKey;
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      setPreviewResult({ key, state: { status: "loading" } });
+      try {
+        const body = isManual
+          ? { otp: manualOtp, student_id: studentId, preview: true }
+          : { session_id: sessionId, otp, spreadsheet_id: sid, student_id: studentId, preview: true };
+        const res = await fetch("/api/sheets/checkin", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const d = await res.json();
+        if (cancelled) return;
+        if (res.ok && d.student) {
+          setPreviewResult({ key, state: { status: "found", name: `${d.student.firstname} ${d.student.lastname}`.trim() } });
+        } else if (res.status === 404 && d.error === "not_found") {
+          setPreviewResult({ key, state: { status: "notfound" } });
+        } else {
+          setPreviewResult({ key, state: { status: "idle" } }); // network/session issues surface at submit instead
+        }
+      } catch {
+        if (!cancelled) setPreviewResult({ key, state: { status: "idle" } });
+      }
+    }, 350);
+    return () => { cancelled = true; clearTimeout(t); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- previewKey encodes studentId+manualOtp
+  }, [previewActive, previewKey, isManual, state, sessionId, otp, sid]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!/^\d{9}$/.test(studentId)) return;
@@ -348,7 +396,7 @@ export default function CheckClient() {
   };
 
   const reset = () => { setStudentId(""); setManualOtp(""); setResult(null); setState("ready"); };
-  const fmt   = (iso: string) => new Date(iso).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
+  const fmt   = (iso: string) => new Date(iso).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" }) + " น.";
 
   // Header course line
   const isTerminal  = state === "session_invalid" || state === "session_expired";
@@ -356,7 +404,8 @@ export default function CheckClient() {
   const headerColor = isTerminal ? "#A32D2D" : "#374151";
 
   const submitting  = state === "submitting";
-  const canSubmit   = studentId.length === 9 && (!isManual || manualOtp.length === 6) && gpsStatus !== "loading";
+  const canSubmit   = studentId.length === 9 && (!isManual || manualOtp.length === 6)
+    && gpsStatus !== "loading" && preview.status !== "notfound";
 
   return (
     <>
@@ -386,7 +435,7 @@ export default function CheckClient() {
             <div style={CARD}>
               <div style={{ textAlign: "center", padding: "40px 0" }}>
                 <SpinEl size={32} />
-                <p style={{ fontSize: 13, color: "#9ca3af", marginTop: 14 }}>Verifying session...</p>
+                <p style={{ fontSize: 13, color: "#9ca3af", marginTop: 14 }}>กำลังตรวจสอบคาบเรียน...</p>
               </div>
             </div>
           )}
@@ -398,11 +447,11 @@ export default function CheckClient() {
               <p style={rTitle("#A32D2D")}>Session Closed</p>
               <p style={R_SUB}>
                 {state === "session_expired"
-                  ? "This session is closed or the OTP has expired."
-                  : isManual ? "OTP not found or no open session."
-                  : "QR code may have expired or is invalid."}
+                  ? "คาบเรียนนี้ปิดแล้ว หรือรหัส OTP หมดอายุ"
+                  : isManual ? "ไม่พบรหัส OTP นี้ หรือยังไม่มีคาบเรียนที่เปิดอยู่"
+                  : "QR code อาจหมดอายุหรือไม่ถูกต้อง"}
               </p>
-              <p style={{ ...R_SUB, marginTop: 4 }}>Please contact your instructor.</p>
+              <p style={{ ...R_SUB, marginTop: 4 }}>กรุณาติดต่ออาจารย์ผู้สอน</p>
               {isManual && <RetryBtn onClick={reset} />}
             </div>
           )}
@@ -418,7 +467,7 @@ export default function CheckClient() {
                   borderRadius: 20, padding: "4px 12px",
                   fontSize: 11, color: "#854F0B", fontWeight: 500, marginBottom: 18,
                 }}>
-                  ● Manual Check-In · Enter OTP from the board
+                  ● Manual Check-In · กรอกรหัส OTP จากหน้าจอหน้าห้อง
                 </div>
               )}
 
@@ -442,13 +491,30 @@ export default function CheckClient() {
                     maxLength={9}
                     value={studentId}
                     onChange={(e) => setStudentId(e.target.value.replace(/\D/g, "").slice(0, 9))}
-                    placeholder="Enter your 9-digit ID"
+                    placeholder="กรอกรหัสนักศึกษา 9 หลัก"
                     className="_ci-input"
                     style={INPUT_BASE}
                     autoComplete="off"
                     disabled={submitting}
                   />
                   <p style={INPUT_SUB}>{studentId.length} / 9</p>
+
+                  {/* Name confirmation — verify identity before submitting */}
+                  {preview.status === "loading" && (
+                    <p style={{ ...INPUT_SUB, marginTop: 8 }}>กำลังตรวจสอบรหัส...</p>
+                  )}
+                  {preview.status === "found" && (
+                    <div style={{ marginTop: 10, padding: "10px 12px", borderRadius: 10, backgroundColor: "#EAF3DE", border: "1px solid #97C459", textAlign: "center", animation: "fadeInUp 0.2s ease" }}>
+                      <p style={{ margin: 0, fontSize: 16, fontWeight: 600, color: "#3B6D11" }}>✓ {preview.name}</p>
+                      <p style={{ margin: "3px 0 0", fontSize: 11, color: "#3B6D11" }}>ตรวจสอบว่าเป็นชื่อของคุณ แล้วกดเช็คชื่อ</p>
+                    </div>
+                  )}
+                  {preview.status === "notfound" && (
+                    <div style={{ marginTop: 10, padding: "10px 12px", borderRadius: 10, backgroundColor: "#FCEBEB", border: "1px solid #F09595", textAlign: "center", animation: "fadeInUp 0.2s ease" }}>
+                      <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: "#A32D2D" }}>ไม่พบรหัสนี้ในรายวิชา</p>
+                      <p style={{ margin: "3px 0 0", fontSize: 11, color: "#A32D2D" }}>ตรวจสอบรหัสนักศึกษาอีกครั้ง</p>
+                    </div>
+                  )}
                 </div>
 
                 {/* OTP — manual mode only */}
@@ -461,7 +527,7 @@ export default function CheckClient() {
                       maxLength={6}
                       value={manualOtp}
                       onChange={(e) => setManualOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                      placeholder="Enter 6-digit code from board"
+                      placeholder="รหัส 6 หลักจากหน้าจอ"
                       className="_ci-input"
                       style={{ ...INPUT_BASE, fontSize: 22, letterSpacing: 8, padding: "16px" }}
                       autoComplete="off"
@@ -487,11 +553,11 @@ export default function CheckClient() {
           {state === "success_present" && (
             <div style={resultCard("green")}>
               <ResultIcon type="check" color="#3B6D11" />
-              <p style={rTitle("#3B6D11")}>Checked In</p>
+              <p style={rTitle("#3B6D11")}>Checked In ✓</p>
               {result?.student && <p style={R_NAME}>{result.student.firstname} {result.student.lastname}</p>}
               {result?.checked_at && <p style={R_TIME}>{fmt(result.checked_at)}</p>}
               {result?.distance_m !== undefined && (
-                <p style={R_DIST}>📍 {result.distance_m} meters from classroom</p>
+                <p style={R_DIST}>📍 ห่างจากห้องเรียน {result.distance_m} เมตร</p>
               )}
             </div>
           )}
@@ -504,7 +570,7 @@ export default function CheckClient() {
               {result?.student && <p style={R_NAME}>{result.student.firstname} {result.student.lastname}</p>}
               {result?.checked_at && <p style={R_TIME}>{fmt(result.checked_at)}</p>}
               <p style={{ ...R_SUB, fontSize: 11, color: "#92400E", marginTop: 10 }}>
-                Marked as late — checked in after the allowed window.
+                เช็คชื่อหลังเวลาที่กำหนด — ระบบบันทึกสถานะเป็น &quot;สาย&quot;
               </p>
             </div>
           )}
@@ -513,17 +579,17 @@ export default function CheckClient() {
           {state === "gps_fail" && (
             <div style={resultCard("amber")}>
               <ResultIcon type="location" color="#854F0B" />
-              <p style={rTitle("#854F0B")}>Location Not Verified</p>
+              <p style={rTitle("#854F0B")}>GPS Not Verified</p>
               {result?.student && <p style={R_NAME}>{result.student.firstname} {result.student.lastname}</p>}
               <p style={{ ...R_SUB, color: "#92400E" }}>
-                Your check-in was recorded but your GPS location is outside the classroom zone.
+                ระบบบันทึกการเช็คชื่อไว้แล้ว แต่ตำแหน่ง GPS ของคุณอยู่นอกรัศมีห้องเรียน
               </p>
               <p style={{ ...R_SUB, color: "#92400E" }}>
-                Please inform your instructor to verify your attendance.
+                กรุณาแจ้งอาจารย์ผู้สอนเพื่อยืนยันการเข้าเรียน
               </p>
               {result?.distance_m !== undefined && (
                 <p style={{ ...R_DIST, color: "#854F0B", fontWeight: 600, marginTop: 8 }}>
-                  You were {result.distance_m} meters away
+                  คุณอยู่ห่างจากห้องเรียน {result.distance_m} เมตร
                 </p>
               )}
             </div>
@@ -537,7 +603,7 @@ export default function CheckClient() {
               {result?.student && <p style={R_NAME}>{result.student.firstname} {result.student.lastname}</p>}
               {result?.checked_at && (
                 <p style={{ ...R_SUB, color: "#1e3a5f" }}>
-                  You already checked in for this session at {fmt(result.checked_at)}
+                  คุณเช็คชื่อคาบนี้ไปแล้วเมื่อ {fmt(result.checked_at)}
                 </p>
               )}
             </div>
@@ -547,10 +613,10 @@ export default function CheckClient() {
           {state === "already_gps_fail" && (
             <div style={resultCard("amber")}>
               <ResultIcon type="info" color="#854F0B" />
-              <p style={rTitle("#854F0B")}>Already Checked In — Pending Approval</p>
+              <p style={rTitle("#854F0B")}>Already Checked In — รอตรวจสอบ</p>
               {result?.student && <p style={R_NAME}>{result.student.firstname} {result.student.lastname}</p>}
               <p style={{ ...R_SUB, color: "#92400E" }}>
-                Check-in recorded — awaiting instructor review for GPS fail.
+                บันทึกไว้แล้ว — รออาจารย์ตรวจสอบกรณีตำแหน่ง GPS ไม่ผ่าน
               </p>
             </div>
           )}
@@ -561,10 +627,10 @@ export default function CheckClient() {
               <ResultIcon type="user" color="#A32D2D" />
               <p style={rTitle("#A32D2D")}>Student Not Found</p>
               <p style={{ ...R_SUB, color: "#7f1d1d" }}>
-                Student ID <span style={{ fontFamily: "monospace" }}>{studentId}</span> is not enrolled in this course.
+                รหัส <span style={{ fontFamily: "monospace" }}>{studentId}</span> ไม่อยู่ในรายชื่อวิชานี้
               </p>
               <p style={{ ...R_SUB, color: "#7f1d1d", marginTop: 4 }}>
-                Please double-check your ID or contact your instructor.
+                ตรวจสอบรหัสอีกครั้ง หรือติดต่ออาจารย์ผู้สอน
               </p>
               <RetryBtn onClick={reset} />
             </div>
@@ -574,8 +640,8 @@ export default function CheckClient() {
           {state === "error" && (
             <div style={resultCard("red")}>
               <ResultIcon type="x" color="#A32D2D" />
-              <p style={rTitle("#A32D2D")}>Something Went Wrong</p>
-              <p style={{ ...R_SUB, color: "#7f1d1d" }}>An error occurred. Please try again.</p>
+              <p style={rTitle("#A32D2D")}>Error</p>
+              <p style={{ ...R_SUB, color: "#7f1d1d" }}>กรุณาลองใหม่อีกครั้ง</p>
               <RetryBtn onClick={reset} />
             </div>
           )}
@@ -602,9 +668,9 @@ function GpsRow({ status, accuracy, showHelp, onToggleHelp, onRetry }: {
   onRetry: () => void;
 }) {
   const cfg = {
-    loading: { dot: "#854F0B", bg: "#fffbeb", label: "Getting Location...", sub: "Locating your position, please wait", pulse: true },
-    ready:   { dot: "#3B6D11", bg: "#f0fdf4", label: `Location Ready${accuracy ? `  \u00b1${Math.round(accuracy)} m` : ""}`, sub: "Ready to check in", pulse: false },
-    denied:  { dot: "#A32D2D", bg: "#fff1f1", label: "Location Denied", sub: "Please allow Location in your browser settings", pulse: false },
+    loading: { dot: "#854F0B", bg: "#fffbeb", label: "Getting Location...", sub: "\u0e23\u0e2d\u0e2a\u0e31\u0e01\u0e04\u0e23\u0e39\u0e48 \u0e23\u0e30\u0e1a\u0e1a\u0e01\u0e33\u0e25\u0e31\u0e07\u0e23\u0e30\u0e1a\u0e38\u0e15\u0e33\u0e41\u0e2b\u0e19\u0e48\u0e07\u0e02\u0e2d\u0e07\u0e04\u0e38\u0e13", pulse: true },
+    ready:   { dot: "#3B6D11", bg: "#f0fdf4", label: `Location Ready${accuracy ? `  \u00b1${Math.round(accuracy)} m` : ""}`, sub: "\u0e1e\u0e23\u0e49\u0e2d\u0e21\u0e40\u0e0a\u0e47\u0e04\u0e0a\u0e37\u0e48\u0e2d", pulse: false },
+    denied:  { dot: "#A32D2D", bg: "#fff1f1", label: "Location Denied", sub: "\u0e01\u0e23\u0e38\u0e13\u0e32\u0e2d\u0e19\u0e38\u0e0d\u0e32\u0e15 Location \u0e43\u0e19\u0e01\u0e32\u0e23\u0e15\u0e31\u0e49\u0e07\u0e04\u0e48\u0e32\u0e40\u0e1a\u0e23\u0e32\u0e27\u0e4c\u0e40\u0e0b\u0e2d\u0e23\u0e4c", pulse: false },
   }[status];
 
   return (
@@ -624,14 +690,14 @@ function GpsRow({ status, accuracy, showHelp, onToggleHelp, onRetry }: {
                 onClick={onToggleHelp}
                 style={{ fontSize: 11, color: "#185FA5", background: "none", border: "none", cursor: "pointer", padding: 0, marginTop: 6, display: "block" }}
               >
-                How to enable location access →
+                วิธีเปิดสิทธิ์เข้าถึงตำแหน่ง →
               </button>
               {showHelp && (
                 <div style={{ marginTop: 8, padding: "10px 12px", backgroundColor: "white", borderRadius: 8, border: "0.5px solid #e5e7eb", fontSize: 11, color: "#374151", lineHeight: 1.7 }}>
-                  <strong>How to allow location access:</strong><br />
-                  • Chrome: Address bar → 🔒 icon → Site settings → Location → Allow<br />
-                  • Safari: Settings → Safari → Location → Allow<br />
-                  • Firefox: 🔒 icon → Allow Location Access
+                  <strong>วิธีอนุญาตให้เข้าถึงตำแหน่ง:</strong><br />
+                  • Chrome: แถบที่อยู่ → ไอคอน 🔒 → การตั้งค่าเว็บไซต์ → ตำแหน่ง → อนุญาต<br />
+                  • Safari: ตั้งค่า → Safari → ตำแหน่ง → อนุญาต<br />
+                  • Firefox: ไอคอน 🔒 → อนุญาตการเข้าถึงตำแหน่ง
                 </div>
               )}
               <button

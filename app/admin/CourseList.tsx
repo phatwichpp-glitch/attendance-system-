@@ -242,7 +242,7 @@ export default function CourseList() {
       {todayItems.length > 0 && (
         <div className="card">
           <p className="text-[13px] font-semibold mb-1" style={{ color: "#185FA5" }}>
-            คาบสอนวันนี้ · {new Date().toLocaleDateString("th-TH", { weekday: "long", day: "numeric", month: "long" })}
+            Today · {new Date().toLocaleDateString("th-TH", { weekday: "long", day: "numeric", month: "long" })}
           </p>
           <div className="divide-y divide-gray-50">
             {todayItems.map(({ c, key, td, cfg }) => {
@@ -279,7 +279,7 @@ export default function CourseList() {
                       className="btn-primary text-[12px] px-3 shrink-0"
                       style={{ minHeight: 32 }}
                     >
-                      {quickOpening === key ? <Spinner className="h-3.5 w-3.5" /> : "เปิดคาบทันที"}
+                      {quickOpening === key ? <Spinner className="h-3.5 w-3.5" /> : "Quick Open"}
                     </button>
                   ) : (
                     <Link
@@ -287,7 +287,7 @@ export default function CourseList() {
                       className="btn-outline text-[12px] px-3 shrink-0"
                       style={{ minHeight: 32 }}
                     >
-                      เปิดคาบ
+                      Open Session
                     </Link>
                   )}
                 </div>
@@ -381,7 +381,7 @@ export default function CourseList() {
                         style={{ minHeight: 36 }}
                         title="เปิดด้วยค่าจาก Semester Settings + หมุดห้องเรียนที่ปักไว้ — ไม่ต้องรอ GPS"
                       >
-                        {quickOpening === key ? <Spinner className="h-4 w-4" /> : "เปิดคาบทันที"}
+                        {quickOpening === key ? <Spinner className="h-4 w-4" /> : "Quick Open"}
                       </button>
                     ) : (
                       <Link
@@ -469,7 +469,7 @@ export default function CourseList() {
                       className="btn-outline text-[13px] px-3 w-full text-center"
                       style={{ minHeight: 36 }}
                     >
-                      เปิดแบบกำหนดเอง
+                      Open Session
                     </Link>
                   ) : (
                     <Link
