@@ -121,7 +121,7 @@ export default function SetupClient() {
     const sessionD = new Date(sessionDate);
     const semStart = new Date(semesterConfig.semester_start);
     const days = semesterConfig.teaching_schedule.map((t) => t.day);
-    const computed = getWeekLabel(sessionD, semStart, days, 0);
+    const computed = getWeekLabel(sessionD, semStart, days);
     setWeekNumber(computed.weekNumber);
     setWeekLabel(computed.label);
   }, [sessionDate, semesterConfig]);

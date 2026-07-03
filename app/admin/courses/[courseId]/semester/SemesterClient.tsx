@@ -9,13 +9,14 @@ import SemesterConfigForm, {
   buildTeachingSchedule,
   teachingScheduleToFormFields,
 } from "@/components/SemesterConfigForm";
+import { countWeeksBetween, semesterEndFromWeeks } from "@/lib/week-utils";
 
 function configToFormState(config: SemesterConfig): SemesterFormState {
   return {
     ...DEFAULT_SEMESTER_FORM,
     ...teachingScheduleToFormFields(config.teaching_schedule),
     semester_start: config.semester_start,
-    total_weeks: config.total_weeks,
+    semester_end: semesterEndFromWeeks(config.semester_start, config.total_weeks),
     default_gps_radius: config.default_gps_radius,
     default_otp_min: config.default_otp_min,
     default_late_min: config.default_late_min,
@@ -65,7 +66,7 @@ export default function SemesterClient({ courseId }: { courseId: string }) {
         course_id: courseId,
         section: course.section,
         semester_start: semester.semester_start,
-        total_weeks: semester.total_weeks,
+        total_weeks: countWeeksBetween(semester.semester_start, semester.semester_end) || 15,
         teaching_schedule,
         default_gps_radius: semester.default_gps_radius,
         default_otp_min: semester.default_otp_min,
@@ -128,7 +129,13 @@ export default function SemesterClient({ courseId }: { courseId: string }) {
 
       <button
         onClick={handleSave}
-        disabled={saving || !semester.semester_start || semester.teaching_days.length === 0 || needsLocation}
+        disabled={
+          saving ||
+          !semester.semester_start ||
+          countWeeksBetween(semester.semester_start, semester.semester_end) === 0 ||
+          semester.teaching_days.length === 0 ||
+          needsLocation
+        }
         className="btn-primary w-full py-3 text-[13px]"
       >
         {saving && <Spinner className="h-4 w-4" />}

@@ -2,7 +2,7 @@
 // route so the auto-open scheduler (lib/scheduler.ts) can create sessions identically
 // (including double-period handling) without a browser request in flight.
 
-import { createSession, getAllSessions, deleteSessionById } from "@/lib/sheets";
+import { createSession, deleteSessionById } from "@/lib/sheets";
 import { registerSession } from "@/lib/session-store";
 import { generateOTP } from "@/lib/otp";
 import { Session } from "@/types";
@@ -64,20 +64,8 @@ export async function openSessionForCourse(
   let resolvedWeekLabel: string | undefined = week_label;
 
   if (semester_start && !week_label) {
-    const allSessions = await getAllSessions(accessToken, spreadsheetId);
-    const sessionDate = new Date(today);
-    const semStart = new Date(semester_start);
-    const weekNum = Math.max(
-      1,
-      Math.ceil((sessionDate.getTime() - semStart.getTime()) / (7 * 24 * 60 * 60 * 1000))
-    );
-    const sessionsThisWeek = allSessions.filter((s) => {
-      if (s.course_id !== course_id || s.section !== section) return false;
-      if (!s.week_number) return false;
-      return s.week_number === weekNum;
-    }).length;
     const days: number[] = Array.isArray(teaching_days) ? teaching_days : [];
-    const computed = getWeekLabel(sessionDate, semStart, days, sessionsThisWeek);
+    const computed = getWeekLabel(new Date(today), new Date(semester_start), days);
     resolvedWeekNumber = computed.weekNumber;
     resolvedWeekLabel = computed.label;
   }

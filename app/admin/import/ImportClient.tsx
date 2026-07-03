@@ -7,10 +7,13 @@ import {
   parseAttendanceXlsx,
   parseGenericFile,
   applyColumnMapping,
+  autoDetectMapping,
+  parseFilenameInfo,
   isCmuFormat,
   ParsedImport,
   GenericFileData,
 } from "@/lib/xlsx-parser";
+import { countWeeksBetween } from "@/lib/week-utils";
 import SemesterConfigForm, {
   DEFAULT_SEMESTER_FORM,
   SemesterFormState,
@@ -36,6 +39,7 @@ export default function ImportClient() {
   const [mapping, setMapping] = useState<ColMapping>({ studentId: 0, firstname: 1, lastname: 2 });
   const [manualInfo, setManualInfo] = useState({ course_id: "", title: "", section: "", lecturer: "" });
   const [semester, setSemester] = useState<SemesterFormState>({ ...DEFAULT_SEMESTER_FORM });
+  const [autoDetected, setAutoDetected] = useState(false);
   const [error, setError] = useState("");
   const [dragging, setDragging] = useState(false);
 
@@ -54,8 +58,28 @@ export default function ImportClient() {
       } else {
         const data = parseGenericFile(buffer);
         if (data.headers.length === 0) throw new Error("ไม่สามารถอ่านไฟล์ได้");
+
+        // Pre-scan: guess column mapping from headers/content and course info
+        // from the filename, then let the admin verify before continuing.
+        const detected = autoDetectMapping(data.headers, data.preview);
+        const hint = parseFilenameInfo(file.name);
         setGeneric(data);
-        setMapping({ studentId: 0, firstname: 1, lastname: 2 });
+        setMapping({
+          studentId: detected.studentId ?? 0,
+          firstname: detected.firstname ?? 1,
+          lastname: detected.lastname ?? 2,
+          orderNum: detected.orderNum,
+        });
+        setManualInfo((m) => ({
+          ...m,
+          course_id: hint.course_id ?? m.course_id,
+          section: hint.section ?? m.section,
+        }));
+        setAutoDetected(
+          detected.studentId !== undefined &&
+          detected.firstname !== undefined &&
+          detected.lastname !== undefined
+        );
         setStep("mapper");
       }
     } catch (e: unknown) {
@@ -88,7 +112,7 @@ export default function ImportClient() {
         ...parsed,
         semester_config: semester.semester_start ? {
           semester_start: semester.semester_start,
-          total_weeks: semester.total_weeks,
+          total_weeks: countWeeksBetween(semester.semester_start, semester.semester_end) || 15,
           teaching_schedule,
           default_gps_radius: semester.default_gps_radius,
           default_otp_min: semester.default_otp_min,
@@ -197,7 +221,13 @@ export default function ImportClient() {
         <div className="space-y-4">
           <div className="card space-y-4">
             <h2 className="font-medium text-gray-900">Map Columns</h2>
-            <p className="text-[13px] text-gray-500">เลือกคอลัมน์ที่ตรงกับแต่ละฟิลด์</p>
+            {autoDetected ? (
+              <div className="rounded-lg px-3 py-2 text-[12px]" style={{ backgroundColor: "#EAF3DE", color: "#3B6D11" }}>
+                ✓ ระบบสแกนและจับคู่คอลัมน์ให้อัตโนมัติแล้ว — กรุณาตรวจสอบความถูกต้องก่อนดำเนินการต่อ
+              </div>
+            ) : (
+              <p className="text-[13px] text-gray-500">เลือกคอลัมน์ที่ตรงกับแต่ละฟิลด์</p>
+            )}
 
             {/* Preview table */}
             <div className="overflow-x-auto rounded-lg border border-gray-100">
@@ -350,7 +380,12 @@ export default function ImportClient() {
             <button onClick={() => setStep("preview")} className="btn-outline flex-1">Back</button>
             <button
               onClick={handleImport}
-              disabled={submitting || !semester.semester_start || semester.teaching_days.length === 0}
+              disabled={
+                submitting ||
+                !semester.semester_start ||
+                countWeeksBetween(semester.semester_start, semester.semester_end) === 0 ||
+                semester.teaching_days.length === 0
+              }
               className="btn-primary flex-1"
             >
               {submitting && <Spinner className="h-4 w-4" />}

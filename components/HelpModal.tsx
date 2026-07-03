@@ -104,15 +104,16 @@ export default function HelpModal({ onClose }: { onClose: () => void }) {
 
               <FeatureGroup icon="📥" title="นำเข้ารายชื่อ (Import)" color="#185FA5">
                 <Li>รองรับ .xlsx, .xls, .csv — ทั้ง format CMU และ format ทั่วไป</Li>
+                <Li>ระบบสแกนไฟล์ให้ก่อนอัตโนมัติ — จับคู่คอลัมน์ (รหัส/ชื่อ/นามสกุล/ลำดับ) และดึงรหัสวิชา + section จากชื่อไฟล์ แค่ตรวจสอบความถูกต้องแล้วไปต่อ</Li>
                 <Li>Import ซ้ำได้ — ระบบ merge ไม่ทับข้อมูลเดิม</Li>
-                <Li>ตั้งค่าภาคการศึกษา (วันสอน, เวลา, จำนวนสัปดาห์) ได้ในขั้นตอนเดียวกัน</Li>
+                <Li>ตั้งค่าภาคการศึกษา (วันเปิด–วันสุดท้ายของภาคเรียน, วันสอน, เวลา) ได้ในขั้นตอนเดียวกัน</Li>
               </FeatureGroup>
 
               <FeatureGroup icon="📅" title="ตั้งค่าภาคการศึกษา (Semester Config)" color="#185FA5">
-                <Li>บันทึกวันเริ่มภาค, จำนวนสัปดาห์, วันสอนแต่ละสัปดาห์</Li>
+                <Li>กรอกวันเปิดภาคเรียนและวันสุดท้ายของภาคเรียน — ระบบคำนวณจำนวนสัปดาห์ให้เอง ไม่ต้องนับ</Li>
                 <Li>กรอกเวลาเรียนจริง (HH:MM) ไม่ใช่ระบบคาบมาตรฐาน</Li>
                 <Li>เปิด Session ครั้งต่อไป — เวลาเรียน GPS Radius OTP จะ auto-fill จาก config นี้</Li>
-                <Li>คำนวณ Week number อัตโนมัติ (W1m, W2t …)</Li>
+                <Li>คำนวณ Week number อัตโนมัติ (W1m, W2t …) ตามสัปดาห์ปฏิทิน จันทร์–อาทิตย์</Li>
               </FeatureGroup>
 
               <FeatureGroup icon="🔓" title="เปิดคาบเรียน (Open Session)" color="#185FA5">
@@ -225,7 +226,11 @@ export default function HelpModal({ onClose }: { onClose: () => void }) {
                     </tbody>
                   </table>
                 </div>
-                <Note>กรอก Week Label เองได้ในหน้า Open Session — ระบบจะ sort อัตโนมัติ</Note>
+                <Note>
+                  สัปดาห์นับตามปฏิทิน (จันทร์–อาทิตย์) — W1 คือสัปดาห์ที่มีวันเปิดภาคเรียนอยู่
+                  ถึงแม้เปิดเทอมกลางสัปดาห์ พอถึงวันจันทร์ถัดไปก็ขึ้น W2 ทันที
+                  กรอก Week Label เองได้ในหน้า Open Session — ระบบจะ sort อัตโนมัติ
+                </Note>
               </Section>
 
               <Section title="Export .xlsx — ค่าตัวเลขในแต่ละ cell" color="#3B6D11">
@@ -268,9 +273,10 @@ export default function HelpModal({ onClose }: { onClose: () => void }) {
               <Section title="1. นำเข้ารายชื่อนักศึกษา" color="#185FA5">
                 <Step n="1">ไปที่เมนู <Chip>Import</Chip> — อัปโหลด .xlsx, .xls หรือ .csv</Step>
                 <Step n="2">ถ้าเป็น format CMU ระบบจะอ่านรหัสวิชาและรายชื่อให้อัตโนมัติ</Step>
-                <Step n="3">ถ้าเป็น format อื่น — เลือก mapping คอลัมน์ด้วยตัวเอง</Step>
-                <Step n="4">ตั้งค่าภาคการศึกษา (วันสอน, เวลา, GPS radius, threshold ฯลฯ)</Step>
-                <Step n="5">กด <Chip>Confirm Import</Chip></Step>
+                <Step n="3">format อื่น — ระบบสแกนหัวตารางแล้วจับคู่คอลัมน์ (รหัสนักศึกษา ชื่อ นามสกุล ลำดับ) ให้อัตโนมัติ พร้อมดึงรหัสวิชา/section จากชื่อไฟล์ — ตรวจสอบความถูกต้อง แก้จุดที่ไม่ตรง แล้วเติมชื่อวิชากับผู้สอน</Step>
+                <Step n="4">ตรวจรายชื่อนักศึกษาที่อ่านได้ในหน้า Preview ก่อนไปต่อ</Step>
+                <Step n="5">ตั้งค่าภาคการศึกษา — กรอกวันเปิดภาคเรียนและวันสุดท้ายของภาคเรียน (ระบบคำนวณจำนวนสัปดาห์ให้เอง), วันสอน, เวลา, GPS radius ฯลฯ</Step>
+                <Step n="6">กด <Chip>Confirm Import</Chip></Step>
                 <Note>Import ซ้ำวิชาเดิมได้ — ระบบ merge ไม่ทับข้อมูลเดิม</Note>
               </Section>
 
@@ -394,9 +400,14 @@ export default function HelpModal({ onClose }: { onClose: () => void }) {
                 ระบบจะ auto-fill เวลาจาก semester config เฉพาะครั้งแรก — หลังจากนั้นจะจำเวลา
                 ที่เคยกรอก เปลี่ยนได้ตรง time input บนหน้า Open Session
               </FAQ>
-              <FAQ q="Week label คำนวณผิด หรืออยากกรอกเอง?">
-                ระบบคำนวณจาก semester_start ที่ตั้งไว้ — แก้ได้ตรง field Week # และ Week Label
-                บนหน้า Open Session รูปแบบ: W1m, W2th ฯลฯ
+              <FAQ q="Week label คำนวณยังไง อยากกรอกเองได้ไหม?">
+                ระบบนับตามสัปดาห์ปฏิทิน (จันทร์–อาทิตย์) โดย W1 คือสัปดาห์ที่มีวันเปิดภาคเรียน —
+                เปิดเทอมวันไหนของสัปดาห์ก็ได้ พอถึงวันจันทร์ถัดไปจะขึ้น W2 เสมอ
+                ถ้าอยากกรอกเอง แก้ได้ตรง field Week # และ Week Label บนหน้า Open Session รูปแบบ: W1m, W2th ฯลฯ
+              </FAQ>
+              <FAQ q="ช่องจำนวนสัปดาห์ (Total Weeks) หายไปไหน?">
+                ไม่ต้องกรอกแล้วครับ — ตอนนี้กรอกแค่<strong>วันเปิดภาคเรียน</strong>กับ<strong>วันสุดท้ายของภาคเรียน</strong>
+                ระบบจะนับจำนวนสัปดาห์ตามปฏิทินให้เอง และแสดงผลลัพธ์ให้เห็นทันทีใต้ช่องวันที่ (เช่น &quot;รวม 16 สัปดาห์&quot;)
               </FAQ>
               <FAQ q="ลบ session ไปแล้วกู้คืนได้ไหม?">
                 ไม่ได้ครับ — การลบเป็นถาวร ข้อมูลเช็คชื่อทุกคนในคาบนั้นจะหายไปด้วย

@@ -5,6 +5,7 @@ import type { Dispatch, SetStateAction } from "react";
 import Toggle from "@/components/Toggle";
 import { DAY_NAMES, TeachingDay } from "@/types";
 import { PERIOD_STARTS, addMinutes, nearestPeriod } from "@/lib/period-utils";
+import { countWeeksBetween } from "@/lib/week-utils";
 
 const GpsMapPicker = dynamic(() => import("@/app/admin/setup/GpsMapPicker"), {
   ssr: false,
@@ -19,7 +20,7 @@ const DEFAULT_MAP_LNG = 98.9853;
 
 export interface SemesterFormState {
   semester_start: string;
-  total_weeks: number;
+  semester_end: string;
   teaching_days: number[];
   day_start_time: Record<number, string>;         // HH:MM actual class start
   day_end_time: Record<number, string>;           // HH:MM actual class end (auto or override)
@@ -36,7 +37,7 @@ export interface SemesterFormState {
 
 export const DEFAULT_SEMESTER_FORM: SemesterFormState = {
   semester_start: "",
-  total_weeks: 15,
+  semester_end: "",
   teaching_days: [],
   day_start_time: {},
   day_end_time: {},
@@ -134,16 +135,29 @@ export default function SemesterConfigForm({
           </div>
           <div>
             <label className="block text-[13px] font-medium text-gray-700 mb-1">
-              Total Weeks
+              Semester End Date <span className="text-red-500">*</span>
             </label>
             <input
-              type="number" min={8} max={20}
+              type="date"
               className="input text-[13px]"
-              value={semester.total_weeks}
-              onChange={(e) => setSemester((s) => ({ ...s, total_weeks: parseInt(e.target.value, 10) || 15 }))}
+              min={semester.semester_start || undefined}
+              value={semester.semester_end}
+              onChange={(e) => setSemester((s) => ({ ...s, semester_end: e.target.value }))}
             />
           </div>
         </div>
+
+        {semester.semester_start && semester.semester_end && (
+          countWeeksBetween(semester.semester_start, semester.semester_end) > 0 ? (
+            <p className="text-[12px]" style={{ color: "#185FA5" }}>
+              ✓ รวม {countWeeksBetween(semester.semester_start, semester.semester_end)} สัปดาห์ (คำนวณจากช่วงวันที่)
+            </p>
+          ) : (
+            <p className="text-[12px]" style={{ color: "#A32D2D" }}>
+              วันสุดท้ายของภาคเรียนต้องไม่มาก่อนวันเปิดภาคเรียน
+            </p>
+          )
+        )}
 
         <div>
           <label className="block text-[13px] font-medium text-gray-700 mb-2">Teaching Days</label>

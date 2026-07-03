@@ -2,24 +2,58 @@ const DAY_SUFFIX: Record<number, string> = {
   1: "m", 2: "t", 3: "w", 4: "th", 5: "f",
 };
 
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+/** Days-since-epoch of the Monday starting the calendar week containing `d` (UTC-based). */
+function weekStartIndex(d: Date): number {
+  const dayNum = Math.floor(d.getTime() / MS_PER_DAY);
+  const sinceMonday = (d.getUTCDay() + 6) % 7; // 0 for Mon … 6 for Sun
+  return dayNum - sinceMonday;
+}
+
+/**
+ * Week numbers follow ISO calendar weeks (Mon–Sun), not 7-day blocks from
+ * semester_start: week 1 is the calendar week containing semester_start, so a
+ * semester opening mid-week still rolls to week 2 on the following Monday.
+ */
 export function getWeekNumber(sessionDate: Date, semesterStart: Date): number {
-  const diffMs = sessionDate.getTime() - semesterStart.getTime();
-  // Use integer day arithmetic — Math.ceil breaks when diffMs is an exact multiple of 7 days
-  // (e.g. exactly 1 week gives ceil(1.0)=1 instead of 2).
-  const diffDays = Math.floor(diffMs / (24 * 60 * 60 * 1000));
-  return Math.max(1, Math.floor(diffDays / 7) + 1);
+  const weeksApart = (weekStartIndex(sessionDate) - weekStartIndex(semesterStart)) / 7;
+  return Math.max(1, weeksApart + 1);
 }
 
 export function getWeekLabel(
   sessionDate: Date,
   semesterStart: Date,
-  teachingDays: number[],
-  _unused?: number
+  teachingDays: number[]
 ): { weekNumber: number; label: string } {
   const weekNumber = getWeekNumber(sessionDate, semesterStart);
   const dow = sessionDate.getDay();
   const suffix = teachingDays.length > 1 ? (DAY_SUFFIX[dow] ?? "") : "";
   return { weekNumber, label: `W${weekNumber}${suffix}` };
+}
+
+/**
+ * Total weeks in a semester given its first and last day (ISO "YYYY-MM-DD", inclusive).
+ * Returns 0 when either date is missing/invalid or the end precedes the start.
+ */
+export function countWeeksBetween(semesterStartIso: string, semesterEndIso: string): number {
+  if (!semesterStartIso || !semesterEndIso) return 0;
+  const start = new Date(semesterStartIso);
+  const end = new Date(semesterEndIso);
+  if (isNaN(start.getTime()) || isNaN(end.getTime()) || end.getTime() < start.getTime()) return 0;
+  return getWeekNumber(end, start);
+}
+
+/**
+ * Last day (Sunday) of calendar week `totalWeeks` counted from the week containing
+ * semester_start — inverse of countWeeksBetween, used to show an end date for
+ * configs saved before the end-date field existed.
+ */
+export function semesterEndFromWeeks(semesterStartIso: string, totalWeeks: number): string {
+  const start = new Date(semesterStartIso);
+  if (isNaN(start.getTime()) || totalWeeks < 1) return "";
+  const endDayNum = weekStartIndex(start) + totalWeeks * 7 - 1;
+  return new Date(endDayNum * MS_PER_DAY).toISOString().slice(0, 10);
 }
 
 /** Given a teaching schedule, how many teaching days exist per week */

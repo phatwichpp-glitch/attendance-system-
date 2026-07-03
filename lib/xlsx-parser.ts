@@ -111,6 +111,55 @@ export function parseGenericFile(buffer: ArrayBuffer): GenericFileData {
   };
 }
 
+export interface DetectedMapping {
+  studentId?: number;
+  firstname?: number;
+  lastname?: number;
+  orderNum?: number;
+}
+
+/**
+ * Guess which column holds each field from header names (English/Thai variants).
+ * Falls back to scanning cell contents for the student-id column when no header
+ * matches — a column where most values are 9-digit numbers.
+ */
+export function autoDetectMapping(headers: string[], sampleRows: string[][]): DetectedMapping {
+  const norm = headers.map((h) => h.toLowerCase().replace(/[\s_.\-()]+/g, ""));
+  const find = (re: RegExp) => {
+    const i = norm.findIndex((h) => re.test(h));
+    return i === -1 ? undefined : i;
+  };
+
+  const detected: DetectedMapping = {
+    studentId: find(/^(studentid|studentno|studentcode|รหัสนักศึกษา|รหัสนศ|รหัส|id)$/),
+    firstname: find(/^(firstname|first|ชื่อจริง|ชื่อ|name)$/),
+    lastname:  find(/^(lastname|last|surname|familyname|นามสกุล|สกุล)$/),
+    orderNum:  find(/^(#|no|ลำดับ|ลำดับที่|ที่|order|ordernum)$/),
+  };
+
+  if (detected.studentId === undefined) {
+    for (let c = 0; c < headers.length; c++) {
+      const vals = sampleRows.map((r) => String(r[c] ?? "").trim()).filter(Boolean);
+      if (vals.length === 0) continue;
+      const hits = vals.filter((v) => /^\d{9}$/.test(v)).length;
+      if (hits >= Math.ceil(vals.length * 0.8)) { detected.studentId = c; break; }
+    }
+  }
+
+  return detected;
+}
+
+/**
+ * Pull course-id / section hints out of an export filename,
+ * e.g. "summary_251363_sec001 _ 000 (2).csv" → { course_id: "251363", section: "001" }.
+ */
+export function parseFilenameInfo(filename: string): { course_id?: string; section?: string } {
+  const base = filename.replace(/\.[^.]+$/, "");
+  const course = base.match(/\d{6}/)?.[0];
+  const section = base.match(/sec(?:tion)?[\s_.\-]*(\d+)/i)?.[1];
+  return { course_id: course, section };
+}
+
 /** Apply a column mapping to generic file rows and extract students */
 export function applyColumnMapping(
   allRows: string[][],
