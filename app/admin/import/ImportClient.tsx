@@ -3,6 +3,7 @@ import { useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Spinner from "@/components/Spinner";
 import { IconUpload, IconCheck } from "@/components/icons";
+import { openDrivePicker, isDrivePickerConfigured } from "@/lib/drive-picker";
 import {
   parseAttendanceXlsx,
   parseGenericFile,
@@ -42,51 +43,73 @@ export default function ImportClient() {
   const [autoDetected, setAutoDetected] = useState(false);
   const [error, setError] = useState("");
   const [dragging, setDragging] = useState(false);
+  const [pickingFromDrive, setPickingFromDrive] = useState(false);
+
+  // Shared by both entry points — a locally-picked File and a file fetched
+  // from Google Drive both end up here as a plain ArrayBuffer + filename.
+  const processBuffer = useCallback((buffer: ArrayBuffer, filename: string) => {
+    fileRef.current = buffer;
+
+    if (isCmuFormat(buffer)) {
+      const data = parseAttendanceXlsx(buffer);
+      if (!data.course_id) throw new Error("ไม่พบรหัสวิชา กรุณาตรวจสอบไฟล์");
+      if (data.students.length === 0) throw new Error("ไม่พบรายชื่อนักศึกษา");
+      setParsed(data);
+      setStep("preview");
+    } else {
+      const data = parseGenericFile(buffer);
+      if (data.headers.length === 0) throw new Error("ไม่สามารถอ่านไฟล์ได้");
+
+      // Pre-scan: guess column mapping from headers/content and course info
+      // from the filename, then let the admin verify before continuing.
+      const detected = autoDetectMapping(data.headers, data.preview);
+      const hint = parseFilenameInfo(filename);
+      setGeneric(data);
+      setMapping({
+        studentId: detected.studentId ?? 0,
+        firstname: detected.firstname ?? 1,
+        lastname: detected.lastname ?? 2,
+        orderNum: detected.orderNum,
+      });
+      setManualInfo((m) => ({
+        ...m,
+        course_id: hint.course_id ?? m.course_id,
+        section: hint.section ?? m.section,
+      }));
+      setAutoDetected(
+        detected.studentId !== undefined &&
+        detected.firstname !== undefined &&
+        detected.lastname !== undefined
+      );
+      setStep("mapper");
+    }
+  }, []);
 
   const handleFile = useCallback(async (file: File) => {
     setError("");
     try {
       const buffer = await file.arrayBuffer();
-      fileRef.current = buffer;
-
-      if (isCmuFormat(buffer)) {
-        const data = parseAttendanceXlsx(buffer);
-        if (!data.course_id) throw new Error("ไม่พบรหัสวิชา กรุณาตรวจสอบไฟล์");
-        if (data.students.length === 0) throw new Error("ไม่พบรายชื่อนักศึกษา");
-        setParsed(data);
-        setStep("preview");
-      } else {
-        const data = parseGenericFile(buffer);
-        if (data.headers.length === 0) throw new Error("ไม่สามารถอ่านไฟล์ได้");
-
-        // Pre-scan: guess column mapping from headers/content and course info
-        // from the filename, then let the admin verify before continuing.
-        const detected = autoDetectMapping(data.headers, data.preview);
-        const hint = parseFilenameInfo(file.name);
-        setGeneric(data);
-        setMapping({
-          studentId: detected.studentId ?? 0,
-          firstname: detected.firstname ?? 1,
-          lastname: detected.lastname ?? 2,
-          orderNum: detected.orderNum,
-        });
-        setManualInfo((m) => ({
-          ...m,
-          course_id: hint.course_id ?? m.course_id,
-          section: hint.section ?? m.section,
-        }));
-        setAutoDetected(
-          detected.studentId !== undefined &&
-          detected.firstname !== undefined &&
-          detected.lastname !== undefined
-        );
-        setStep("mapper");
-      }
+      processBuffer(buffer, file.name);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "ไฟล์ไม่ถูกต้อง");
       setStep("error");
     }
-  }, []);
+  }, [processBuffer]);
+
+  const handleDrivePick = useCallback(async () => {
+    setError("");
+    setPickingFromDrive(true);
+    try {
+      const picked = await openDrivePicker();
+      if (!picked) return; // admin cancelled
+      processBuffer(picked.buffer, picked.filename);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "นำเข้าจาก Drive ไม่สำเร็จ");
+      setStep("error");
+    } finally {
+      setPickingFromDrive(false);
+    }
+  }, [processBuffer]);
 
   const onDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -218,6 +241,25 @@ export default function ImportClient() {
           <p className="text-gray-600 font-medium">Drop file here or click to select</p>
           <p className="text-[11px] text-gray-400 mt-1">รองรับ .xlsx, .xls, .csv</p>
         </label>
+      )}
+
+      {step === "upload" && isDrivePickerConfigured() && (
+        <div className="flex items-center gap-3">
+          <div className="flex-1 h-px bg-gray-200" />
+          <span className="text-[11px] text-gray-400">หรือ</span>
+          <div className="flex-1 h-px bg-gray-200" />
+        </div>
+      )}
+
+      {step === "upload" && isDrivePickerConfigured() && (
+        <button
+          type="button"
+          onClick={handleDrivePick}
+          disabled={pickingFromDrive}
+          className="btn-outline w-full"
+        >
+          {pickingFromDrive ? <Spinner className="h-4 w-4" /> : "📁 เลือกไฟล์จาก Google Drive"}
+        </button>
       )}
 
       {/* ── Step 1b: Column Mapper (generic format) ── */}
