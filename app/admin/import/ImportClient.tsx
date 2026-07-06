@@ -1,5 +1,5 @@
 "use client";
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Spinner from "@/components/Spinner";
 import { IconUpload, IconCheck } from "@/components/icons";
@@ -44,6 +44,12 @@ export default function ImportClient() {
   const [error, setError] = useState("");
   const [dragging, setDragging] = useState(false);
   const [pickingFromDrive, setPickingFromDrive] = useState(false);
+  const [showSkipped, setShowSkipped] = useState(false);
+  // Re-import overwrite check: upsertStudents fully replaces a course+section's
+  // roster (clear-then-rewrite, no merge) — fetch what's already there so a
+  // teacher re-importing an updated file sees what will change before it's silent.
+  const [existingRoster, setExistingRoster] = useState<{ student_id: string }[] | null>(null);
+  const [overwriteAck, setOverwriteAck] = useState(false);
 
   // Shared by both entry points — a locally-picked File and a file fetched
   // from Google Drive both end up here as a plain ArrayBuffer + filename.
@@ -55,6 +61,8 @@ export default function ImportClient() {
       if (!data.course_id) throw new Error("ไม่พบรหัสวิชา กรุณาตรวจสอบไฟล์");
       if (data.students.length === 0) throw new Error("ไม่พบรายชื่อนักศึกษา");
       setParsed(data);
+      setExistingRoster(null);
+      setOverwriteAck(false);
       setStep("preview");
     } else {
       const data = parseGenericFile(buffer);
@@ -118,11 +126,23 @@ export default function ImportClient() {
     if (f) handleFile(f);
   }, [handleFile]);
 
+  useEffect(() => {
+    if (!parsed?.course_id || !parsed?.section) return;
+    let cancelled = false;
+    fetch(`/api/sheets/students?course_id=${encodeURIComponent(parsed.course_id)}&section=${encodeURIComponent(parsed.section)}`)
+      .then((r) => (r.ok ? r.json() : { students: [] }))
+      .then((d) => { if (!cancelled) setExistingRoster(d.students ?? []); })
+      .catch(() => { if (!cancelled) setExistingRoster([]); });
+    return () => { cancelled = true; };
+  }, [parsed?.course_id, parsed?.section]);
+
   const applyMapping = () => {
     if (!fileRef.current || !generic) return;
-    const students = applyColumnMapping(generic.allRows, mapping);
+    const { students, skipped } = applyColumnMapping(generic.allRows, mapping);
     if (students.length === 0) { setError("ไม่พบรายชื่อนักศึกษาหลังจาก mapping"); return; }
-    setParsed({ ...manualInfo, students });
+    setParsed({ ...manualInfo, students, skipped });
+    setExistingRoster(null);
+    setOverwriteAck(false);
     setStep("preview");
   };
 
@@ -131,8 +151,9 @@ export default function ImportClient() {
     setSubmitting(true);
     try {
       const teaching_schedule = buildTeachingSchedule(semester);
+      const { course_id, title, section, lecturer, students } = parsed;
       const body = {
-        ...parsed,
+        course_id, title, section, lecturer, students,
         semester_config: semester.semester_start ? {
           semester_start: semester.semester_start,
           total_weeks: countWeeksBetween(semester.semester_start, semester.semester_end) || 15,
@@ -408,6 +429,34 @@ export default function ImportClient() {
             </div>
           </div>
 
+          {parsed.skipped.length > 0 && (
+            <div className="rounded-lg px-4 py-3 text-[12px]" style={{ backgroundColor: "#FEF9EC", color: "#854F0B" }}>
+              <div className="flex items-center justify-between">
+                <span>
+                  ข้าม {parsed.skipped.length} แถว — รหัสนักศึกษาไม่ถูกต้องหรือซ้ำกัน
+                  (คาดว่าจะมี {parsed.students.length + parsed.skipped.length} คน แต่นำเข้าได้ {parsed.students.length} คน)
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setShowSkipped((v) => !v)}
+                  className="underline shrink-0 ml-3"
+                  style={{ background: "none", border: "none", cursor: "pointer", color: "#854F0B" }}
+                >
+                  {showSkipped ? "ซ่อน" : "ดูรายละเอียด"}
+                </button>
+              </div>
+              {showSkipped && (
+                <ul className="mt-2 space-y-1 max-h-40 overflow-y-auto font-mono text-[11px]">
+                  {parsed.skipped.map((s, i) => (
+                    <li key={i}>
+                      แถว {s.rowNumber}: {s.reason === "duplicate_id" ? "รหัสซ้ำ" : "รหัสไม่ถูกต้อง"} — {s.raw}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+
           <div className="flex gap-3">
             <button onClick={() => setStep(generic ? "mapper" : "upload")} className="btn-outline flex-1">Back</button>
             <button onClick={() => setStep("semester")} className="btn-primary flex-1">
@@ -422,6 +471,30 @@ export default function ImportClient() {
         <div className="space-y-4">
           <SemesterConfigForm value={semester} onChange={setSemester} />
 
+          {existingRoster && existingRoster.length > 0 && (() => {
+            const newIds = new Set(parsed.students.map((s) => s.student_id));
+            const existingIds = new Set(existingRoster.map((s) => s.student_id));
+            const added = parsed.students.filter((s) => !existingIds.has(s.student_id)).length;
+            const removed = existingRoster.filter((s) => !newIds.has(s.student_id)).length;
+            const unchanged = parsed.students.length - added;
+            return (
+              <div className="rounded-lg px-4 py-3 space-y-2 text-[13px]" style={{ backgroundColor: "#FCEBEB", color: "#A32D2D" }}>
+                <p className="font-medium">
+                  วิชานี้ (Section {parsed.section}) มีรายชื่อนักศึกษาอยู่แล้ว {existingRoster.length} คน —
+                  การนำเข้านี้จะแทนที่รายชื่อเดิมทั้งหมดด้วยไฟล์ใหม่
+                </p>
+                <p className="text-[12px]">
+                  คงเดิม {unchanged} คน · เพิ่มใหม่ {added} คน · จะถูกลบออก {removed} คน
+                  {removed > 0 && " (นักศึกษาที่ไม่มีในไฟล์ใหม่ รวมถึงการแก้ไขที่เคยทำไว้ด้วยตนเอง จะหายไป)"}
+                </p>
+                <label className="flex items-center gap-2 text-[12px] pt-1">
+                  <input type="checkbox" checked={overwriteAck} onChange={(e) => setOverwriteAck(e.target.checked)} />
+                  ฉันเข้าใจและต้องการแทนที่รายชื่อเดิม
+                </label>
+              </div>
+            );
+          })()}
+
           <div className="flex gap-3">
             <button onClick={() => setStep("preview")} className="btn-outline flex-1">Back</button>
             <button
@@ -431,7 +504,8 @@ export default function ImportClient() {
                 !semester.semester_start ||
                 countWeeksBetween(semester.semester_start, semester.semester_end) === 0 ||
                 semester.teaching_days.length === 0 ||
-                (semester.auto_open_enabled && (semester.default_lat == null || semester.default_lng == null))
+                (semester.auto_open_enabled && (semester.default_lat == null || semester.default_lng == null)) ||
+                (!!existingRoster && existingRoster.length > 0 && !overwriteAck)
               }
               className="btn-primary flex-1"
             >

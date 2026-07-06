@@ -41,6 +41,7 @@ export default function SetupClient() {
   const [submitting, setSubmitting] = useState(false);
   const [setupError, setSetupError] = useState("");
   const [showGpsWarn, setShowGpsWarn] = useState(false);
+  const [showOpenConfirm, setShowOpenConfirm] = useState(false);
   const [loadingCourses, setLoadingCourses] = useState(true);
   const [semesterConfig, setSemesterConfig] = useState<SemesterConfig | null>(null);
 
@@ -144,7 +145,7 @@ export default function SetupClient() {
       setShowGpsWarn(true);
       return;
     }
-    doOpen();
+    setShowOpenConfirm(true);
   };
 
   const doOpen = async () => {
@@ -183,7 +184,14 @@ export default function SetupClient() {
           check_in_mode: periodCount >= 2 ? checkInMode : undefined,
         }),
       });
-      if (!res.ok) throw new Error("เปิดคาบไม่สำเร็จ");
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({}));
+        throw new Error(
+          errBody.error === "session_already_open"
+            ? "คาบนี้เปิดอยู่แล้ว — มี session เดิมสำหรับวิชา/section/คาบนี้ที่ยังไม่ปิด"
+            : "เปิดคาบไม่สำเร็จ"
+        );
+      }
       const data = await res.json();
 
       if (isPast) {
@@ -580,6 +588,27 @@ export default function SetupClient() {
           <div className="flex gap-3">
             <button type="button" onClick={() => setShowGpsWarn(false)} className="btn-outline flex-1">Cancel</button>
             <button type="button" onClick={doOpen} className="btn-primary flex-1">Open Anyway</button>
+          </div>
+        </div>
+      </div>
+    )}
+
+    {showOpenConfirm && course && (
+      <div className="fixed inset-0 flex items-center justify-center z-50 p-4" style={{ backgroundColor: "rgba(0,0,0,0.5)" }}>
+        <div className="card max-w-sm w-full space-y-4">
+          <h3 className="font-medium text-gray-900">
+            {isPast ? "Create past session?" : "Open this session?"}
+          </h3>
+          <div className="text-[13px] text-gray-600 space-y-1">
+            <p><strong>{course.title}</strong> · Section {course.section}</p>
+            <p>{periodRangeLabel}</p>
+            <p>{today}{isPast ? "" : " · now"}</p>
+          </div>
+          <div className="flex gap-3">
+            <button type="button" onClick={() => setShowOpenConfirm(false)} className="btn-outline flex-1">Cancel</button>
+            <button type="button" onClick={() => { setShowOpenConfirm(false); doOpen(); }} className="btn-primary flex-1">
+              {isPast ? "Create" : "Open"}
+            </button>
           </div>
         </div>
       </div>

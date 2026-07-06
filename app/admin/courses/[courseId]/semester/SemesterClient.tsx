@@ -141,7 +141,12 @@ export default function SemesterClient({ courseId, section }: { courseId: string
           !semester.semester_start ||
           countWeeksBetween(semester.semester_start, semester.semester_end) === 0 ||
           semester.teaching_days.length === 0 ||
-          needsLocation
+          needsLocation ||
+          semester.teaching_days.some((d) => {
+            const start = semester.day_start_time[d];
+            const end = semester.day_end_time[d];
+            return !!start && !!end && end <= start;
+          })
         }
         className="btn-primary w-full py-3 text-[13px]"
       >

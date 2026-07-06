@@ -1,6 +1,6 @@
 "use client";
 
-export type ActionType = "approve" | "flag" | "mark_absent" | "revoke";
+export type ActionType = "approve" | "flag" | "unflag" | "mark_absent" | "revoke";
 
 interface ActionButtonsProps {
   status: string;

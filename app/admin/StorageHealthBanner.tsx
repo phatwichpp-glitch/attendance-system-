@@ -27,11 +27,12 @@ export default function StorageHealthBanner() {
       <IconWarning size={14} className="mt-0.5 flex-shrink-0 text-[#A32D2D]" />
       <div className="flex-1 min-w-0">
         <p className="text-[13px] font-semibold" style={{ color: "#A32D2D" }}>
-          ยังไม่ได้ตั้งค่า Redis (UPSTASH_REDIS_REST_URL / TOKEN)
+          การเช็คชื่ออาจใช้งานไม่ได้เต็มที่ในตอนนี้
         </p>
         <p className="text-[11px] mt-0.5" style={{ color: "#8C3A3A" }}>
-          ระบบนี้รันบน Vercel แต่ไม่มี Redis ผูกไว้ — การเช็คชื่อของนักศึกษาและระบบเปิดคาบอัตโนมัติอาจล้มเหลวเป็นบางครั้ง
-          เพราะ session/token ถูกเก็บไว้ใน memory ของแต่ละ instance เท่านั้น กรุณาตั้งค่า environment variable บน Vercel แล้ว deploy ใหม่
+          นักศึกษาบางคนอาจเช็คชื่อไม่ผ่าน หรือระบบเปิดคาบอัตโนมัติอาจไม่ทำงานตามเวลา เนื่องจากระบบยังไม่ได้เชื่อมต่อ
+          ที่เก็บข้อมูลกลาง (Redis) ที่จำเป็นสำหรับการรันบน Vercel — เรื่องนี้ต้องแก้โดยผู้ดูแลระบบที่ดูแลการ deploy
+          (ตั้งค่า UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN แล้ว deploy ใหม่ 1 ครั้ง)
         </p>
       </div>
     </div>

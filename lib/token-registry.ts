@@ -40,6 +40,10 @@ interface AdminEntry {
   notify_email: string | null; // destination address; null = use the Google login email
   line_notify: boolean;
   line_user_id: string | null;
+  // Last auto-open notification send attempt — previously send failures were only
+  // console.error-logged, invisible to the admin until they noticed no message arrived.
+  last_notify_error?: string | null;
+  last_notify_at?: string | null;
 }
 
 export interface NotificationPrefs {
@@ -47,6 +51,8 @@ export interface NotificationPrefs {
   notify_email: string; // resolved — always has a value (falls back to the login email)
   line_notify: boolean;
   line_linked: boolean;
+  last_notify_error: string | null;
+  last_notify_at: string | null;
 }
 
 interface RegistryFile {
@@ -135,6 +141,8 @@ export async function saveAdminRefreshToken(email: string, refreshToken: string)
     notify_email: existing?.notify_email ?? null,
     line_notify: existing?.line_notify ?? false,
     line_user_id: existing?.line_user_id ?? null,
+    last_notify_error: existing?.last_notify_error ?? null,
+    last_notify_at: existing?.last_notify_at ?? null,
     encrypted_refresh_token: sealSecret(refreshToken),
     updated_at: new Date().toISOString(),
     status: "ok",
@@ -195,7 +203,21 @@ export async function getNotificationPrefs(email: string): Promise<NotificationP
     notify_email: entry?.notify_email || key,
     line_notify: entry?.line_notify ?? false,
     line_linked: !!entry?.line_user_id,
+    last_notify_error: entry?.last_notify_error ?? null,
+    last_notify_at: entry?.last_notify_at ?? null,
   };
+}
+
+/** Records the outcome of the most recent auto-open notification attempt, so a
+ * silent email/LINE send failure (previously console.error-only) is visible to
+ * the admin instead of just "no message arrived, for some reason". */
+export async function recordNotifyResult(email: string, error: string | null): Promise<void> {
+  await updateEntry(normalizeEmail(email), (entry) => {
+    if (!entry) return null;
+    entry.last_notify_error = error;
+    entry.last_notify_at = new Date().toISOString();
+    return entry;
+  });
 }
 
 export async function setNotificationPrefs(

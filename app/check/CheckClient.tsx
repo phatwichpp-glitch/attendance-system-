@@ -109,6 +109,7 @@ interface Result {
   distance_m?: number;
   gps_pass?: boolean;
   duplicate?: boolean;
+  flagged?: boolean;
   error?: string;
 }
 
@@ -142,6 +143,11 @@ function detectInAppBrowser(): string | null {
   if (/\bLine\//i.test(ua)) return "LINE";
   if (/FBAN|FBAV|FB_IAB/i.test(ua)) return "Facebook";
   if (/Instagram/i.test(ua)) return "Instagram";
+  if (/BytedanceWebview|TikTok/i.test(ua)) return "TikTok";
+  // Generic Android in-app WebView marker (e.g. other apps' embedded browsers
+  // not named above) — still steer these into the same "open in browser" flow
+  // rather than falling through to a bare denied/unavailable message.
+  if (/; ?wv\)/i.test(ua)) return "แอปนี้";
   return null;
 }
 
@@ -428,6 +434,7 @@ export default function CheckClient() {
         if (data.error === "session_expired") { setState("session_expired"); return; }
         if (data.error && ["session_invalid", "session_not_found", "invalid_otp"].includes(data.error)) { setState("session_invalid"); return; }
         if (data.error === "not_found") { setState("not_found"); return; }
+        if (data.error === "rate_limited") { setState("rate_limited"); return; }
         setState("error"); return;
       }
 
@@ -618,6 +625,11 @@ export default function CheckClient() {
               {result?.distance_m !== undefined && (
                 <p style={R_DIST}>📍 ห่างจากห้องเรียน {result.distance_m} เมตร</p>
               )}
+              {result?.flagged && (
+                <p style={{ ...R_SUB, fontSize: 12, color: "#854F0B", marginTop: 10 }}>
+                  ระบบตรวจพบสัญญาณ GPS ที่ผิดปกติระหว่างเช็คชื่อ — กรุณาแจ้งอาจารย์ผู้สอนว่าระบบ GPS มีปัญหา
+                </p>
+              )}
             </div>
           )}
 
@@ -631,6 +643,11 @@ export default function CheckClient() {
               <p style={{ ...R_SUB, fontSize: 11, color: "#92400E", marginTop: 10 }}>
                 เช็คชื่อหลังเวลาที่กำหนด — ระบบบันทึกสถานะเป็น &quot;สาย&quot;
               </p>
+              {result?.flagged && (
+                <p style={{ ...R_SUB, fontSize: 12, color: "#854F0B", marginTop: 6 }}>
+                  ระบบตรวจพบสัญญาณ GPS ที่ผิดปกติระหว่างเช็คชื่อ — กรุณาแจ้งอาจารย์ผู้สอนว่าระบบ GPS มีปัญหา
+                </p>
+              )}
             </div>
           )}
 
@@ -648,9 +665,23 @@ export default function CheckClient() {
               </p>
               {result?.distance_m !== undefined && (
                 <p style={{ ...R_DIST, color: "#854F0B", fontWeight: 600, marginTop: 8 }}>
-                  คุณอยู่ห่างจากห้องเรียน {result.distance_m} เมตร
+                  คุณอยู่ห่างจากห้องเรียน {result.distance_m} เมตร — ลองเดินเข้าใกล้ห้องเรียนแล้วให้อาจารย์ตรวจสอบอีกครั้ง
                 </p>
               )}
+            </div>
+          )}
+
+          {/* ── Rate Limited ─────────────────────────────────────────────── */}
+          {state === "rate_limited" && (
+            <div style={resultCard("amber")}>
+              <ResultIcon type="clock" color="#854F0B" />
+              <p style={rTitle("#854F0B")}>กรุณารอสักครู่</p>
+              <p style={{ ...R_SUB, color: "#92400E" }}>
+                ระบบกำลังมีคนเช็คชื่อพร้อมกันจำนวนมาก — รอสักครู่แล้วลองใหม่อีกครั้ง
+              </p>
+              <button onClick={reset} className="_ci-btn" style={{ ...BTN, marginTop: 12 }}>
+                ลองอีกครั้ง
+              </button>
             </div>
           )}
 

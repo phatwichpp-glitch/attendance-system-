@@ -1,12 +1,19 @@
 import * as XLSX from "xlsx";
 import { Student } from "@/types";
 
+export interface SkippedRow {
+  rowNumber: number; // 1-based, counting only non-blank data rows
+  reason: "invalid_id" | "duplicate_id";
+  raw: string; // best-effort human-readable snippet of the offending row
+}
+
 export interface ParsedImport {
   course_id: string;
   title: string;
   section: string;
   lecturer: string;
   students: Omit<Student, "course_id" | "section">[];
+  skipped: SkippedRow[];
 }
 
 export interface GenericFileData {
@@ -70,21 +77,33 @@ export function parseAttendanceXlsx(buffer: ArrayBuffer): ParsedImport {
   if (headerIdx === -1) throw new Error("ไม่พบหัวตาราง 'รหัสนักศึกษา'");
 
   const students: ParsedImport["students"] = [];
+  const skipped: SkippedRow[] = [];
+  const seenIds = new Set<string>();
+  let rowNumber = 0;
   for (let i = headerIdx + 1; i < rows.length; i++) {
     const row = rows[i];
     if (!row || row.every((c) => !String(c).trim())) continue;
+    rowNumber++;
     const order_num = parseInt(String(row[0] ?? "").trim(), 10);
     const student_id = String(row[1] ?? "").trim().replace(/\D/g, "");
     const firstname  = String(row[2] ?? "").trim();
     const lastname   = String(row[3] ?? "").trim();
-    if (!/^\d{9}$/.test(student_id)) continue;
+    if (!/^\d{9}$/.test(student_id)) {
+      skipped.push({ rowNumber, reason: "invalid_id", raw: row.slice(0, 4).join(" ") });
+      continue;
+    }
+    if (seenIds.has(student_id)) {
+      skipped.push({ rowNumber, reason: "duplicate_id", raw: `${student_id} ${firstname} ${lastname}` });
+      continue;
+    }
+    seenIds.add(student_id);
     students.push({
       student_id, firstname, lastname,
       order_num: isNaN(order_num) ? students.length + 1 : order_num,
     });
   }
 
-  return { course_id, title, section, lecturer, students };
+  return { course_id, title, section, lecturer, students, skipped };
 }
 
 /** Parse a generic xlsx/csv file and return headers + preview rows for column mapping */
@@ -167,14 +186,26 @@ export function parseFilenameInfo(filename: string): { course_id?: string; secti
 export function applyColumnMapping(
   allRows: string[][],
   mapping: { studentId: number; firstname: number; lastname: number; orderNum?: number }
-): ParsedImport["students"] {
+): { students: ParsedImport["students"]; skipped: SkippedRow[] } {
   const students: ParsedImport["students"] = [];
+  const skipped: SkippedRow[] = [];
+  const seenIds = new Set<string>();
   let counter = 1;
+  let rowNumber = 0;
   for (const row of allRows) {
+    rowNumber++;
     const student_id = String(row[mapping.studentId] ?? "").trim().replace(/\D/g, "");
-    if (!/^\d{9}$/.test(student_id)) continue;
     const firstname = String(row[mapping.firstname] ?? "").trim();
     const lastname  = String(row[mapping.lastname] ?? "").trim();
+    if (!/^\d{9}$/.test(student_id)) {
+      skipped.push({ rowNumber, reason: "invalid_id", raw: row.slice(0, 4).join(" ") });
+      continue;
+    }
+    if (seenIds.has(student_id)) {
+      skipped.push({ rowNumber, reason: "duplicate_id", raw: `${student_id} ${firstname} ${lastname}` });
+      continue;
+    }
+    seenIds.add(student_id);
     const raw_order = mapping.orderNum !== undefined
       ? parseInt(String(row[mapping.orderNum] ?? ""), 10)
       : NaN;
@@ -184,5 +215,5 @@ export function applyColumnMapping(
     });
     counter++;
   }
-  return students;
+  return { students, skipped };
 }

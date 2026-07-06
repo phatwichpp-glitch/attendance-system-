@@ -48,6 +48,7 @@ type RowMenuState = {
   openUpward: boolean;
   onEdit: () => void;
   onFlag?: () => void;
+  onUnflag?: () => void;
   onRevoke?: () => void;
   onDelete: () => void;
 };
@@ -122,11 +123,14 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
   const [showClose, setShowClose]   = useState(false);
   const [closing, setClosing]       = useState(false);
   const [closeError, setCloseError] = useState("");
+  const [showDeleteSession, setShowDeleteSession] = useState(false);
+  const [deletingSession, setDeletingSession] = useState(false);
+  const [deleteSessionError, setDeleteSessionError] = useState("");
   const [actioning, setActioning]   = useState<string | null>(null);
   const [actionError, setActionError] = useState("");
   const [editError, setEditError]   = useState("");
   const [deleteError, setDeleteError] = useState("");
-  const [undoToast, setUndoToast]   = useState<UndoState | null>(null);
+  const [undoToasts, setUndoToasts] = useState<UndoState[]>([]);
   const [conflictDismissed, setConflictDismissed] = useState(false);
   const [conflictsExpanded, setConflictsExpanded] = useState(false);
   const [possibleDismissed, setPossibleDismissed] = useState(false);
@@ -259,7 +263,8 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
     const att = stu.attendance!;
     if (rowMenu?.studentId === stu.student_id) { setRowMenu(null); return; }
     const studentName = `${stu.firstname} ${stu.lastname}`;
-    const itemCount = 2 + (!att.flagged ? 1 : 0) + (att.overridden ? 1 : 0); // Edit Status + Delete + optional Flag/Revoke
+    // Edit Status + Delete + optional Flag/Unflag + optional Revoke
+    const itemCount = 2 + 1 + (att.overridden ? 1 : 0);
     const rect     = e.currentTarget.getBoundingClientRect();
     const menuH    = itemCount * 38 + 8;
     const menuW    = 160;
@@ -274,6 +279,7 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
       openUpward,
       onEdit:   () => { openEditPopover(stu); setRowMenu(null); },
       onFlag:   !att.flagged    ? () => { handleAction(att.attendance_id, "flag", studentName); setRowMenu(null); } : undefined,
+      onUnflag: att.flagged     ? () => { handleAction(att.attendance_id, "unflag", studentName); setRowMenu(null); } : undefined,
       onRevoke: att.overridden  ? () => { handleAction(att.attendance_id, "revoke", studentName); setRowMenu(null); } : undefined,
       onDelete: () => { setDeleteAttId(att.attendance_id); setRowMenu(null); },
     });
@@ -297,6 +303,21 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
       router.push("/admin");
     } finally {
       setClosing(false);
+    }
+  };
+
+  // Undo path for a session opened for the wrong course/period — previously the
+  // only way to remove it entirely was to navigate away to the Summary page.
+  const handleDeleteSession = async () => {
+    setDeletingSession(true);
+    setDeleteSessionError("");
+    try {
+      const res = await fetch(`/api/sheets/sessions/${sessionId}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Delete failed");
+      router.push("/admin");
+    } catch {
+      setDeleteSessionError("Delete failed — please try again");
+      setDeletingSession(false);
     }
   };
 
@@ -353,7 +374,10 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
       const d = await res.json();
       if (!res.ok) { setActionError("Action failed"); return; }
       if (action === "mark_absent") {
-        setUndoToast({ attendanceId, studentName, previousStatus: d.previousStatus ?? "present" });
+        setUndoToasts((prev) => [
+          ...prev.filter((t) => t.attendanceId !== attendanceId),
+          { attendanceId, studentName, previousStatus: d.previousStatus ?? "present" },
+        ]);
       }
       await fetchData();
     } finally {
@@ -361,12 +385,11 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
     }
   };
 
-  const handleUndo = async () => {
-    if (!undoToast) return;
-    await fetch(`/api/sheets/attendance/${undoToast.attendanceId}`, {
+  const handleUndo = async (toast: UndoState) => {
+    await fetch(`/api/sheets/attendance/${toast.attendanceId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: undoToast.previousStatus, edit_note: "Undo mark absent" }),
+      body: JSON.stringify({ status: toast.previousStatus, edit_note: "Undo mark absent" }),
     });
     await fetchData();
   };
@@ -500,6 +523,12 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
   const conflictSet = new Set<string>(
     confirmedConflicts.flatMap((c) => c.students.map((st) => st.student_id))
   );
+  // Lighter marker than confirmed conflicts — "possible" is IP+proximity only, so a
+  // teacher scanning the table can spot these without cross-referencing the banner's
+  // name list by eye, without implying the same certainty as a confirmed match.
+  const possibleSet = new Set<string>(
+    possibleConflicts.flatMap((c) => c.students.map((st) => st.student_id))
+  );
 
   // Double period helpers
   const isDoubleCheckIn = s.check_in_mode === "double";
@@ -557,6 +586,9 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
             <IconDownload size={13} /> Export CSV
           </button>
           <div className="flex-1 min-w-[8px]" />
+          <button onClick={() => setShowDeleteSession(true)} className="btn-outline text-[13px] shrink-0 whitespace-nowrap" style={{ minHeight: 34, padding: "7px 12px", color: "#A32D2D", borderColor: "#E57373" }}>
+            Delete Session
+          </button>
           <button onClick={() => setShowClose(true)} className="btn-danger text-[13px] shrink-0 whitespace-nowrap" style={{ minHeight: 34, padding: "7px 12px" }}>
             <IconStop size={13} /> Close Session
           </button>
@@ -570,6 +602,9 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
             </button>
           )}
           <div className="flex-1 min-w-[8px]" />
+          <button onClick={() => setShowDeleteSession(true)} className="btn-outline text-[13px] shrink-0 whitespace-nowrap" style={{ minHeight: 34, padding: "7px 12px", color: "#A32D2D", borderColor: "#E57373" }}>
+            Delete Session
+          </button>
           <button onClick={exportCsv} className="btn-outline text-[13px] shrink-0 whitespace-nowrap" style={{ minHeight: 34, padding: "7px 12px" }}>
             <IconDownload size={13} /> Export CSV
           </button>
@@ -965,7 +1000,16 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
                   >
                     <span className="text-gray-300 text-[16px] text-right font-mono">{stu.order_num}</span>
                     <span className="font-mono text-[16px] text-gray-500">{stu.student_id}</span>
-                    <span className="truncate">{stu.firstname} {stu.lastname}</span>
+                    <span className="truncate flex items-center gap-1.5">
+                      {stu.firstname} {stu.lastname}
+                      {possibleSet.has(stu.student_id) && !conflictSet.has(stu.student_id) && (
+                        <span
+                          title="Possible device match — same IP + close timing, not a confirmed same-device match. Verify manually if needed."
+                          className="shrink-0 w-2 h-2 rounded-full"
+                          style={{ border: "1.5px dashed #d97706" }}
+                        />
+                      )}
+                    </span>
 
                     {/* Descriptive column — status + issue tags + approval note, never clickable */}
                     <span className="flex flex-wrap items-center gap-1.5 min-w-0">
@@ -1206,6 +1250,30 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
         </div>
       )}
 
+      {/* Delete session modal — the undo path for a session opened for the
+          wrong course/period, without navigating away to the Summary page */}
+      {showDeleteSession && (
+        <div className="fixed inset-0 flex items-center justify-center z-50 p-4" style={{ backgroundColor: "rgba(0,0,0,0.5)" }}>
+          <div className="card max-w-sm w-full space-y-4" role="dialog" aria-modal="true" aria-labelledby="delete-session-title">
+            <h3 id="delete-session-title" className="font-medium text-gray-900">Delete this session?</h3>
+            <p className="text-[13px] text-gray-600">
+              This permanently deletes the session and all {total} check-in record{total === 1 ? "" : "s"} for it.
+              This can&apos;t be undone — use this if the session was opened for the wrong course, section, or period.
+            </p>
+            {deleteSessionError && (
+              <p className="text-[12px]" style={{ color: "#A32D2D" }}>{deleteSessionError}</p>
+            )}
+            <div className="flex gap-3">
+              <button onClick={() => setShowDeleteSession(false)} className="btn-outline flex-1">Cancel</button>
+              <button onClick={handleDeleteSession} disabled={deletingSession} className="btn-danger flex-1 flex items-center justify-center gap-2">
+                {deletingSession && <Spinner className="h-4 w-4" />}
+                Delete Session
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Re-generate OTP settings modal */}
       {showReopenSettings && (
         <div className="fixed inset-0 flex items-center justify-center z-50 p-4" style={{ backgroundColor: "rgba(0,0,0,0.5)" }}>
@@ -1245,14 +1313,17 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
         </div>
       )}
 
-      {/* Undo toast for mark_absent */}
-      {undoToast && (
+      {/* Undo toasts for mark_absent — stacked so correcting several students in a
+          row doesn't drop an earlier undo */}
+      {undoToasts.map((toast, i) => (
         <UndoToast
-          message={`${undoToast.studentName} marked absent`}
-          onUndo={handleUndo}
-          onDismiss={() => setUndoToast(null)}
+          key={toast.attendanceId}
+          message={`${toast.studentName} marked absent`}
+          onUndo={() => handleUndo(toast)}
+          onDismiss={() => setUndoToasts((prev) => prev.filter((t) => t.attendanceId !== toast.attendanceId))}
+          stackIndex={i}
         />
-      )}
+      ))}
 
       {/* Row ⋯ menu portal */}
       {rowMenu && typeof window !== "undefined" && createPortal(
@@ -1288,6 +1359,15 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
               style={{ background: "none", border: "none", cursor: "pointer", color: "#7e22ce" }}
             >
               Flag as suspicious
+            </button>
+          )}
+          {rowMenu.onUnflag && (
+            <button
+              onClick={rowMenu.onUnflag}
+              className="block w-full text-left px-3 py-2 text-[13px] hover:bg-gray-50 transition-colors"
+              style={{ background: "none", border: "none", cursor: "pointer", color: "#374151" }}
+            >
+              Unflag
             </button>
           )}
           {rowMenu.onRevoke && (

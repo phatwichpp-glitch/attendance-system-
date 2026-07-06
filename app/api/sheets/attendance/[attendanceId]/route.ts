@@ -23,7 +23,7 @@ export async function PATCH(
 
     // ── Unified action handling ────────────────────────────────────────────
     if (body.action) {
-      const action = body.action as "approve" | "flag" | "mark_absent" | "revoke";
+      const action = body.action as "approve" | "flag" | "unflag" | "mark_absent" | "revoke";
 
       switch (action) {
         case "approve": {
@@ -64,6 +64,22 @@ export async function PATCH(
             action: "update", entity_type: "attendance", entity_id: attendanceId,
             changed_from: { flagged: false }, changed_to: { flagged: true, flagged_at: now },
             note: "Teacher flagged as suspicious",
+          });
+          return NextResponse.json({ success: true });
+        }
+
+        case "unflag": {
+          const prev = await updateAttendanceFields(session.access_token, spreadsheetId, attendanceId, {
+            flagged: false,
+            flagged_at: "",
+            action_taken: "unflag",
+            action_taken_at: now,
+          });
+          if (!prev.found) return NextResponse.json({ error: "Record not found" }, { status: 404 });
+          await appendAuditLog(session.access_token, spreadsheetId, {
+            action: "update", entity_type: "attendance", entity_id: attendanceId,
+            changed_from: { flagged: true }, changed_to: { flagged: false, action: "unflag" },
+            note: "Teacher cleared suspicious flag",
           });
           return NextResponse.json({ success: true });
         }

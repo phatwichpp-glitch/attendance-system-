@@ -10,6 +10,8 @@ interface Prefs {
   line_linked: boolean;
   email_available: boolean;
   line_available: boolean;
+  last_notify_error: string | null;
+  last_notify_at: string | null;
 }
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -133,6 +135,14 @@ export default function NotificationsClient() {
       <p className="text-[13px]" style={{ color: "#5F5E5A" }}>
         รับการแจ้งเตือนพร้อม OTP ทันทีที่ระบบเปิดคาบเรียนอัตโนมัติ
       </p>
+
+      {prefs.last_notify_error && (
+        <div className="rounded-lg px-4 py-3 text-[12px]" style={{ backgroundColor: "#FCEBEB", color: "#A32D2D" }}>
+          การแจ้งเตือนครั้งล่าสุดส่งไม่สำเร็จ
+          {prefs.last_notify_at && ` (${new Date(prefs.last_notify_at).toLocaleString("th-TH", { dateStyle: "short", timeStyle: "short" })})`}
+          : {prefs.last_notify_error}
+        </div>
+      )}
 
       <div className="card space-y-3">
         <h2 className="font-medium text-gray-900">อีเมล</h2>

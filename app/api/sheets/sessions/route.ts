@@ -3,6 +3,7 @@ import { auth } from "@/auth";
 import {
   initializeSpreadsheet,
   getSessionById,
+  getAllSessions,
   closeSessionInSheet,
   markAbsentStudents,
 } from "@/lib/sheets";
@@ -16,6 +17,26 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const spreadsheetId = await initializeSpreadsheet(session.access_token);
+
+    // Idempotency guard — mirrors lib/scheduler.ts's own check for auto-open, but
+    // this manual path previously had none at all, so a double-click or two open
+    // tabs could silently create two live sessions splitting OTPs/check-ins.
+    const allSessions = await getAllSessions(session.access_token, spreadsheetId);
+    const alreadyOpen = allSessions.some((s) =>
+      s.course_id === body.course_id &&
+      s.section === body.section &&
+      s.date === body.date &&
+      s.period === body.period &&
+      !!s.opened_at &&
+      !s.closed_at
+    );
+    if (alreadyOpen) {
+      return NextResponse.json(
+        { error: "session_already_open", message: "A session for this course/section/period is already open" },
+        { status: 409 }
+      );
+    }
+
     const result = await openSessionForCourse(session.access_token, spreadsheetId, body);
 
     if (result.mode === "double") {

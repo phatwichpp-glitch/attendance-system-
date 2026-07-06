@@ -8,6 +8,25 @@ import {
   getMaxOrderNum,
 } from "@/lib/sheets";
 
+export async function GET(req: NextRequest) {
+  const session = await auth();
+  if (!session?.access_token) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  try {
+    const { searchParams } = new URL(req.url);
+    const course_id = searchParams.get("course_id") ?? "";
+    const section = searchParams.get("section") ?? "";
+    if (!course_id || !section) {
+      return NextResponse.json({ error: "course_id and section are required" }, { status: 400 });
+    }
+    const spreadsheetId = await initializeSpreadsheet(session.access_token);
+    const students = await getStudents(session.access_token, spreadsheetId, course_id, section);
+    return NextResponse.json({ students });
+  } catch (err) {
+    console.error("[students GET]", err);
+    return NextResponse.json({ error: "Failed to load students" }, { status: 500 });
+  }
+}
+
 export async function POST(req: NextRequest) {
   const session = await auth();
   if (!session?.access_token) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

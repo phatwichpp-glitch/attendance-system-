@@ -623,6 +623,19 @@ export async function getAttendanceForSession(
     .map(rowToAttendance);
 }
 
+// Unfiltered read, for callers that need to join against attendance_id (e.g. the
+// audit log, which only stores entity_id — see app/api/sheets/audit/route.ts).
+export async function getAllAttendance(
+  accessToken: string,
+  spreadsheetId: string
+): Promise<AttendanceRecord[]> {
+  const sheets = getSheetsClient(accessToken);
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId, range: "attendance!A2:Z",
+  });
+  return (res.data.values ?? []).map(rowToAttendance);
+}
+
 export async function getAttendanceForCourse(
   accessToken: string,
   spreadsheetId: string,

@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect, useCallback, useRef } from "react";
+import Link from "next/link";
 import Spinner from "@/components/Spinner";
 import { IconTablet, IconScreen } from "@/components/icons";
 import { Session, StudentWithAttendance } from "@/types";
@@ -192,6 +193,15 @@ export default function ProjectorClient({ sessionId }: { sessionId: string }) {
           {present}<span style={{ color: "#6b7280" }}>/{students.length}</span>
           <span className="text-xl text-gray-500 ml-2">students</span>
         </p>
+        {/* This per-session URL goes dead every time the class ends — point
+            whoever bookmarked it instead of the stable course URL at the one
+            that keeps working across future auto-opened sessions. */}
+        <Link
+          href={`/projector/course/${s.course_id}?section=${encodeURIComponent(s.section)}`}
+          style={{ color: "#60a5fa", fontSize: 14, marginTop: 8 }}
+        >
+          Go to live classroom display →
+        </Link>
       </div>
     );
   }

@@ -4,12 +4,10 @@ import {
   getStudents,
   getAttendanceForSession,
   addAttendance,
-  updateAttendanceFields,
   appendAuditLog,
 } from "@/lib/sheets";
 import { lookupSession, lookupByOTP } from "@/lib/session-store";
 import { calculateDistance } from "@/lib/haversine";
-import { findConflictReason } from "@/lib/conflict-detection";
 import { AttendanceRecord } from "@/types";
 
 // GPS heuristic thresholds — advisory only (see step 8b below). Both are weak,
@@ -247,16 +245,14 @@ export async function POST(req: NextRequest) {
       flagNotes.push("Auto-flagged: ตำแหน่งนิ่งผิดปกติร่วมกับความแม่นยำสูงเกินจริง (สงสัยตำแหน่งปลอม)");
     }
 
-    // 9b. Device-conflict check — same device (fingerprint or GPU fingerprint)
-    // already checked another student into this session. Flag both sides
-    // immediately so it survives filtering/exports; never block the check-in.
-    const conflictMatch = existing.find((a) => {
-      const reason = findConflictReason(record, a);
-      return reason === "fingerprint" || reason === "fingerprint_gpu";
-    });
-    if (conflictMatch) {
-      flagNotes.push(`Auto-flagged: อุปกรณ์เดียวกับ ${conflictMatch.firstname} ${conflictMatch.lastname} (${conflictMatch.student_id})`);
-    }
+    // 9b. Device-conflict detection is intentionally NOT auto-flagged here.
+    // Fingerprint matches (shared lab PCs, a borrowed phone) are common and not
+    // reliably distinguishable from cheating at check-in time — silently
+    // retro-editing an earlier, already-accepted student's record is unfair to
+    // them. Device conflicts are instead surfaced non-destructively for teacher
+    // review via the "confirmed conflicts" tier in the session view, computed
+    // fresh from device_fingerprint/device_fingerprint_gpu matches across all
+    // attendance rows (see lib/conflict-detection.ts) — no write needed here.
 
     if (flagNotes.length > 0) {
       record.flagged = true;
@@ -267,14 +263,6 @@ export async function POST(req: NextRequest) {
 
     await addAttendance(accessToken, spreadsheetId, record);
 
-    if (conflictMatch && !conflictMatch.flagged) {
-      await updateAttendanceFields(accessToken, spreadsheetId, conflictMatch.attendance_id, {
-        flagged: true,
-        flagged_at: checkedAt,
-        action_taken: "auto_flag",
-        edit_note: `Auto-flagged: อุปกรณ์เดียวกับ ${student.firstname} ${student.lastname} (${student_id})`,
-      });
-    }
     if (flagNotes.length > 0) {
       await appendAuditLog(accessToken, spreadsheetId, {
         action: "update", entity_type: "attendance", entity_id: record.attendance_id,
@@ -290,6 +278,7 @@ export async function POST(req: NextRequest) {
       checked_at: checkedAt,
       distance_m,
       gps_pass,
+      flagged: record.flagged ?? false,
     });
   } catch (err) {
     console.error("[checkin]", err);

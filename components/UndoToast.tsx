@@ -7,9 +7,13 @@ interface UndoToastProps {
   onUndo: () => void;
   onDismiss: () => void;
   durationMs?: number;
+  // Position index within a stack of simultaneous toasts (0 = bottom-most),
+  // so correcting several students in a row doesn't drop earlier undos —
+  // each gets its own timer/instance instead of sharing one slot.
+  stackIndex?: number;
 }
 
-export default function UndoToast({ message, onUndo, onDismiss, durationMs = 5000 }: UndoToastProps) {
+export default function UndoToast({ message, onUndo, onDismiss, durationMs = 5000, stackIndex = 0 }: UndoToastProps) {
   const [progress, setProgress] = useState(100);
 
   useEffect(() => {
@@ -28,7 +32,10 @@ export default function UndoToast({ message, onUndo, onDismiss, durationMs = 500
   }, [durationMs, onDismiss]);
 
   return (
-    <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 flex flex-col gap-0 shadow-lg rounded-lg overflow-hidden min-w-72">
+    <div
+      className="fixed left-1/2 -translate-x-1/2 z-50 flex flex-col gap-0 shadow-lg rounded-lg overflow-hidden min-w-72"
+      style={{ bottom: 16 + stackIndex * 64 }}
+    >
       <div className="flex items-center gap-3 bg-gray-800 text-white px-4 py-3">
         <span className="text-sm flex-1">{message}</span>
         <button

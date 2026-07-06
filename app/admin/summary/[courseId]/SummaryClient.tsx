@@ -5,7 +5,7 @@ import * as XLSX from "xlsx";
 import Spinner from "@/components/Spinner";
 import { IconDownload } from "@/components/icons";
 import { Course, Session, Student, AttendanceStatus, AttendanceRecord, SemesterConfig } from "@/types";
-import { compareWeekLabels } from "@/lib/week-utils";
+import { compareWeekLabels, expandWeekLabel } from "@/lib/week-utils";
 
 interface SummaryData {
   course: Course;
@@ -67,13 +67,26 @@ export default function SummaryClient({ courseId, section }: { courseId: string;
         if (d.semester_config?.attendance_threshold) {
           setThreshold(d.semester_config.attendance_threshold);
         }
+
+        // Holidays must cover the whole semester span, not just "next 7 days",
+        // so past/future weeks in the grid can both show the 🎌 marker.
+        const cfg = d.semester_config;
+        const years = new Set<number>();
+        if (cfg?.semester_start) {
+          const start = new Date(cfg.semester_start);
+          const end = new Date(start);
+          end.setDate(end.getDate() + (cfg.total_weeks ?? 20) * 7);
+          years.add(start.getFullYear());
+          years.add(end.getFullYear());
+        } else {
+          years.add(new Date().getFullYear());
+        }
+        fetch(`/api/holidays?years=${[...years].join(",")}`)
+          .then((r) => r.json())
+          .then((hd) => setHolidays(hd.holidays ?? []))
+          .catch(() => {});
       })
       .finally(() => setLoading(false));
-
-    fetch("/api/holidays")
-      .then((r) => r.json())
-      .then((d) => setHolidays(d.holidays ?? []))
-      .catch(() => {});
   }, [courseId, section]);
 
   // Close popover on outside click
@@ -498,7 +511,7 @@ export default function SummaryClient({ courseId, section }: { courseId: string;
                     )}
                     {ss.week_label ? (
                       <>
-                        <div className="font-semibold" style={{ color: isHoliday ? "#854F0B" : "#185FA5" }}>
+                        <div className="font-semibold" style={{ color: isHoliday ? "#854F0B" : "#185FA5" }} title={expandWeekLabel(ss.week_label)}>
                           {ss.week_label}
                           {isSingleDouble && " ×2"}
                           {isHoliday && " 🎌"}
@@ -518,7 +531,7 @@ export default function SummaryClient({ courseId, section }: { courseId: string;
                         style={{ backgroundColor: "#1e293b", color: "white", pointerEvents: "none" }}>
                         <p className="font-semibold">{ss.date}</p>
                         <p>Period {ss.period}{ss.period_end ? `–${ss.period_end}` : ""}</p>
-                        {ss.week_label && <p>Week {ss.week_label}</p>}
+                        {ss.week_label && <p>{expandWeekLabel(ss.week_label)}</p>}
                         {isSingleDouble && <p style={{ color: "#93C5FD" }}>Double period (×2)</p>}
                         {ss.check_in_mode === "double" && <p style={{ color: "#93C5FD" }}>Part {ss.part_number} of 2</p>}
                         {isPast && <p style={{ color: "#FBBF24" }}>📋 Past session</p>}

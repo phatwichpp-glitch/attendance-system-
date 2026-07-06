@@ -29,7 +29,25 @@ import { getRedis } from "@/lib/redis";
 import { getWeekLabel } from "@/lib/week-utils";
 import { getPeriodLabel, addMinutes } from "@/lib/period-utils";
 import { notifyAdminOnOpen } from "@/lib/notify";
+import { recordTick } from "@/lib/scheduler-health";
+import { registerSession } from "@/lib/session-store";
 import { Course, Session, SemesterConfig } from "@/types";
+import Holidays from "date-holidays";
+
+const hd = new Holidays("TH");
+const holidayCache = new Map<number, Set<string>>();
+
+function isPublicHoliday(dateStr: string): boolean {
+  const year = parseInt(dateStr.slice(0, 4), 10);
+  if (!holidayCache.has(year)) {
+    const set = new Set<string>();
+    for (const h of hd.getHolidays(year)) {
+      if (h.type === "public") set.add(h.date.slice(0, 10));
+    }
+    holidayCache.set(year, set);
+  }
+  return holidayCache.get(year)!.has(dateStr);
+}
 
 const TICK_INTERVAL_MS = 60_000;
 const OPEN_WINDOW_TOLERANCE_MIN = 2; // a tick can be up to 2 min "late" and still catch the open
@@ -64,6 +82,11 @@ export async function runSchedulerTick(): Promise<{ ran: boolean; skipped?: stri
   ticking = true;
   try {
     await runTick();
+    try {
+      await recordTick();
+    } catch (e) {
+      console.error("[scheduler] failed to record tick timestamp", e);
+    }
     return { ran: true };
   } finally {
     ticking = false;
@@ -164,10 +187,13 @@ async function processAdmin(email: string): Promise<void> {
     }
   }
 
+  // Unlike the open pass above, auto-close runs for every course regardless of
+  // auto_open_enabled — a manually-opened session's own client-side auto-close
+  // (SessionClient.tsx) only fires while that admin's browser tab stays open, so
+  // this tick is the only thing that reliably closes/marks-absent a session left
+  // open in a background tab or after the tab was closed.
   for (const course of courses) {
     try {
-      const config = await loadConfig(course);
-      if (!config?.auto_open_enabled) continue;
       await processCourseAutoClose(accessToken, spreadsheetId, course, allSessions);
     } catch (e) {
       console.error(`[scheduler] course ${course.course_id}/${course.section} close-check failed`, e);
@@ -186,6 +212,8 @@ async function processCourseOpen(
   hhmm: string,
   dateStr: string
 ): Promise<void> {
+  if (isPublicHoliday(dateStr)) return; // don't auto-open classes on a Thai public holiday
+
   const todaysSchedule = config.teaching_schedule.filter((td) => td.day === dayOfWeek);
 
   // A course can ask to open (and be notified) a few minutes before its scheduled
@@ -288,9 +316,13 @@ async function processCourseOpen(
   }
 }
 
-// Scoped to auto-open-enabled courses only: the existing client-side auto-close
-// (app/admin/session/[sessionId]/SessionClient.tsx polling) only runs while a browser
-// tab is open, which auto-opened sessions can't rely on.
+// Runs for every course (see call site) so a session opened manually and left in
+// a background/closed browser tab still gets closed + absentees marked, instead
+// of depending on SessionClient.tsx's client-side interval, which only runs while
+// that admin's tab stays open. As a side effect, this also keeps session-store's
+// sessionId/OTP → access-token mapping alive for any still-open session (its TTL
+// is otherwise a fixed 4h from last registration — too short for a double-period
+// class if the admin isn't actively polling the session page).
 async function processCourseAutoClose(
   accessToken: string,
   spreadsheetId: string,
@@ -307,15 +339,22 @@ async function processCourseAutoClose(
 
     const openedAtMs = new Date(s.opened_at).getTime();
     const expiresAtMs = openedAtMs + s.otp_expire_min * 60_000;
-    if (now < expiresAtMs) continue; // not yet expired
+    if (now >= expiresAtMs) {
+      const closedAt = new Date().toISOString();
+      try {
+        await closeSessionInSheet(accessToken, spreadsheetId, s.session_id, closedAt);
+        await markAbsentStudents(accessToken, spreadsheetId, s.session_id, s.course_id, s.section, closedAt);
+        console.log(`[scheduler] auto-closed session ${s.session_id} (${s.course_id}/${s.section})`);
+      } catch (e) {
+        console.error(`[scheduler] failed to auto-close session ${s.session_id}`, e);
+      }
+      continue;
+    }
 
-    const closedAt = new Date().toISOString();
     try {
-      await closeSessionInSheet(accessToken, spreadsheetId, s.session_id, closedAt);
-      await markAbsentStudents(accessToken, spreadsheetId, s.session_id, s.course_id, s.section, closedAt);
-      console.log(`[scheduler] auto-closed session ${s.session_id} (${s.course_id}/${s.section})`);
+      await registerSession(s.session_id, spreadsheetId, accessToken, s.otp);
     } catch (e) {
-      console.error(`[scheduler] failed to auto-close session ${s.session_id}`, e);
+      console.error(`[scheduler] failed to refresh session-store TTL for ${s.session_id}`, e);
     }
   }
 }

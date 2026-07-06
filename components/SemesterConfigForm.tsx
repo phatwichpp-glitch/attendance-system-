@@ -112,11 +112,18 @@ export default function SemesterConfigForm({
   // "ok" = the scheduler holds a working refresh token for this account,
   // "unknown" = never registered (needs one fresh login), "invalid" = token died.
   const [tokenStatus, setTokenStatus] = useState<"ok" | "invalid" | "unknown" | null>(null);
+  // True when the scheduler tick itself hasn't run recently at all (e.g. CRON_SECRET
+  // missing on Vercel, or the external cron was never configured) — independent of
+  // whether this account's own token is valid.
+  const [schedulerStale, setSchedulerStale] = useState(false);
 
   useEffect(() => {
     fetch("/api/sheets/token-status")
       .then((r) => r.json())
-      .then((d) => setTokenStatus(d.status ?? null))
+      .then((d) => {
+        setTokenStatus(d.status ?? null);
+        setSchedulerStale(!!d.schedulerStale);
+      })
       .catch(() => {});
   }, []);
 
@@ -199,6 +206,9 @@ export default function SemesterConfigForm({
             {[...semester.teaching_days].sort((a, b) => a - b).map((d) => {
               const pc = semester.day_period_count[d] ?? 1;
               const cim = semester.day_check_in_mode[d] ?? "single";
+              const startTimeVal = semester.day_start_time[d] ?? PERIOD_STARTS["2"];
+              const endTimeVal = semester.day_end_time[d] ?? addMinutes(startTimeVal, pc === 1 ? 90 : 180);
+              const timeInvalid = !!startTimeVal && !!endTimeVal && endTimeVal <= startTimeVal;
               return (
                 <div key={d} className="rounded-lg p-3 space-y-3" style={{ border: "0.5px solid rgba(0,0,0,0.1)", backgroundColor: "#f9fafb" }}>
                   {/* Time range inputs */}
@@ -207,7 +217,7 @@ export default function SemesterConfigForm({
                     <input
                       type="time"
                       className="input text-[13px] flex-1"
-                      value={semester.day_start_time[d] ?? PERIOD_STARTS["2"]}
+                      value={startTimeVal}
                       onChange={(e) => {
                         const startTime = e.target.value;
                         const endTime = addMinutes(startTime, pc === 1 ? 90 : 180);
@@ -222,13 +232,19 @@ export default function SemesterConfigForm({
                     <input
                       type="time"
                       className="input text-[13px] flex-1"
-                      value={semester.day_end_time[d] ?? addMinutes(semester.day_start_time[d] ?? PERIOD_STARTS["2"], pc === 1 ? 90 : 180)}
+                      style={timeInvalid ? { borderColor: "#E57373" } : undefined}
+                      value={endTimeVal}
                       onChange={(e) => setSemester((s) => ({
                         ...s,
                         day_end_time: { ...s.day_end_time, [d]: e.target.value },
                       }))}
                     />
                   </div>
+                  {timeInvalid && (
+                    <p className="text-[11px]" style={{ color: "#A32D2D" }}>
+                      เวลาสิ้นสุดต้องอยู่หลังเวลาเริ่มเรียนของวัน{DAY_NAMES[d]}
+                    </p>
+                  )}
                   {/* Period duration */}
                   <div className="flex gap-2">
                     {([1, 2] as const).map((n) => (
@@ -258,27 +274,32 @@ export default function SemesterConfigForm({
                   </div>
                   {/* Check-in mode for double period */}
                   {pc >= 2 && (
-                    <div className="flex gap-2">
-                      {(["single", "double"] as const).map((m) => (
-                        <button
-                          key={m}
-                          type="button"
-                          onClick={() => setSemester((s) => ({
-                            ...s,
-                            day_check_in_mode: { ...s.day_check_in_mode, [d]: m },
-                          }))}
-                          className="flex-1 rounded-lg text-[12px] transition-colors"
-                          style={{
-                            padding: "4px 0",
-                            border: cim === m ? "2px solid #185FA5" : "1px solid #d1d5db",
-                            backgroundColor: cim === m ? "#E6F1FB" : "white",
-                            color: cim === m ? "#185FA5" : "#374151",
-                          }}
-                        >
-                          {m === "single" ? "1 Check-in" : "2 Check-ins"}
-                        </button>
-                      ))}
-                    </div>
+                    <>
+                      <div className="flex gap-2">
+                        {(["single", "double"] as const).map((m) => (
+                          <button
+                            key={m}
+                            type="button"
+                            onClick={() => setSemester((s) => ({
+                              ...s,
+                              day_check_in_mode: { ...s.day_check_in_mode, [d]: m },
+                            }))}
+                            className="flex-1 rounded-lg text-[12px] transition-colors"
+                            style={{
+                              padding: "4px 0",
+                              border: cim === m ? "2px solid #185FA5" : "1px solid #d1d5db",
+                              backgroundColor: cim === m ? "#E6F1FB" : "white",
+                              color: cim === m ? "#185FA5" : "#374151",
+                            }}
+                          >
+                            {m === "single" ? "1 Check-in" : "2 Check-ins"}
+                          </button>
+                        ))}
+                      </div>
+                      <p className="text-[11px]" style={{ color: "#9ca3af" }}>
+                        เปลี่ยนโหมดนี้หลังเปิดคาบเรียนไปแล้วไม่ได้ — ถ้าเลือกผิดต้องลบ session แล้วเปิดใหม่
+                      </p>
+                    </>
                   )}
                 </div>
               );
@@ -338,6 +359,12 @@ export default function SemesterConfigForm({
                 {tokenStatus === "invalid"
                   ? "สิทธิ์เปิดคาบอัตโนมัติของบัญชีนี้หมดอายุ — กรุณาออกจากระบบแล้วเข้าสู่ระบบใหม่"
                   : "ระบบยังไม่ได้รับสิทธิ์เปิดคาบแทนบัญชีนี้ — กรุณาออกจากระบบแล้วเข้าสู่ระบบใหม่ 1 ครั้ง"}
+              </div>
+            )}
+            {schedulerStale && (
+              <div className="rounded-lg px-3 py-2 text-[12px]" style={{ backgroundColor: "#FEF3E2", color: "#8C5A0B" }}>
+                ไม่พบสัญญาณว่าตัวจับเวลาเปิดคาบอัตโนมัติทำงานล่าสุด — session อาจไม่เปิดให้เองตามเวลา
+                กรุณาตรวจสอบการตั้งค่า cron/CRON_SECRET กับผู้ดูแลระบบที่ดูแลการ deploy
               </div>
             )}
             <p className="text-[11px]" style={{ color: "#5F5E5A" }}>

@@ -3,6 +3,16 @@ import { useState, useEffect } from "react";
 import Spinner from "@/components/Spinner";
 import { AuditLog } from "@/types";
 
+// The API additively joins attendance entries against the attendance/sessions
+// sheets server-side (see app/api/sheets/audit/route.ts) so a teacher can see
+// who a record belongs to instead of a raw entity_id.
+type EnrichedAuditLog = AuditLog & {
+  student_id?: string;
+  student_name?: string;
+  course_id?: string;
+  session_date?: string;
+};
+
 const ENTITY_COLORS: Record<string, string> = {
   student: "#185FA5",
   attendance: "#3B6D11",
@@ -17,10 +27,17 @@ const ACTION_COLORS: Record<string, string> = {
 };
 
 export default function AuditClient() {
-  const [entries, setEntries] = useState<AuditLog[]>([]);
+  const [entries, setEntries] = useState<EnrichedAuditLog[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filters, setFilters] = useState({ entity_type: "", action: "", from: "", to: "" });
+  const [filters, setFilters] = useState({ entity_type: "", action: "", from: "", to: "", student: "" });
+  const [studentInput, setStudentInput] = useState("");
   const [expanded, setExpanded] = useState<string | null>(null);
+
+  // Debounce the student-name/ID search so every keystroke doesn't refetch.
+  useEffect(() => {
+    const t = setTimeout(() => setFilters((f) => ({ ...f, student: studentInput.trim() })), 300);
+    return () => clearTimeout(t);
+  }, [studentInput]);
 
   useEffect(() => {
     const params = new URLSearchParams();
@@ -28,6 +45,7 @@ export default function AuditClient() {
     if (filters.action) params.set("action", filters.action);
     if (filters.from) params.set("from", filters.from);
     if (filters.to) params.set("to", filters.to);
+    if (filters.student) params.set("student", filters.student);
     setLoading(true);
     fetch(`/api/sheets/audit?${params}`)
       .then((r) => r.json())
@@ -87,8 +105,18 @@ export default function AuditClient() {
             onChange={(e) => setFilters((f) => ({ ...f, to: e.target.value }))}
           />
         </div>
+        <div>
+          <label className="block text-[11px] font-medium text-gray-700 mb-1">Student</label>
+          <input
+            type="text"
+            placeholder="Name or student ID"
+            className="input text-[13px]"
+            value={studentInput}
+            onChange={(e) => setStudentInput(e.target.value)}
+          />
+        </div>
         <button
-          onClick={() => setFilters({ entity_type: "", action: "", from: "", to: "" })}
+          onClick={() => { setStudentInput(""); setFilters({ entity_type: "", action: "", from: "", to: "", student: "" }); }}
           className="btn-outline text-[13px]"
           style={{ minHeight: 36 }}
         >
@@ -108,7 +136,7 @@ export default function AuditClient() {
                 <th className="px-3 py-2.5 text-left text-[11px] font-medium" style={{ color: "#5F5E5A" }}>Timestamp</th>
                 <th className="px-3 py-2.5 text-left text-[11px] font-medium" style={{ color: "#5F5E5A" }}>Action</th>
                 <th className="px-3 py-2.5 text-left text-[11px] font-medium" style={{ color: "#5F5E5A" }}>Type</th>
-                <th className="px-3 py-2.5 text-left text-[11px] font-medium" style={{ color: "#5F5E5A" }}>Entity ID</th>
+                <th className="px-3 py-2.5 text-left text-[11px] font-medium" style={{ color: "#5F5E5A" }}>Student / Session</th>
                 <th className="px-3 py-2.5 text-left text-[11px] font-medium" style={{ color: "#5F5E5A" }}>Note</th>
                 <th className="px-3 py-2.5 text-center text-[11px] font-medium" style={{ color: "#5F5E5A" }}>Details</th>
               </tr>
@@ -142,8 +170,15 @@ export default function AuditClient() {
                         {e.entity_type}
                       </span>
                     </td>
-                    <td className="px-3 py-2 font-mono text-[11px] text-gray-600 max-w-[120px] truncate">
-                      {e.entity_id}
+                    <td className="px-3 py-2 text-[12px] text-gray-600 max-w-[180px] truncate">
+                      {e.student_name ? (
+                        <>
+                          <span className="text-gray-800">{e.student_name}</span>
+                          {e.session_date && <span className="text-gray-400"> · {e.session_date}</span>}
+                        </>
+                      ) : (
+                        <span className="font-mono text-[11px]">{e.entity_id}</span>
+                      )}
                     </td>
                     <td className="px-3 py-2 text-[12px] text-gray-600 max-w-[160px] truncate">{e.note}</td>
                     <td className="px-3 py-2 text-center">

@@ -2,6 +2,13 @@ const DAY_SUFFIX: Record<number, string> = {
   1: "m", 2: "t", 3: "w", 4: "th", 5: "f",
 };
 
+// Full weekday name for the suffix above — the compact "W2m"/"W2t" label isn't a
+// convention teachers/students recognize on sight, so callers can show this as a
+// tooltip/expansion instead of widening the grid column header itself.
+const DAY_NAME_FULL: Record<number, string> = {
+  1: "Monday", 2: "Tuesday", 3: "Wednesday", 4: "Thursday", 5: "Friday",
+};
+
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 /** Days-since-epoch of the Monday starting the calendar week containing `d` (UTC-based). */
@@ -25,14 +32,35 @@ export function getWeekLabel(
   sessionDate: Date,
   semesterStart: Date,
   teachingDays: number[]
-): { weekNumber: number; label: string } {
+): { weekNumber: number; label: string; fullLabel: string } {
   const weekNumber = getWeekNumber(sessionDate, semesterStart);
   // UTC, matching weekStartIndex above — every caller builds sessionDate via
   // new Date("YYYY-MM-DD") (parsed as UTC midnight), so .getDay() (local) would
   // roll back a day for any negative-UTC-offset browser/OS clock.
   const dow = sessionDate.getUTCDay();
-  const suffix = teachingDays.length > 1 ? (DAY_SUFFIX[dow] ?? "") : "";
-  return { weekNumber, label: `W${weekNumber}${suffix}` };
+  const multiDay = teachingDays.length > 1;
+  const suffix = multiDay ? (DAY_SUFFIX[dow] ?? "") : "";
+  const fullLabel = multiDay && DAY_NAME_FULL[dow]
+    ? `Week ${weekNumber} — ${DAY_NAME_FULL[dow]} session`
+    : `Week ${weekNumber}`;
+  return { weekNumber, label: `W${weekNumber}${suffix}`, fullLabel };
+}
+
+const SUFFIX_TO_DAY_NAME: Record<string, string> = {
+  m: "Monday", t: "Tuesday", w: "Wednesday", th: "Thursday", f: "Friday",
+};
+
+/**
+ * Expands an already-stored compact week label (e.g. "W2t", read straight off a
+ * Session row) back into a form a teacher/student recognizes without having to
+ * know the m/t/w/th/f day-suffix convention — for use as a tooltip/title, not a
+ * replacement for the compact grid-header label.
+ */
+export function expandWeekLabel(label: string): string {
+  const match = /^W(\d+)(th|m|t|w|f)?$/.exec(label);
+  if (!match) return label;
+  const [, num, suffix] = match;
+  return suffix ? `Week ${num} — ${SUFFIX_TO_DAY_NAME[suffix]} session` : `Week ${num}`;
 }
 
 /**

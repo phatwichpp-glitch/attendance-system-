@@ -66,16 +66,43 @@ export default function CourseList() {
   const [deleteConfirm, setDeleteConfirm] = useState("");
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
+  const [showCreateCourse, setShowCreateCourse] = useState(false);
+  const [createForm, setCreateForm] = useState({ course_id: "", title: "", section: "", lecturer: "" });
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState("");
   const menuRef = useRef<HTMLDivElement | null>(null);
+
+  const loadCourses = () =>
+    fetchWithRetry("/api/sheets/courses")
+      .then((r) => r.json())
+      .then((d) => { setCourses(d.courses ?? []); setStats(d.stats ?? {}); setConfigs(d.configs ?? {}); });
 
   useEffect(() => {
     fetchWithRetry("/api/sheets/init", { method: "POST" })
-      .then(() => fetchWithRetry("/api/sheets/courses"))
-      .then((r) => r.json())
-      .then((d) => { setCourses(d.courses ?? []); setStats(d.stats ?? {}); setConfigs(d.configs ?? {}); })
+      .then(() => loadCourses())
       .catch(() => setError("โหลดข้อมูลไม่สำเร็จ"))
       .finally(() => setLoading(false));
   }, []);
+
+  const handleCreateCourse = async () => {
+    setCreating(true);
+    setCreateError("");
+    try {
+      const res = await fetch("/api/sheets/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...createForm, students: [] }),
+      });
+      if (!res.ok) throw new Error();
+      await loadCourses();
+      setShowCreateCourse(false);
+      setCreateForm({ course_id: "", title: "", section: "", lecturer: "" });
+    } catch {
+      setCreateError("สร้างวิชาไม่สำเร็จ — กรุณาลองใหม่");
+    } finally {
+      setCreating(false);
+    }
+  };
 
   // Close menu on outside click
   useEffect(() => {
@@ -219,8 +246,9 @@ export default function CourseList() {
   };
 
   if (loading) return (
-    <div className="flex justify-center py-20">
+    <div className="flex flex-col items-center justify-center gap-3 py-20">
       <Spinner className="h-8 w-8 text-[#185FA5]" />
+      <p className="text-[12px]" style={{ color: "#9ca3af" }}>กำลังเตรียม Google Sheet ของคุณ…</p>
     </div>
   );
 
@@ -228,16 +256,47 @@ export default function CourseList() {
 
   if (courses.length === 0) {
     return (
-      <div className="card text-center py-16 space-y-4">
-        <IconList className="mx-auto text-gray-300" size={48} />
-        <p className="text-gray-500">ยังไม่มีรายวิชา</p>
-        <Link href="/admin/import" className="btn-primary">Import Students</Link>
-      </div>
+      <>
+        <div className="card text-center py-16 space-y-4">
+          <IconList className="mx-auto text-gray-300" size={48} />
+          <p className="text-gray-500">ยังไม่มีรายวิชา</p>
+          <div className="flex items-center justify-center gap-3">
+            <Link href="/admin/import" className="btn-primary">Import Students</Link>
+            <button onClick={() => setShowCreateCourse(true)} className="btn-outline">
+              + Create Course
+            </button>
+          </div>
+        </div>
+        <CreateCourseModal
+          open={showCreateCourse}
+          form={createForm}
+          setForm={setCreateForm}
+          onCancel={() => setShowCreateCourse(false)}
+          onSubmit={handleCreateCourse}
+          submitting={creating}
+          error={createError}
+        />
+      </>
     );
   }
 
   return (
     <>
+      <div className="flex justify-end">
+        <button onClick={() => setShowCreateCourse(true)} className="btn-outline text-[13px]" style={{ minHeight: 32, padding: "6px 12px" }}>
+          + Create Course
+        </button>
+      </div>
+      <CreateCourseModal
+        open={showCreateCourse}
+        form={createForm}
+        setForm={setCreateForm}
+        onCancel={() => setShowCreateCourse(false)}
+        onSubmit={handleCreateCourse}
+        submitting={creating}
+        error={createError}
+      />
+
       {/* Today's teaching schedule — the first thing a teacher checks each morning */}
       {todayItems.length > 0 && (
         <div className="card">
@@ -575,5 +634,78 @@ export default function CourseList() {
         </div>
       )}
     </>
+  );
+}
+
+// Previously the only way to add a course was the full roster-import wizard —
+// a teacher who just wants to set up an empty course at the start of a semester
+// (roster/semester config to follow later) had no path that didn't require a file.
+function CreateCourseModal({
+  open, form, setForm, onCancel, onSubmit, submitting, error,
+}: {
+  open: boolean;
+  form: { course_id: string; title: string; section: string; lecturer: string };
+  setForm: (f: { course_id: string; title: string; section: string; lecturer: string }) => void;
+  onCancel: () => void;
+  onSubmit: () => void;
+  submitting: boolean;
+  error: string;
+}) {
+  if (!open) return null;
+  const canSubmit = form.course_id.trim() && form.title.trim() && form.section.trim();
+
+  return (
+    <div className="fixed inset-0 flex items-center justify-center z-50 p-4" style={{ backgroundColor: "rgba(0,0,0,0.5)" }}>
+      <div className="card max-w-sm w-full space-y-4">
+        <h3 className="font-medium text-gray-900">Create Course</h3>
+        <p className="text-[12px]" style={{ color: "#5F5E5A" }}>
+          สร้างวิชาเปล่าไว้ก่อน แล้วค่อยเพิ่มรายชื่อนักศึกษาหรือตั้งค่าเทอมทีหลังก็ได้
+        </p>
+        <div className="space-y-3">
+          <div>
+            <label className="block text-[12px] font-medium text-gray-700 mb-1">Course ID *</label>
+            <input
+              className="input text-[13px]"
+              value={form.course_id}
+              onChange={(e) => setForm({ ...form, course_id: e.target.value })}
+              placeholder="เช่น 251363"
+            />
+          </div>
+          <div>
+            <label className="block text-[12px] font-medium text-gray-700 mb-1">Title *</label>
+            <input
+              className="input text-[13px]"
+              value={form.title}
+              onChange={(e) => setForm({ ...form, title: e.target.value })}
+            />
+          </div>
+          <div>
+            <label className="block text-[12px] font-medium text-gray-700 mb-1">Section *</label>
+            <input
+              className="input text-[13px]"
+              value={form.section}
+              onChange={(e) => setForm({ ...form, section: e.target.value })}
+              placeholder="เช่น 001"
+            />
+          </div>
+          <div>
+            <label className="block text-[12px] font-medium text-gray-700 mb-1">Lecturer</label>
+            <input
+              className="input text-[13px]"
+              value={form.lecturer}
+              onChange={(e) => setForm({ ...form, lecturer: e.target.value })}
+            />
+          </div>
+        </div>
+        {error && <p className="text-[12px]" style={{ color: "#A32D2D" }}>{error}</p>}
+        <div className="flex gap-3">
+          <button onClick={onCancel} className="btn-outline flex-1">Cancel</button>
+          <button onClick={onSubmit} disabled={submitting || !canSubmit} className="btn-primary flex-1 flex items-center justify-center gap-2">
+            {submitting && <Spinner className="h-4 w-4" />}
+            Create
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }

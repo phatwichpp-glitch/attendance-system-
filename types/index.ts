@@ -182,6 +182,7 @@ export type CheckInState =
   | "already_present"
   | "already_gps_fail"
   | "not_found"
+  | "rate_limited"
   | "error";
 
 export interface CheckInResult {
