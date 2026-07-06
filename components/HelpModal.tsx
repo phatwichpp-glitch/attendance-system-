@@ -120,7 +120,9 @@ export default function HelpModal({ onClose }: { onClose: () => void }) {
               <FeatureGroup icon="🔓" title="เปิดคาบเรียน (Open Session)" color="#185FA5">
                 <Li>แถบ &quot;Today&quot; บนหน้า Courses — เห็นทุกคาบของวันนั้นเรียงตามเวลา พร้อมสถานะ (กำลังเปิด / เปิดอัตโนมัติกี่โมง)</Li>
                 <Li>ปุ่ม <strong>Quick Open</strong> — เปิดคาบในคลิกเดียวด้วยค่าจาก Semester Settings + หมุดห้องเรียนที่ปักไว้ ไม่ต้องกรอกฟอร์มหรือรอ GPS (ขึ้นเฉพาะวันที่มีสอนและปักหมุดแล้ว)</Li>
-                <Li>กรอกเวลาเรียนจริง (HH:MM) — auto-fill จาก semester config ถ้ามี</Li>
+                <Li>เลือกโหมดเวลาได้ชัดเจน — <strong>ตามตารางเรียน</strong> (auto-fill และ sync ตามวันที่เลือกเสมอ) หรือ <strong>เวลาอื่น (ชดเชย)</strong> สำหรับคาบสอนชดเชยที่ไม่ตรงตารางปกติ สลับโหมดได้ตลอดเวลา</Li>
+                <Li>ปุ่ม <strong>ใช้เวลาปัจจุบัน</strong> — เติมเวลาเดี๋ยวนี้ให้ในคลิกเดียว เหมาะกับตอนเปิดคาบสดๆ</Li>
+                <Li>เวลาที่กรอกจะถูกบันทึกไว้ตามจริงเสมอ ไม่ถูกปัดเข้าคาบมาตรฐาน 6 คาบอีกต่อไป — คาบสอนชดเชยตอนเย็นหรือวันหยุดก็เปิดได้ปกติ</Li>
                 <Li>Single period (90 นาที) หรือ Double period (180 นาที)</Li>
                 <Li>Double period มี 2 โหมด: OTP เดียว หรือ แยก OTP ต่อคาบ</Li>
                 <Li>OTP duration และ Late threshold — พิมพ์ตัวเลขได้โดยตรง, max = ความยาวคาบนั้น</Li>
@@ -287,12 +289,13 @@ export default function HelpModal({ onClose }: { onClose: () => void }) {
 
               <Section title="2. เปิดคาบเรียน" color="#185FA5">
                 <Step n="1">ไปที่เมนู <Chip>Open Session</Chip> แล้วเลือกวิชา</Step>
-                <Step n="2">ตรวจสอบเวลาเรียน (auto-fill จาก semester config) — แก้ได้ถ้าต้องการ</Step>
-                <Step n="3">เลือก Single หรือ Double period</Step>
-                <Step n="4">รอ GPS ล็อก — หรือปักหมุดบนแผนที่ถ้า GPS ไม่แม่น</Step>
-                <Step n="5">ปรับ Settings (GPS Radius, OTP duration, late threshold) ถ้าต้องการ</Step>
-                <Step n="6">กด <Chip>Open Session &amp; Generate OTP</Chip></Step>
-                <Note>ค่า Settings และเวลาเรียนจะถูกจำไว้ — ครั้งหน้าไม่ต้องกรอกใหม่</Note>
+                <Step n="2">เลือก <strong>Session Timing</strong> — &quot;ตามตารางเรียน&quot; (auto-fill ตามวันที่เลือก) หรือ &quot;เวลาอื่น (ชดเชย)&quot; ถ้าเป็นคาบสอนชดเชยนอกตาราง</Step>
+                <Step n="3">ตรวจสอบ/แก้เวลาเรียนได้ตรง ๆ หรือกดปุ่ม <em>ใช้เวลาปัจจุบัน</em> เพื่อเติมเวลาเดี๋ยวนี้ให้ทันที</Step>
+                <Step n="4">เลือก Single หรือ Double period</Step>
+                <Step n="5">รอ GPS ล็อก — หรือปักหมุดบนแผนที่ถ้า GPS ไม่แม่น</Step>
+                <Step n="6">ปรับ Settings (GPS Radius, OTP duration, late threshold) ถ้าต้องการ</Step>
+                <Step n="7">กด <Chip>Open Session &amp; Generate OTP</Chip></Step>
+                <Note>เวลาที่กรอกจะถูกบันทึกไว้ตามจริงเสมอ (ไม่ถูกปัดเข้าคาบมาตรฐาน) — ค่า Settings จะถูกจำไว้ให้ครั้งหน้าด้วย</Note>
               </Section>
 
               <Section title="3. ระหว่างคาบเรียน" color="#185FA5">
@@ -403,8 +406,15 @@ export default function HelpModal({ onClose }: { onClose: () => void }) {
                 โดย N = ความยาวคาบ) หรือลาก slider ความละเอียด 1 นาที
               </FAQ>
               <FAQ q="เวลาเปิด Session แสดงผิด ไม่ตรงกับที่ตั้งไว้ใน semester?">
-                ระบบจะ auto-fill เวลาจาก semester config เฉพาะครั้งแรก — หลังจากนั้นจะจำเวลา
-                ที่เคยกรอก เปลี่ยนได้ตรง time input บนหน้า Open Session
+                ตรวจดูว่าอยู่โหมด <strong>&quot;ตามตารางเรียน&quot;</strong> หรือ &quot;เวลาอื่น (ชดเชย)&quot; — ถ้าอยู่โหมด
+                &quot;เวลาอื่น&quot; ระบบจะไม่ sync กับตารางให้อัตโนมัติ (ตั้งใจไว้ เพื่อไม่ให้ไปทับเวลาที่กรอกเองสำหรับคาบชดเชย)
+                สลับกลับไปโหมด &quot;ตามตารางเรียน&quot; เพื่อดึงเวลาจาก semester config ใหม่อีกครั้ง
+              </FAQ>
+              <FAQ q="เปิดคาบสอนชดเชย (นอกตารางปกติ) ได้ไหม?">
+                ได้ครับ — ในหน้า Open Session เลือกโหมด <strong>&quot;เวลาอื่น (ชดเชย)&quot;</strong> แล้วกรอกเวลาที่ต้องการ
+                เอง หรือกดปุ่ม <em>ใช้เวลาปัจจุบัน</em> ถ้าจะเปิดตอนนี้เลย — ใช้ได้แม้เป็นเวลาเย็นหรือวันที่ไม่มีสอน
+                ตามตาราง เวลาที่กรอกจะถูกบันทึกไว้ตามจริงและแสดงถูกต้องในหน้า session/projector ด้วย
+                ไม่ถูกปัดเข้าคาบมาตรฐาน 6 คาบเหมือนเมื่อก่อน
               </FAQ>
               <FAQ q="Week label คำนวณยังไง อยากกรอกเองได้ไหม?">
                 ระบบนับตามสัปดาห์ปฏิทิน (จันทร์–อาทิตย์) โดย W1 คือสัปดาห์ที่มีวันเปิดภาคเรียน —
