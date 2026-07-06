@@ -257,6 +257,7 @@ export default function CourseList() {
   if (courses.length === 0) {
     return (
       <>
+        <h1 className="text-[18px] font-medium text-gray-900">My Courses</h1>
         <div className="card text-center py-16 space-y-4">
           <IconList className="mx-auto text-gray-300" size={48} />
           <p className="text-gray-500">ยังไม่มีรายวิชา</p>
@@ -282,7 +283,8 @@ export default function CourseList() {
 
   return (
     <>
-      <div className="flex justify-end">
+      <div className="flex items-center justify-between">
+        <h1 className="text-[18px] font-medium text-gray-900">My Courses</h1>
         <button onClick={() => setShowCreateCourse(true)} className="btn-outline text-[13px]" style={{ minHeight: 32, padding: "6px 12px" }}>
           + Create Course
         </button>

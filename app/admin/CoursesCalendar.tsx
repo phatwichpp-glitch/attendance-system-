@@ -101,7 +101,7 @@ export default function CoursesCalendar() {
   const goToday = () => setCursor({ year: today.getFullYear(), month: today.getMonth() });
 
   return (
-    <div className="card" style={{ maxWidth: 380 }}>
+    <div className="card">
       <div className="flex items-center justify-between mb-3">
         <button
           onClick={goPrev}

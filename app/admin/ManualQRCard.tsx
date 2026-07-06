@@ -42,20 +42,18 @@ export default function ManualQRCard() {
   };
 
   return (
-    <div className="card h-full">
-      <div className="flex items-center justify-between mb-1">
-        <h2 className="font-medium text-gray-900">QR Code สำหรับติดห้องเรียน</h2>
-        <button
-          onClick={() => setOpen((v) => !v)}
-          className="btn-outline text-[13px]"
-          style={{ minHeight: 36 }}
-        >
-          {open ? "ซ่อน" : "แสดง QR"}
-        </button>
-      </div>
-      <p className="text-[11px] text-gray-400">
-        QR Code นี้ใช้ได้ถาวร · นักศึกษาสแกนแล้วกรอก OTP จากกระดานด้วยตัวเอง · เหมาะสำหรับปริ้นติดไว้หน้าห้อง
+    <div className="card">
+      <h2 className="font-medium text-gray-900 text-[14px] mb-1">QR Code สำหรับติดห้องเรียน</h2>
+      <p className="text-[11px] text-gray-400 mb-3">
+        ใช้ได้ถาวร · นักศึกษาสแกนแล้วกรอก OTP จากกระดานด้วยตัวเอง · เหมาะสำหรับปริ้นติดไว้หน้าห้อง
       </p>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="btn-outline text-[13px] w-full"
+        style={{ minHeight: 36 }}
+      >
+        {open ? "ซ่อน QR" : "แสดง QR"}
+      </button>
 
       {open && (
         <div className="flex flex-col items-center gap-4 pt-4 mt-3 border-t border-gray-100">

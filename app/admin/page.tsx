@@ -19,16 +19,18 @@ export default async function AdminPage() {
         <StorageHealthBanner />
         <AutoOpenTokenBanner />
         <ActiveSessionBanner />
-        <div className="flex flex-col sm:flex-row gap-4 items-stretch">
-          <CoursesCalendar />
-          <div className="flex-1 min-w-0">
-            <ManualQRCard />
+        <div className="flex flex-col md:flex-row gap-4 items-start">
+          {/* Main column: the teacher's actual work — today's schedule + courses */}
+          <div className="flex-1 min-w-0 space-y-4">
+            <CourseList />
           </div>
+          {/* Sidebar: passive reference widgets, kept narrow so they don't
+              compete with the course list for space */}
+          <aside className="w-full md:w-[300px] shrink-0 space-y-4">
+            <CoursesCalendar />
+            <ManualQRCard />
+          </aside>
         </div>
-        <div className="flex items-center justify-between">
-          <h1 className="text-[18px] font-medium text-gray-900">My Courses</h1>
-        </div>
-        <CourseList />
       </main>
     </div>
   );
