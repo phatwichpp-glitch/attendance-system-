@@ -339,7 +339,24 @@ export default function SetupClient() {
 
             {/* Class time inputs */}
             <div>
-              <label className="block text-[13px] font-medium text-gray-700 mb-1">Class Time</label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-[13px] font-medium text-gray-700">Class Time</label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const now = new Date();
+                    const start = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+                    setClassStartTime(start);
+                    setClassEndTime(addMinutes(start, periodCount === 1 ? 90 : 180));
+                    setTimingMode("custom");
+                    if (!isPast) setSessionDate(todayIso);
+                  }}
+                  className="text-[12px] font-medium"
+                  style={{ color: "#185FA5", background: "none", border: "none", cursor: "pointer", padding: 0 }}
+                >
+                  ใช้เวลาปัจจุบัน
+                </button>
+              </div>
               <p className="text-[11px] text-gray-400 mb-1.5">
                 {timingMode === "scheduled"
                   ? "ตรงกับตารางเรียนที่ตั้งไว้ — ปรับเวลาเล็กน้อยได้หากจำเป็น"
