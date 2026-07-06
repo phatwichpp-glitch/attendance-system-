@@ -99,13 +99,13 @@ export async function initializeSpreadsheet(
           values: [["student_id", "firstname", "lastname", "course_id", "section", "order_num"]],
         },
         {
-          range: "sessions!A1:V1",
+          range: "sessions!A1:X1",
           values: [[
             "session_id", "course_id", "section", "period", "date", "otp",
             "lat", "lng", "radius_m", "late_after_min", "otp_expire_min",
             "opened_at", "closed_at", "week_number", "week_label", "is_past_session",
             "period_count", "period_end", "check_in_mode", "linked_session_id", "part_number",
-            "late_enabled",
+            "late_enabled", "start_time", "end_time",
           ]],
         },
         {
@@ -200,7 +200,7 @@ async function mergeSpreadsheetInto(
   await Promise.all([
     mergeSheetRows(accessToken, targetId, sourceId, "courses", "A2:F", "A:F", (r) => `${r[0]}__${r[2]}`),
     mergeSheetRows(accessToken, targetId, sourceId, "students", "A2:F", "A:F", (r) => `${r[0]}__${r[3]}__${r[4]}`),
-    mergeSheetRows(accessToken, targetId, sourceId, "sessions", "A2:V", "A:V", (r) => r[0]),
+    mergeSheetRows(accessToken, targetId, sourceId, "sessions", "A2:X", "A:X", (r) => r[0]),
     mergeSheetRows(accessToken, targetId, sourceId, "attendance", "A2:Z", "A:Z", (r) => r[0]),
     mergeSheetRows(accessToken, targetId, sourceId, "semester_config", "A2:O", "A:O", (r) => `${r[0]}__${r[1]}`),
     mergeSheetRows(accessToken, targetId, sourceId, "audit_log", "A2:I", "A:I", (r) => r[0]),
@@ -509,7 +509,7 @@ export async function createSession(
   const sheets = getSheetsClient(accessToken);
   await sheets.spreadsheets.values.append({
     spreadsheetId,
-    range: "sessions!A:V",
+    range: "sessions!A:X",
     valueInputOption: "RAW",
     requestBody: {
       values: [[
@@ -526,6 +526,8 @@ export async function createSession(
         session.linked_session_id ?? "",
         session.part_number ?? "",
         session.late_enabled === false ? "FALSE" : "TRUE",
+        session.start_time ?? "",
+        session.end_time ?? "",
       ]],
     },
   });
@@ -537,7 +539,7 @@ export async function getAllSessions(
 ): Promise<Session[]> {
   const sheets = getSheetsClient(accessToken);
   const res = await sheets.spreadsheets.values.get({
-    spreadsheetId, range: "sessions!A2:V",
+    spreadsheetId, range: "sessions!A2:X",
   });
   return (res.data.values ?? []).map(rowToSession);
 }
@@ -604,6 +606,8 @@ function rowToSession(r: string[]): Session {
     linked_session_id: r[19] || undefined,
     part_number: r[20] ? parseInt(r[20], 10) : undefined,
     late_enabled: r[21] !== "FALSE",
+    start_time: r[22] || undefined,
+    end_time: r[23] || undefined,
   };
 }
 
@@ -1172,7 +1176,7 @@ export async function deleteCourseById(
   // Attendance must be deleted first (references sessions/students); the rest can run in parallel.
   await deleteMatchingRows(accessToken, spreadsheetId, "attendance!A2:Z", (r) => r[2] === courseId);
   await Promise.all([
-    deleteMatchingRows(accessToken, spreadsheetId, "sessions!A2:V", (r) => r[1] === courseId && r[2] === section),
+    deleteMatchingRows(accessToken, spreadsheetId, "sessions!A2:X", (r) => r[1] === courseId && r[2] === section),
     deleteMatchingRows(accessToken, spreadsheetId, "students!A2:F", (r) => r[3] === courseId && r[4] === section),
     deleteMatchingRows(accessToken, spreadsheetId, "courses!A2:F", (r) => r[0] === courseId && r[2] === section),
   ]);
@@ -1204,18 +1208,19 @@ export async function updateSessionById(
   updates: Partial<Pick<Session,
     "week_label" | "date" | "period" | "closed_at" | "week_number" | "opened_at" |
     "period_count" | "period_end" | "check_in_mode" | "linked_session_id" | "part_number" |
-    "otp" | "radius_m" | "late_after_min" | "otp_expire_min" | "late_enabled"
+    "otp" | "radius_m" | "late_after_min" | "otp_expire_min" | "late_enabled" |
+    "start_time" | "end_time"
   >>
 ): Promise<boolean> {
   const sheets = getSheetsClient(accessToken);
-  const res = await sheets.spreadsheets.values.get({ spreadsheetId, range: "sessions!A2:V" });
+  const res = await sheets.spreadsheets.values.get({ spreadsheetId, range: "sessions!A2:X" });
   const rows = (res.data.values ?? []) as string[][];
   const idx = rows.findIndex((r) => r[0] === sessionId);
   if (idx === -1) return false;
 
-  // Pad row to 22 columns so new fields always have indices
+  // Pad row to 24 columns so new fields always have indices
   const row = [...rows[idx]];
-  while (row.length < 22) row.push("");
+  while (row.length < 24) row.push("");
 
   if (updates.period !== undefined) row[3] = updates.period;
   if (updates.date !== undefined) row[4] = updates.date;
@@ -1233,10 +1238,12 @@ export async function updateSessionById(
   if (updates.linked_session_id !== undefined) row[19] = updates.linked_session_id ?? "";
   if (updates.part_number !== undefined) row[20] = updates.part_number ? String(updates.part_number) : "";
   if (updates.late_enabled !== undefined) row[21] = updates.late_enabled ? "TRUE" : "FALSE";
+  if (updates.start_time !== undefined) row[22] = updates.start_time ?? "";
+  if (updates.end_time !== undefined) row[23] = updates.end_time ?? "";
 
   await sheets.spreadsheets.values.update({
     spreadsheetId,
-    range: `sessions!A${idx + 2}:V${idx + 2}`,
+    range: `sessions!A${idx + 2}:X${idx + 2}`,
     valueInputOption: "RAW",
     requestBody: { values: [row] },
   });
@@ -1249,7 +1256,7 @@ export async function deleteSessionById(
   sessionId: string
 ): Promise<void> {
   await deleteMatchingRows(accessToken, spreadsheetId, "attendance!A2:Z", (r) => r[1] === sessionId);
-  await deleteMatchingRows(accessToken, spreadsheetId, "sessions!A2:V", (r) => r[0] === sessionId);
+  await deleteMatchingRows(accessToken, spreadsheetId, "sessions!A2:X", (r) => r[0] === sessionId);
 }
 
 export async function reopenSession(

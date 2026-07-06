@@ -138,10 +138,14 @@ export default function ProjectorClient({ sessionId }: { sessionId: string }) {
   const { session: s, students } = data;
   const isClosed = !!s.closed_at;
 
-  // Double period label helpers
-  const periodDisplayLabel = s.period_count && s.period_count >= 2
-    ? getPeriodLabel(parseInt(s.period), s.period_end)
-    : `Period ${s.period}`;
+  // Double period label helpers — uses the session's actual stored start/end
+  // time when present (e.g. a makeup class outside the standard period grid).
+  const periodDisplayLabel = getPeriodLabel(
+    parseInt(s.period),
+    s.period_count && s.period_count >= 2 ? s.period_end : undefined,
+    s.start_time,
+    s.end_time
+  );
   const partIndicator = s.part_number === 1 ? " ①" : s.part_number === 2 ? " ②" : "";
   const isExpired = !isClosed && timeLeft === 0 && s.otp_expire_min > 0;
   const present = students.filter((x) => ["present", "late"].includes(x.attendance?.status ?? "")).length;

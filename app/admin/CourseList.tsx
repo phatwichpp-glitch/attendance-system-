@@ -156,6 +156,8 @@ export default function CourseList() {
           teaching_days: cfg.teaching_schedule.map((t) => t.day),
           period_count: pc,
           check_in_mode: pc >= 2 ? (td.check_in_mode ?? "single") : undefined,
+          start_time: td.start_time,
+          end_time: td.end_time,
         }),
       });
       if (!res.ok) throw new Error();

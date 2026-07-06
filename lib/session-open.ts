@@ -28,6 +28,22 @@ export interface OpenSessionInput {
   teaching_days?: number[];
   period_count?: number | string;
   check_in_mode?: "single" | "double";
+  // Actual class start/end time (e.g. a makeup class held outside the standard
+  // 6-period grid) — stored on the session so displays show real times instead
+  // of falling back to the fixed period table.
+  start_time?: string;
+  end_time?: string;
+}
+
+/** Midpoint of a HH:MM range, for splitting a double-period session's actual
+ *  time into Part 1 / Part 2 when check-in mode is "double". */
+function midpointTime(start: string, end: string): string {
+  const [sh, sm] = start.split(":").map(Number);
+  const [eh, em] = end.split(":").map(Number);
+  const startMin = sh * 60 + sm;
+  const endMin = eh * 60 + em;
+  const midMin = Math.round((startMin + endMin) / 2);
+  return `${String(Math.floor(midMin / 60) % 24).padStart(2, "0")}:${String(midMin % 60).padStart(2, "0")}`;
 }
 
 export type OpenSessionResult =
@@ -57,6 +73,8 @@ export async function openSessionForCourse(
     teaching_days,
     period_count = 1,
     check_in_mode,
+    start_time,
+    end_time,
   } = input;
 
   // Server clock may be UTC (Vercel) — fall back to the Bangkok-local date,
@@ -90,6 +108,10 @@ export async function openSessionForCourse(
     const label2 = `${baseLabel}②`;
     const part2Period = periodEnd ? String(periodEnd) : String(periodNum + 1);
 
+    // Split the actual entered time range at its midpoint so each part's
+    // displayed time reflects reality even for a non-standard makeup class.
+    const mid = start_time && end_time ? midpointTime(start_time, end_time) : undefined;
+
     // Create Part 2 first (inactive — no opened_at)
     const part2Id = crypto.randomUUID();
     const part1Id = crypto.randomUUID();
@@ -116,6 +138,8 @@ export async function openSessionForCourse(
       check_in_mode: "double",
       linked_session_id: part1Id,
       part_number: 2,
+      start_time: mid,
+      end_time,
     };
 
     const part1Data: Session = {
@@ -140,6 +164,8 @@ export async function openSessionForCourse(
       check_in_mode: "double",
       linked_session_id: part2Id,
       part_number: 1,
+      start_time,
+      end_time: mid,
     };
 
     try {
@@ -187,6 +213,8 @@ export async function openSessionForCourse(
     is_past_session: !!is_past_session,
     period_count: periodCount,
     period_end: periodEnd,
+    start_time,
+    end_time,
   };
 
   await createSession(accessToken, spreadsheetId, sessionData);

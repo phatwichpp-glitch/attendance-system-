@@ -41,6 +41,12 @@ export interface Session {
   check_in_mode?: "single" | "double"; // "double" = two separate check-ins
   linked_session_id?: string;     // links Part 1 ↔ Part 2
   part_number?: number;           // 1 or 2
+  // Actual class start/end time as entered when the session was opened — may
+  // differ from the fixed 6-period grid (e.g. an evening makeup class). Sessions
+  // created before this field existed simply lack it; getPeriodLabel() falls
+  // back to the standard period times in that case.
+  start_time?: string;
+  end_time?: string;
 }
 
 export type AttendanceStatus = "present" | "late" | "absent" | "gps_fail";

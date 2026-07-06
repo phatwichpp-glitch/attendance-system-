@@ -6,7 +6,7 @@ import Spinner from "@/components/Spinner";
 import Slider from "@/components/Slider";
 import Toggle from "@/components/Toggle";
 import { IconLocation, IconRefresh, IconWarning } from "@/components/icons";
-import { Course, Settings, DEFAULT_SETTINGS, SemesterConfig } from "@/types";
+import { Course, Settings, DEFAULT_SETTINGS, SemesterConfig, TeachingDay } from "@/types";
 import { loadSettings, saveSettings, loadPeriodPrefs, savePeriodPrefs } from "@/lib/settings";
 import { getWeekLabel } from "@/lib/week-utils";
 import { todayLocalISO } from "@/lib/local-date";
@@ -19,6 +19,14 @@ const GpsMapPicker = dynamic(() => import("./GpsMapPicker"), {
 
 interface GpsState {
   lat: number; lng: number; accuracy: number; loading: boolean; error: string;
+}
+
+// Module-scope (not a hook value) so effects/handlers can call it without
+// tripping exhaustive-deps — the teaching day scheduled for a given date, if any.
+function scheduleEntryFor(cfg: SemesterConfig | null, dateIso: string): TeachingDay | null {
+  if (!cfg) return null;
+  const dow = new Date(dateIso).getDay();
+  return cfg.teaching_schedule.find((t) => t.day === dow) ?? null;
 }
 
 export default function SetupClient() {
@@ -44,6 +52,10 @@ export default function SetupClient() {
   const [showOpenConfirm, setShowOpenConfirm] = useState(false);
   const [loadingCourses, setLoadingCourses] = useState(true);
   const [semesterConfig, setSemesterConfig] = useState<SemesterConfig | null>(null);
+  // "scheduled" = time is pinned to the semester's teaching schedule for the chosen
+  // date; "custom" = teacher enters an unrelated time (e.g. a makeup class held on
+  // a day/time the regular schedule doesn't cover).
+  const [timingMode, setTimingMode] = useState<"scheduled" | "custom">("scheduled");
 
   // Week / date fields
   const todayIso = todayLocalISO();
@@ -64,58 +76,64 @@ export default function SetupClient() {
     return courses.find((c) => c.course_id === cid && c.section === sec) ?? null;
   }, [courseKey, courses]);
 
-  // Fetch semester config when course changes
+  // Fetch semester config when course changes. Defaults to "scheduled" timing mode
+  // per course — the date-sync effect below falls back to "custom" once it knows
+  // whether the chosen date actually has a teaching-schedule entry.
   useEffect(() => {
     const course = getCourse();
     if (!course) { setSemesterConfig(null); return; }
 
-    // Load saved preferences synchronously first so the UI doesn't flicker
     const saved = loadSettings(course.course_id);
-    const savedPeriod = loadPeriodPrefs(course.course_id);
     setSettings(saved);
-    if (savedPeriod) {
-      if (savedPeriod.start_time) setClassStartTime(savedPeriod.start_time);
-      if (savedPeriod.end_time) setClassEndTime(savedPeriod.end_time);
-      setPeriodCount(savedPeriod.period_count);
-      setCheckInMode(savedPeriod.check_in_mode);
-    }
+    setSemesterConfig(null);
+    setTimingMode("scheduled");
 
     fetch(`/api/sheets/semester-config/${course.course_id}?section=${course.section}`)
       .then((r) => r.ok ? r.json() : null)
       .then((d) => {
-        if (!d?.config) { setSemesterConfig(null); return; }
+        if (!d?.config) {
+          // No semester schedule at all for this course — always a custom time.
+          setTimingMode("custom");
+          const savedPeriod = loadPeriodPrefs(course.course_id);
+          if (savedPeriod) {
+            if (savedPeriod.start_time) setClassStartTime(savedPeriod.start_time);
+            if (savedPeriod.end_time) setClassEndTime(savedPeriod.end_time);
+            setPeriodCount(savedPeriod.period_count);
+            setCheckInMode(savedPeriod.check_in_mode);
+          }
+          return;
+        }
         const cfg: SemesterConfig = d.config;
-        setSemesterConfig(cfg);
-
         // Merge: semester config provides defaults, saved localStorage wins on conflict
-        const configDefaults = {
+        const configDefaults: Settings = {
           ...DEFAULT_SETTINGS,
           radius_m: cfg.default_gps_radius,
           otp_expire_min: cfg.default_otp_min,
           late_after_min: cfg.default_late_min,
         };
         setSettings({ ...configDefaults, ...saved });
-
-        // Auto-fill class time from teaching schedule only if user has no saved preference.
-        // Try today's DOW first; fall back to the first configured teaching day so the form
-        // always shows a sensible time even when opened on a non-teaching day.
-        if (!savedPeriod) {
-          const todayDow = new Date().getDay();
-          const todayEntry = cfg.teaching_schedule.find((t) => t.day === todayDow)
-            ?? cfg.teaching_schedule[0];
-          if (todayEntry) {
-            const defaultStart = todayEntry.start_time ?? (PERIOD_STARTS[todayEntry.period] ?? "09:30");
-            const pc = todayEntry.period_count ?? 1;
-            const defaultEnd = todayEntry.end_time ?? addMinutes(defaultStart, pc >= 2 ? 180 : 90);
-            setClassStartTime(defaultStart);
-            setClassEndTime(defaultEnd);
-            setPeriodCount(pc >= 2 ? 2 : 1);
-            if (pc >= 2) setCheckInMode(todayEntry.check_in_mode ?? "single");
-          }
-        }
+        setSemesterConfig(cfg); // triggers the date-sync effect below
       })
-      .catch(() => setSemesterConfig(null));
+      .catch(() => { setSemesterConfig(null); setTimingMode("custom"); });
   }, [courseKey, getCourse]);
+
+  // Keep class time pinned to the teaching schedule while in "scheduled" mode —
+  // re-syncs whenever the date changes, and drops to "custom" the moment the
+  // chosen date has no matching teaching day (nothing to pin to). Switching to
+  // "custom" (via the toggle) stops this effect from touching the time fields,
+  // so a makeup-class time typed in manually is never silently overwritten.
+  useEffect(() => {
+    if (!semesterConfig || timingMode !== "scheduled") return;
+    const entry = scheduleEntryFor(semesterConfig, sessionDate);
+    if (!entry) { setTimingMode("custom"); return; }
+    const start = entry.start_time ?? (PERIOD_STARTS[entry.period] ?? "09:30");
+    const pc = entry.period_count ?? 1;
+    const end = entry.end_time ?? addMinutes(start, pc >= 2 ? 180 : 90);
+    setClassStartTime(start);
+    setClassEndTime(end);
+    setPeriodCount(pc >= 2 ? 2 : 1);
+    setCheckInMode(pc >= 2 ? (entry.check_in_mode ?? "single") : "single");
+  }, [sessionDate, semesterConfig, timingMode]);
 
   // Auto-calculate week number/label when date or semester config changes
   useEffect(() => {
@@ -182,6 +200,8 @@ export default function SetupClient() {
           teaching_days: semesterConfig?.teaching_schedule.map((t) => t.day),
           period_count: periodCount,
           check_in_mode: periodCount >= 2 ? checkInMode : undefined,
+          start_time: classStartTime,
+          end_time: classEndTime,
         }),
       });
       if (!res.ok) {
@@ -233,8 +253,10 @@ export default function SetupClient() {
     return d > 0 ? d : 90;
   })();
   const periodEnd = periodCount >= 2 ? calcPeriodEnd(periodNum, periodCount) : undefined;
+  // Always shown using the actual typed start/end time, not the fixed period-grid
+  // lookup — so a makeup class held outside the standard 08:00–17:30 slots still
+  // displays its real time instead of being blocked or mislabeled.
   const periodRangeLabel = getPeriodLabel(periodNum, periodEnd, classStartTime, classEndTime);
-  const periodEndWarning = periodCount >= 2 && !periodEnd;
   const hasValidGps = Number.isFinite(gps.lat) && Number.isFinite(gps.lng) && (gps.lat !== 0 || gps.lng !== 0);
 
   const handleMapPick = ({ lat, lng }: { lat: number; lng: number }) => {
@@ -245,7 +267,7 @@ export default function SetupClient() {
   return (
     <>
     <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); handleSubmit(); }}>
-      {semesterConfig && (
+      {timingMode === "scheduled" && semesterConfig && (
         <div className="rounded-lg px-3 py-2 text-[12px] flex items-center gap-2" style={{ backgroundColor: "#E6F1FB", color: "#185FA5" }}>
           <span>✓</span> Schedule auto-filled from semester config ({semesterConfig.total_weeks} weeks)
         </div>
@@ -272,9 +294,57 @@ export default function SetupClient() {
               )}
             </div>
 
+            {/* Timing mode — an explicit choice between the regular schedule and a
+                fully custom time, so a makeup class never has to fight the schedule. */}
+            <div>
+              <label className="block text-[13px] font-medium text-gray-700 mb-2">Session Timing</label>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  disabled={!scheduleEntryFor(semesterConfig, sessionDate)}
+                  onClick={() => setTimingMode("scheduled")}
+                  className="flex-1 rounded-lg text-[13px] font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  style={{
+                    padding: "8px 0",
+                    minHeight: 44,
+                    border: timingMode === "scheduled" ? "2px solid #185FA5" : "1px solid #d1d5db",
+                    backgroundColor: timingMode === "scheduled" ? "#E6F1FB" : "white",
+                    color: timingMode === "scheduled" ? "#185FA5" : "#374151",
+                  }}
+                >
+                  ตามตารางเรียน
+                  <span className="block text-[11px] font-normal mt-0.5" style={{ color: timingMode === "scheduled" ? "#185FA5" : "#6b7280" }}>
+                    {scheduleEntryFor(semesterConfig, sessionDate) ? "ใช้เวลาจาก Semester Settings" : "ไม่มีคาบเรียนตามตารางในวันนี้"}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTimingMode("custom")}
+                  className="flex-1 rounded-lg text-[13px] font-medium transition-colors"
+                  style={{
+                    padding: "8px 0",
+                    minHeight: 44,
+                    border: timingMode === "custom" ? "2px solid #185FA5" : "1px solid #d1d5db",
+                    backgroundColor: timingMode === "custom" ? "#E6F1FB" : "white",
+                    color: timingMode === "custom" ? "#185FA5" : "#374151",
+                  }}
+                >
+                  เวลาอื่น (ชดเชย)
+                  <span className="block text-[11px] font-normal mt-0.5" style={{ color: timingMode === "custom" ? "#185FA5" : "#6b7280" }}>
+                    กำหนดเวลาเอง ไม่ผูกกับตาราง
+                  </span>
+                </button>
+              </div>
+            </div>
+
             {/* Class time inputs */}
             <div>
               <label className="block text-[13px] font-medium text-gray-700 mb-1">Class Time</label>
+              <p className="text-[11px] text-gray-400 mb-1.5">
+                {timingMode === "scheduled"
+                  ? "ตรงกับตารางเรียนที่ตั้งไว้ — ปรับเวลาเล็กน้อยได้หากจำเป็น"
+                  : "กำหนดเวลาเอง — เวลาที่กรอกจะถูกบันทึกไว้ตามจริง ใช้ได้กับคาบสอนชดเชยนอกตารางปกติ"}
+              </p>
               <div className="flex items-center gap-2">
                 <input
                   type="time"
@@ -323,17 +393,14 @@ export default function SetupClient() {
                 ))}
               </div>
 
-              {/* Period range display — always shown */}
-              <div className="mt-2 rounded-lg px-3 py-2 text-[12px]"
-                style={{ backgroundColor: periodEndWarning ? "#FCEBEB" : "#E6F1FB", color: periodEndWarning ? "#A32D2D" : "#185FA5" }}>
-                {periodEndWarning
-                  ? `Period ${periodNum} + 1 exceeds คาบ 6 — please select an earlier period`
-                  : periodRangeLabel}
+              {/* Period range display — always shown, using the actual typed time */}
+              <div className="mt-2 rounded-lg px-3 py-2 text-[12px]" style={{ backgroundColor: "#E6F1FB", color: "#185FA5" }}>
+                {periodRangeLabel}
               </div>
             </div>
 
             {/* Check-in mode (only for double period) */}
-            {periodCount >= 2 && !periodEndWarning && (
+            {periodCount >= 2 && (
               <div>
                 <label className="block text-[13px] font-medium text-gray-700 mb-2">Check-in Mode</label>
                 <div className="flex gap-2">
@@ -561,8 +628,7 @@ export default function SetupClient() {
         disabled={
           submitting ||
           !courseKey ||
-          (!isPast && (gps.loading || !hasValidGps)) ||
-          (periodCount >= 2 && !!periodEndWarning)
+          (!isPast && (gps.loading || !hasValidGps))
         }
         className="btn-primary w-full py-3 text-[13px]"
       >

@@ -532,9 +532,15 @@ export default function SessionClient({ sessionId }: { sessionId: string }) {
 
   // Double period helpers
   const isDoubleCheckIn = s.check_in_mode === "double";
-  const periodLabel = s.period_count && s.period_count >= 2
-    ? getPeriodLabel(parseInt(s.period), s.period_end)
-    : `Period ${s.period}`;
+  // Pass the session's actual stored start/end time (set for makeup classes
+  // opened outside the standard period grid) — getPeriodLabel falls back to
+  // the fixed period table when a session predates this field.
+  const periodLabel = getPeriodLabel(
+    parseInt(s.period),
+    s.period_count && s.period_count >= 2 ? s.period_end : undefined,
+    s.start_time,
+    s.end_time
+  );
   const partBadge = s.part_number === 1 ? "①" : s.part_number === 2 ? "②" : "";
 
   // Part 1 attendance map (Part 2 comparison panel)

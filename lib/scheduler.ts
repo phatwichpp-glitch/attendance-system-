@@ -285,6 +285,8 @@ async function processCourseOpen(
       date: dateStr,
       period_count: td.period_count ?? 1,
       check_in_mode: td.check_in_mode,
+      start_time: td.start_time,
+      end_time: td.end_time,
     });
 
     console.log(`[scheduler] auto-opened ${course.course_id}/${course.section} period ${td.period} on ${dateStr} (lead=${leadMin}min)`);
