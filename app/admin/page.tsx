@@ -19,12 +19,16 @@ export default async function AdminPage() {
         <StorageHealthBanner />
         <AutoOpenTokenBanner />
         <ActiveSessionBanner />
-        <CoursesCalendar />
+        <div className="flex flex-col sm:flex-row gap-4 items-stretch">
+          <CoursesCalendar />
+          <div className="flex-1 min-w-0">
+            <ManualQRCard />
+          </div>
+        </div>
         <div className="flex items-center justify-between">
           <h1 className="text-[18px] font-medium text-gray-900">My Courses</h1>
         </div>
         <CourseList />
-        <ManualQRCard />
       </main>
     </div>
   );

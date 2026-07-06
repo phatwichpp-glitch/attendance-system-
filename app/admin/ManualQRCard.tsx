@@ -42,7 +42,7 @@ export default function ManualQRCard() {
   };
 
   return (
-    <div className="card mt-6">
+    <div className="card h-full">
       <div className="flex items-center justify-between mb-1">
         <h2 className="font-medium text-gray-900">QR Code สำหรับติดห้องเรียน</h2>
         <button
