@@ -3,17 +3,17 @@
 // session, so every send here is wrapped and logged rather than thrown.
 
 import { getNotifyTargets, recordNotifyResult } from "@/lib/token-registry";
-import { sendEmail, isEmailConfigured } from "@/lib/email-notify";
+import { sendEmail } from "@/lib/email-notify";
 import { sendLineMessage, isLineConfigured } from "@/lib/line-notify";
 
 export async function notifyAdminOnOpen(email: string, subject: string, message: string): Promise<void> {
   const targets = await getNotifyTargets(email);
   const errors: string[] = [];
 
-  if (targets.notify_email && isEmailConfigured()) {
+  if (targets.notify_email && targets.resend_api_key) {
     try {
       const html = `<pre style="font-family: inherit; white-space: pre-wrap; font-size: 14px;">${escapeHtml(message)}</pre>`;
-      await sendEmail(targets.notify_email, subject, html);
+      await sendEmail(targets.resend_api_key, targets.notify_email, subject, html);
     } catch (e) {
       console.error("[notify] email send failed", e);
       errors.push(`Email: ${e instanceof Error ? e.message : String(e)}`);

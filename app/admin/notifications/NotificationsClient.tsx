@@ -2,16 +2,17 @@
 import { useState, useEffect, useCallback } from "react";
 import Spinner from "@/components/Spinner";
 import Toggle from "@/components/Toggle";
+import ResendGuideModal from "./ResendGuideModal";
 
 interface Prefs {
   email_notify: boolean;
   notify_email: string;
   line_notify: boolean;
   line_linked: boolean;
-  email_available: boolean;
-  line_available: boolean;
   last_notify_error: string | null;
   last_notify_at: string | null;
+  resend_configured: boolean;
+  line_available: boolean;
 }
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -29,6 +30,11 @@ export default function NotificationsClient() {
   const [testingEmail, setTestingEmail] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [error, setError] = useState("");
+  const [showGuide, setShowGuide] = useState(false);
+  const [apiKeyDraft, setApiKeyDraft] = useState("");
+  const [showApiKey, setShowApiKey] = useState(false);
+  const [savingKey, setSavingKey] = useState(false);
+  const [keyError, setKeyError] = useState("");
 
   const load = useCallback(async () => {
     try {
@@ -55,8 +61,15 @@ export default function NotificationsClient() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(partial),
       });
-      if (!res.ok) throw new Error();
       const d = await res.json();
+      if (!res.ok) {
+        setError(
+          d.error === "resend_key_required"
+            ? "ตั้งค่า Resend API Key ก่อนถึงจะเปิดแจ้งเตือนทางอีเมลได้"
+            : "บันทึกไม่สำเร็จ"
+        );
+        return;
+      }
       setPrefs((p) => (p ? { ...p, ...d } : p));
       if (partial.notify_email !== undefined) {
         setEmailDraft(d.notify_email ?? "");
@@ -79,6 +92,48 @@ export default function NotificationsClient() {
     save({ notify_email: trimmed });
   };
 
+  const saveApiKey = async () => {
+    const trimmed = apiKeyDraft.trim();
+    if (!trimmed) return;
+    if (!/^re_/.test(trimmed)) {
+      setKeyError("API Key ของ Resend ต้องขึ้นต้นด้วย re_ — ตรวจสอบว่าคัดลอกมาครบ");
+      return;
+    }
+    setSavingKey(true);
+    setKeyError("");
+    try {
+      const res = await fetch("/api/sheets/notification-prefs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ resend_api_key: trimmed }),
+      });
+      const d = await res.json();
+      if (!res.ok) { setKeyError("บันทึก API Key ไม่สำเร็จ"); return; }
+      setPrefs((p) => (p ? { ...p, ...d } : p));
+      setApiKeyDraft("");
+    } catch {
+      setKeyError("บันทึก API Key ไม่สำเร็จ");
+    } finally {
+      setSavingKey(false);
+    }
+  };
+
+  const clearApiKey = async () => {
+    if (!confirm("ลบ Resend API Key นี้ออกจากระบบ? การแจ้งเตือนทางอีเมลจะถูกปิดไปด้วย")) return;
+    setSavingKey(true);
+    try {
+      const res = await fetch("/api/sheets/notification-prefs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ resend_api_key: "" }),
+      });
+      const d = await res.json();
+      setPrefs((p) => (p ? { ...p, ...d } : p));
+    } finally {
+      setSavingKey(false);
+    }
+  };
+
   const sendTestEmail = async () => {
     setTestingEmail(true);
     setTestResult(null);
@@ -92,7 +147,7 @@ export default function NotificationsClient() {
         ok: false,
         message: e instanceof Error && e.message !== "failed"
           ? e.message
-          : "ส่งอีเมลทดสอบไม่สำเร็จ — ตรวจสอบ RESEND_API_KEY อีกครั้ง",
+          : "ส่งอีเมลทดสอบไม่สำเร็จ",
       });
     } finally {
       setTestingEmail(false);
@@ -145,16 +200,55 @@ export default function NotificationsClient() {
       )}
 
       <div className="card space-y-3">
-        <h2 className="font-medium text-gray-900">อีเมล</h2>
-        {!prefs.email_available ? (
-          <p className="text-[12px]" style={{ color: "#A0671C" }}>ระบบยังไม่ได้ตั้งค่าการส่งอีเมล</p>
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="font-medium text-gray-900">อีเมล</h2>
+          <button
+            onClick={() => setShowGuide(true)}
+            className="btn-outline text-[12px] shrink-0"
+            style={{ minHeight: 30, padding: "5px 10px" }}
+          >
+            วิธีสมัครและตั้งค่า Resend
+          </button>
+        </div>
+
+        <Toggle
+          label="แจ้งเตือนทางอีเมล"
+          checked={prefs.email_notify}
+          disabled={!prefs.resend_configured}
+          onChange={(v) => save({ email_notify: v })}
+        />
+
+        {!prefs.resend_configured ? (
+          <div className="space-y-2">
+            <p className="text-[12px]" style={{ color: "#5F5E5A" }}>
+              ต้องมี Resend API Key ของตัวเองก่อนถึงจะเปิดใช้งานได้ — กด &quot;วิธีสมัครและตั้งค่า Resend&quot;
+              ด้านบนถ้ายังไม่เคยทำ แล้ววาง API Key ที่ได้ลงในช่องนี้
+            </p>
+            <div className="flex gap-2">
+              <input
+                type={showApiKey ? "text" : "password"}
+                className="input text-[13px] flex-1 font-mono"
+                value={apiKeyDraft}
+                onChange={(e) => setApiKeyDraft(e.target.value)}
+                placeholder="re_xxxxxxxxxxxxxxxxxxxxxxxx"
+              />
+              <label className="flex items-center gap-1 text-[11px] shrink-0" style={{ color: "#5F5E5A" }}>
+                <input type="checkbox" checked={showApiKey} onChange={(e) => setShowApiKey(e.target.checked)} />
+                แสดง
+              </label>
+              <button
+                onClick={saveApiKey}
+                disabled={savingKey || !apiKeyDraft.trim()}
+                className="btn-primary text-[13px] px-3 shrink-0"
+                style={{ minHeight: 36 }}
+              >
+                {savingKey && <Spinner className="h-4 w-4" />} บันทึก
+              </button>
+            </div>
+            {keyError && <p className="text-[11px]" style={{ color: "#A32D2D" }}>{keyError}</p>}
+          </div>
         ) : (
           <>
-            <Toggle
-              label="แจ้งเตือนทางอีเมล"
-              checked={prefs.email_notify}
-              onChange={(v) => save({ email_notify: v })}
-            />
             <div>
               <label className="block text-[12px] text-gray-500 mb-1">ส่งไปที่อีเมล</label>
               <div className="flex gap-2">
@@ -178,10 +272,11 @@ export default function NotificationsClient() {
                 <p className="text-[11px] mt-1" style={{ color: "#3B6D11" }}>บันทึกแล้ว ✓</p>
               )}
               <p className="text-[11px] mt-1" style={{ color: "#9ca3af" }}>
-                ค่าเริ่มต้นคืออีเมลที่ใช้ล็อกอิน — เปลี่ยนได้ถ้าต้องการส่งไปที่อื่น
+                ต้องตรงกับอีเมลที่ใช้สมัคร Resend เท่านั้น — บัญชี Resend แบบไม่ verify domain ส่งได้เฉพาะหาอีเมล
+                เจ้าของบัญชีเอง (ค่าเริ่มต้นคืออีเมลที่ใช้ล็อกอิน)
               </p>
             </div>
-            <div>
+            <div className="flex items-center gap-3 flex-wrap">
               <button
                 onClick={sendTestEmail}
                 disabled={testingEmail}
@@ -190,12 +285,20 @@ export default function NotificationsClient() {
               >
                 {testingEmail && <Spinner className="h-4 w-4" />} ส่งอีเมลทดสอบ
               </button>
-              {testResult && (
-                <p className="text-[11px] mt-1" style={{ color: testResult.ok ? "#3B6D11" : "#A32D2D" }}>
-                  {testResult.message}
-                </p>
-              )}
+              <button
+                onClick={clearApiKey}
+                disabled={savingKey}
+                className="text-[12px] underline"
+                style={{ background: "none", border: "none", cursor: "pointer", color: "#A32D2D" }}
+              >
+                ลบ API Key
+              </button>
             </div>
+            {testResult && (
+              <p className="text-[11px]" style={{ color: testResult.ok ? "#3B6D11" : "#A32D2D" }}>
+                {testResult.message}
+              </p>
+            )}
           </>
         )}
       </div>
@@ -248,6 +351,8 @@ export default function NotificationsClient() {
           {error}
         </div>
       )}
+
+      {showGuide && <ResendGuideModal onClose={() => setShowGuide(false)} />}
     </div>
   );
 }

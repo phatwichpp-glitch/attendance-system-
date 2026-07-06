@@ -1,33 +1,24 @@
 // Email delivery via Resend (resend.com) — thin wrapper so the rest of the app never
-// imports the SDK directly. No-ops if RESEND_API_KEY isn't configured, so the feature
-// degrades gracefully when the developer hasn't set up an account yet.
+// imports the SDK directly.
+//
+// Bring-your-own-account model: each admin registers their own free Resend account
+// and pastes their own API key into /admin/notifications (lib/token-registry.ts
+// stores it sealed, per-admin). A single shared account was tried first and turned
+// off 2026-07-03 — without a verified custom domain, Resend can only deliver to the
+// account owner's own address, so one shared account could only ever email the
+// developer, never an actual teacher. That exact restriction is a non-issue here:
+// each admin's notifications are addressed to themselves, i.e. the same address
+// their own Resend account is registered under, so no domain purchase is needed.
+//
+// Sender is always Resend's own shared testing address — a per-admin free account
+// can't verify a custom "from" domain, so there's no meaningful per-admin override.
+const FROM_ADDRESS = "onboarding@resend.dev";
 
 import { Resend } from "resend";
 
-// Turned off at the user's request (2026-07-03): without a verified custom
-// domain, Resend can only deliver to the account owner's own address, and
-// buying a domain just to unlock email wasn't worth it. This is the single
-// switch — flip back to `!!process.env.RESEND_API_KEY` if a domain gets
-// sorted out later. LINE notifications are unaffected and keep working.
-const EMAIL_DISABLED = true;
-
-export function isEmailConfigured(): boolean {
-  return !EMAIL_DISABLED && !!process.env.RESEND_API_KEY;
-}
-
-export async function sendEmail(to: string, subject: string, html: string): Promise<void> {
-  const apiKey = process.env.RESEND_API_KEY;
-  if (!apiKey) {
-    console.warn("[email-notify] RESEND_API_KEY not set — skipping email");
-    return;
-  }
-
+export async function sendEmail(apiKey: string, to: string, subject: string, html: string): Promise<void> {
   const resend = new Resend(apiKey);
-  const email = process.env.NOTIFY_FROM_EMAIL || "onboarding@resend.dev";
-  // If NOTIFY_FROM_NAME is set, format as "Name <email>"; otherwise just email.
-  const from = process.env.NOTIFY_FROM_NAME ? `${process.env.NOTIFY_FROM_NAME} <${email}>` : email;
-
-  const { error } = await resend.emails.send({ from, to, subject, html });
+  const { error } = await resend.emails.send({ from: FROM_ADDRESS, to, subject, html });
   if (error) {
     throw new Error(`Resend send failed: ${error.message}`);
   }

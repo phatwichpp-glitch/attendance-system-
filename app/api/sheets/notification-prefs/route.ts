@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { getNotificationPrefs, setNotificationPrefs, unlinkLine } from "@/lib/token-registry";
+import { getNotificationPrefs, setNotificationPrefs, setResendApiKey, unlinkLine } from "@/lib/token-registry";
 import { isLineConfigured } from "@/lib/line-notify";
-import { isEmailConfigured } from "@/lib/email-notify";
 
 export async function GET() {
   const session = await auth();
@@ -12,7 +11,6 @@ export async function GET() {
   const prefs = await getNotificationPrefs(session.user.email);
   return NextResponse.json({
     ...prefs,
-    email_available: isEmailConfigured(),
     line_available: isLineConfigured(),
   });
 }
@@ -28,6 +26,24 @@ export async function POST(req: NextRequest) {
     if (typeof body.notify_email === "string" && body.notify_email.trim()) {
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(body.notify_email.trim())) {
         return NextResponse.json({ error: "invalid_email" }, { status: 400 });
+      }
+    }
+
+    // resend_api_key: a non-empty string saves/replaces the admin's own key; an
+    // empty string clears it (also turns email_notify off, see setResendApiKey).
+    if (typeof body.resend_api_key === "string") {
+      const trimmed = body.resend_api_key.trim();
+      if (trimmed && !/^re_/.test(trimmed)) {
+        return NextResponse.json({ error: "invalid_resend_key" }, { status: 400 });
+      }
+      await setResendApiKey(session.user.email, trimmed || null);
+    }
+
+    if (body.email_notify === true) {
+      const prefsNow = await getNotificationPrefs(session.user.email);
+      const willHaveKey = prefsNow.resend_configured || (typeof body.resend_api_key === "string" && body.resend_api_key.trim());
+      if (!willHaveKey) {
+        return NextResponse.json({ error: "resend_key_required" }, { status: 400 });
       }
     }
 

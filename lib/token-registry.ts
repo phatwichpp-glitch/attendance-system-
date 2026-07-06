@@ -44,6 +44,10 @@ interface AdminEntry {
   // console.error-logged, invisible to the admin until they noticed no message arrived.
   last_notify_error?: string | null;
   last_notify_at?: string | null;
+  // Each admin brings their own Resend API key (bring-your-own-account model —
+  // see lib/email-notify.ts for why a single shared account can't work without
+  // buying a verified domain). Sealed at rest same as the refresh token.
+  resend_api_key_encrypted?: string | null;
 }
 
 export interface NotificationPrefs {
@@ -53,6 +57,7 @@ export interface NotificationPrefs {
   line_linked: boolean;
   last_notify_error: string | null;
   last_notify_at: string | null;
+  resend_configured: boolean;
 }
 
 interface RegistryFile {
@@ -137,12 +142,15 @@ export async function saveAdminRefreshToken(email: string, refreshToken: string)
   await updateEntry(normalizeEmail(email), (existing) => ({
     // Preserve notification prefs across token refreshes — this runs roughly
     // hourly while the admin is active, so it must never clobber them.
-    email_notify: existing?.email_notify ?? true,
+    // Defaults to false (opt-in) — email only works once the admin brings their
+    // own Resend API key, so there's nothing to send until they set one up.
+    email_notify: existing?.email_notify ?? false,
     notify_email: existing?.notify_email ?? null,
     line_notify: existing?.line_notify ?? false,
     line_user_id: existing?.line_user_id ?? null,
     last_notify_error: existing?.last_notify_error ?? null,
     last_notify_at: existing?.last_notify_at ?? null,
+    resend_api_key_encrypted: existing?.resend_api_key_encrypted ?? null,
     encrypted_refresh_token: sealSecret(refreshToken),
     updated_at: new Date().toISOString(),
     status: "ok",
@@ -199,13 +207,37 @@ export async function getNotificationPrefs(email: string): Promise<NotificationP
   const key = normalizeEmail(email);
   const entry = await loadEntry(key);
   return {
-    email_notify: entry?.email_notify ?? true,
+    email_notify: entry?.email_notify ?? false,
     notify_email: entry?.notify_email || key,
     line_notify: entry?.line_notify ?? false,
     line_linked: !!entry?.line_user_id,
     last_notify_error: entry?.last_notify_error ?? null,
     last_notify_at: entry?.last_notify_at ?? null,
+    resend_configured: !!entry?.resend_api_key_encrypted,
   };
+}
+
+/** Decrypted Resend API key for this admin, or null if they haven't set one up. */
+export async function getResendApiKey(email: string): Promise<string | null> {
+  const entry = await loadEntry(normalizeEmail(email));
+  if (!entry?.resend_api_key_encrypted) return null;
+  try {
+    return openSecret(entry.resend_api_key_encrypted);
+  } catch {
+    return null;
+  }
+}
+
+/** Saves (or, with `null`, clears) the admin's own Resend API key. */
+export async function setResendApiKey(email: string, apiKey: string | null): Promise<void> {
+  await updateEntry(normalizeEmail(email), (entry) => {
+    if (!entry) return null;
+    entry.resend_api_key_encrypted = apiKey ? sealSecret(apiKey) : null;
+    // Clearing the key with notifications still toggled on would otherwise look
+    // like email is enabled but silently never send anything.
+    if (!apiKey) entry.email_notify = false;
+    return entry;
+  });
 }
 
 /** Records the outcome of the most recent auto-open notification attempt, so a
@@ -260,11 +292,20 @@ export async function unlinkLine(email: string): Promise<void> {
 /** For the scheduler: resolve where (if anywhere) to send an auto-open notification. */
 export async function getNotifyTargets(
   email: string
-): Promise<{ notify_email: string | null; line_user_id: string | null }> {
+): Promise<{ notify_email: string | null; line_user_id: string | null; resend_api_key: string | null }> {
   const key = normalizeEmail(email);
   const entry = await loadEntry(key);
+  let resend_api_key: string | null = null;
+  if (entry?.email_notify && entry.resend_api_key_encrypted) {
+    try {
+      resend_api_key = openSecret(entry.resend_api_key_encrypted);
+    } catch {
+      resend_api_key = null;
+    }
+  }
   return {
-    notify_email: entry?.email_notify ? (entry.notify_email || key) : null,
+    notify_email: entry?.email_notify && resend_api_key ? (entry.notify_email || key) : null,
     line_user_id: entry?.line_notify ? entry.line_user_id ?? null : null,
+    resend_api_key,
   };
 }
