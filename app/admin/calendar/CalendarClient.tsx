@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback, useMemo } from "react";
 import Spinner from "@/components/Spinner";
+import BlackoutLabelPicker from "@/components/BlackoutLabelPicker";
 import { AcademicBlackout, Course, SemesterConfig } from "@/types";
 import { semesterEndFromWeeks, countWeeksBetween } from "@/lib/week-utils";
 import { todayLocalISO } from "@/lib/local-date";
@@ -173,7 +174,7 @@ export default function CalendarClient() {
 
   const addBlackout = async () => {
     setError("");
-    if (!label.trim()) { setError("กรอกชื่อช่วงเวลาก่อน (เช่น สอบกลางภาค)"); return; }
+    if (!label.trim()) { setError("เลือกหรือกรอกชื่อช่วงเวลาก่อน"); return; }
     if (!startDate || !endDate) { setError("เลือกวันเริ่มต้นและวันสิ้นสุด — พิมพ์เอง หรือคลิกบนปฏิทินด้านบน 2 ครั้ง (วันเริ่ม แล้วก็วันสิ้นสุด)"); return; }
     if (endDate < startDate) { setError("วันสิ้นสุดต้องไม่ก่อนวันเริ่มต้น"); return; }
 
@@ -196,11 +197,8 @@ export default function CalendarClient() {
   return (
     <div className="space-y-4">
       <p className="text-[13px]" style={{ color: "#5F5E5A" }}>
-        แก้วันเปิด-ปิดภาคเรียนของแต่ละวิชาได้ตรงนี้ (ค่าเดียวกับหน้า Semester Settings ของวิชานั้น แก้จากที่ไหนก็ได้ ข้อมูลจะตรงกันเสมอ)
-        ปฏิทินด้านล่างแสดงทั้งช่วงภาคเรียนและวันหยุดราชการไทยให้เห็นพร้อมกัน — พิมพ์วันที่เอง หรือคลิกวันบนปฏิทิน 2 ครั้ง
-        (วันเริ่ม แล้วก็วันสิ้นสุด) เพื่อเลือกช่วงวันที่ให้ระบบ<strong>ไม่เปิดคาบเรียนอัตโนมัติ</strong>ให้ทุกวิชาในบัญชีนี้
-        (เช่น สัปดาห์สอบกลางภาค/ปลายภาค) — ใช้ได้กับ Auto-Open เท่านั้น การเปิดคาบด้วยตนเองยังทำได้ตามปกติ (วันหยุดราชการระบบข้าม
-        auto-open ให้เองอยู่แล้วโดยอัตโนมัติ ไม่ต้องเพิ่มเอง)
+        ตั้งวันเปิด-ปิดภาคเรียนและช่วงที่ไม่เปิดคาบอัตโนมัติ (เช่น สัปดาห์สอบ) ได้ในหน้านี้ — ดูวิธีใช้แบบละเอียดที่ปุ่ม{" "}
+        <span className="font-semibold">?</span> มุมขวาบน
       </p>
 
       <div className="card space-y-3">
@@ -392,13 +390,7 @@ export default function CalendarClient() {
         </div>
         <div>
           <label className="block text-[12px] text-gray-500 mb-1">ชื่อช่วงเวลา</label>
-          <input
-            type="text"
-            className="input text-[13px] w-full"
-            value={label}
-            onChange={(e) => setLabel(e.target.value)}
-            placeholder="เช่น สอบกลางภาค"
-          />
+          <BlackoutLabelPicker value={label} onChange={setLabel} />
         </div>
         <button
           onClick={addBlackout}

@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import Spinner from "@/components/Spinner";
+import BlackoutLabelPicker from "@/components/BlackoutLabelPicker";
 import { AcademicBlackout } from "@/types";
 import { useAcademicBlackouts } from "@/lib/hooks/useAcademicBlackouts";
 
@@ -20,7 +21,7 @@ export default function BlackoutDatesCard() {
 
   const handleAdd = async () => {
     setError("");
-    if (!label.trim()) { setError("กรอกชื่อช่วงเวลาก่อน (เช่น สอบกลางภาค)"); return; }
+    if (!label.trim()) { setError("เลือกหรือกรอกชื่อช่วงเวลาก่อน"); return; }
     if (!startDate || !endDate) { setError("เลือกวันเริ่มต้นและวันสิ้นสุด"); return; }
     if (endDate < startDate) { setError("วันสิ้นสุดต้องไม่ก่อนวันเริ่มต้น"); return; }
 
@@ -47,13 +48,7 @@ export default function BlackoutDatesCard() {
 
       <div>
         <label className="block text-[12px] text-gray-500 mb-1">ชื่อช่วงเวลา</label>
-        <input
-          type="text"
-          className="input text-[13px] w-full"
-          value={label}
-          onChange={(e) => setLabel(e.target.value)}
-          placeholder="เช่น สอบกลางภาค"
-        />
+        <BlackoutLabelPicker value={label} onChange={setLabel} />
       </div>
       <div className="flex gap-2">
         <div className="flex-1">
