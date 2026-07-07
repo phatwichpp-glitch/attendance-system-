@@ -11,6 +11,7 @@ import {
   getCourses,
   getAllSessions,
   getSemesterConfig,
+  getAcademicBlackouts,
   closeSessionInSheet,
   markAbsentStudents,
 } from "@/lib/sheets";
@@ -31,7 +32,7 @@ import { getPeriodLabel, addMinutes } from "@/lib/period-utils";
 import { notifyAdminOnOpen } from "@/lib/notify";
 import { recordTick } from "@/lib/scheduler-health";
 import { registerSession } from "@/lib/session-store";
-import { Course, Session, SemesterConfig } from "@/types";
+import { Course, Session, SemesterConfig, AcademicBlackout } from "@/types";
 import Holidays from "date-holidays";
 
 const hd = new Holidays("TH");
@@ -47,6 +48,13 @@ function isPublicHoliday(dateStr: string): boolean {
     holidayCache.set(year, set);
   }
   return holidayCache.get(year)!.has(dateStr);
+}
+
+// Blackout ranges are admin-wide (academic_calendar sheet, not per-course), so
+// this is a plain string-range check against ISO "YYYY-MM-DD" dates — safe to
+// compare lexicographically since the format is fixed-width and zero-padded.
+function isBlackoutDate(dateStr: string, blackouts: AcademicBlackout[]): boolean {
+  return blackouts.some((b) => dateStr >= b.start_date && dateStr <= b.end_date);
 }
 
 const TICK_INTERVAL_MS = 60_000;
@@ -156,9 +164,10 @@ async function processAdmin(email: string): Promise<void> {
   }
 
   const spreadsheetId = await initializeSpreadsheet(accessToken);
-  const [courses, allSessions] = await Promise.all([
+  const [courses, allSessions, blackouts] = await Promise.all([
     getCourses(accessToken, spreadsheetId),
     getAllSessions(accessToken, spreadsheetId),
+    getAcademicBlackouts(accessToken, spreadsheetId),
   ]);
 
   // One SemesterConfig lookup per course per tick (shared between the open-check and
@@ -181,7 +190,7 @@ async function processAdmin(email: string): Promise<void> {
     try {
       const config = await loadConfig(course);
       if (!config?.auto_open_enabled) continue;
-      await processCourseOpen(accessToken, spreadsheetId, email, course, config, allSessions, dayOfWeek, hhmm, dateStr);
+      await processCourseOpen(accessToken, spreadsheetId, email, course, config, allSessions, dayOfWeek, hhmm, dateStr, blackouts);
     } catch (e) {
       console.error(`[scheduler] course ${course.course_id}/${course.section} open-check failed`, e);
     }
@@ -210,9 +219,11 @@ async function processCourseOpen(
   allSessions: Session[],
   dayOfWeek: number,
   hhmm: string,
-  dateStr: string
+  dateStr: string,
+  blackouts: AcademicBlackout[]
 ): Promise<void> {
   if (isPublicHoliday(dateStr)) return; // don't auto-open classes on a Thai public holiday
+  if (isBlackoutDate(dateStr, blackouts)) return; // admin-defined no-class range (e.g. exam week)
 
   const todaysSchedule = config.teaching_schedule.filter((td) => td.day === dayOfWeek);
 

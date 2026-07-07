@@ -221,6 +221,17 @@ export const DAY_NAMES_TH = ["อาทิตย์", "จันทร์", "อ
 
 // ─── Audit Log ────────────────────────────────────────────────────────────────
 
+// A date range during which the scheduler should never auto-open a session for
+// any course in this admin's spreadsheet (e.g. midterm/final exam week) — a
+// manual "Open Session" is unaffected, this only suppresses the automatic tick.
+export interface AcademicBlackout {
+  id: string;
+  start_date: string;   // ISO date "YYYY-MM-DD", inclusive
+  end_date: string;      // ISO date "YYYY-MM-DD", inclusive
+  label: string;
+  created_at: string;
+}
+
 export interface AuditLog {
   log_id: string;
   timestamp: string;

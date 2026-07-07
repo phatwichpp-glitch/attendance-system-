@@ -79,6 +79,7 @@ export async function initializeSpreadsheet(
         { properties: { title: "sessions" } },
         { properties: { title: "attendance" } },
         { properties: { title: "semester_config" } },
+        { properties: { title: "academic_calendar" } },
       ],
     },
   });
@@ -126,6 +127,10 @@ export async function initializeSpreadsheet(
             "attendance_threshold", "created_at", "updated_at",
             "auto_open_enabled", "default_lat", "default_lng", "auto_open_lead_min",
           ]],
+        },
+        {
+          range: "academic_calendar!A1:E1",
+          values: [["id", "start_date", "end_date", "label", "created_at"]],
         },
       ],
     },
@@ -195,6 +200,7 @@ async function mergeSpreadsheetInto(
   await Promise.all([
     ensureSemesterConfigSheet(accessToken, targetId),
     ensureAuditLogSheet(accessToken, targetId),
+    ensureAcademicCalendarSheet(accessToken, targetId),
   ]);
 
   await Promise.all([
@@ -204,6 +210,7 @@ async function mergeSpreadsheetInto(
     mergeSheetRows(accessToken, targetId, sourceId, "attendance", "A2:Z", "A:Z", (r) => r[0]),
     mergeSheetRows(accessToken, targetId, sourceId, "semester_config", "A2:O", "A:O", (r) => `${r[0]}__${r[1]}`),
     mergeSheetRows(accessToken, targetId, sourceId, "audit_log", "A2:I", "A:I", (r) => r[0]),
+    mergeSheetRows(accessToken, targetId, sourceId, "academic_calendar", "A2:E", "A:E", (r) => r[0]),
   ]);
 }
 
@@ -394,6 +401,101 @@ function rowToSemesterConfig(r: string[]): SemesterConfig {
     // this feature existed (open precisely on time), not silently opt in early.
     auto_open_lead_min: r[14] ? parseInt(r[14], 10) : 0,
   };
+}
+
+// ─── Academic Calendar (scheduler blackout dates) ─────────────────────────────
+// Shared across every course in this admin's spreadsheet — unlike semester_config
+// (one row per course+section), a blackout range applies to all of them, since
+// exam weeks/breaks aren't a per-course concept. Read by lib/scheduler.ts to
+// suppress auto-open only (manual "Open Session" is unaffected).
+
+import { AcademicBlackout } from "@/types";
+
+async function ensureAcademicCalendarSheet(
+  accessToken: string,
+  spreadsheetId: string
+): Promise<void> {
+  const sheets = getSheetsClient(accessToken);
+  const meta = await sheets.spreadsheets.get({
+    spreadsheetId,
+    fields: "sheets.properties.title",
+  });
+  const exists = (meta.data.sheets ?? []).some(
+    (s) => s.properties?.title === "academic_calendar"
+  );
+  if (!exists) {
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: { requests: [{ addSheet: { properties: { title: "academic_calendar" } } }] },
+    });
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: "academic_calendar!A1:E1",
+      valueInputOption: "RAW",
+      requestBody: {
+        values: [["id", "start_date", "end_date", "label", "created_at"]],
+      },
+    });
+  }
+}
+
+export async function getAcademicBlackouts(
+  accessToken: string,
+  spreadsheetId: string
+): Promise<AcademicBlackout[]> {
+  await ensureAcademicCalendarSheet(accessToken, spreadsheetId);
+  const sheets = getSheetsClient(accessToken);
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: "academic_calendar!A2:E",
+  });
+  return ((res.data.values ?? []) as string[][])
+    .map((r) => ({
+      id: r[0] ?? "",
+      start_date: r[1] ?? "",
+      end_date: r[2] ?? "",
+      label: r[3] ?? "",
+      created_at: r[4] ?? "",
+    }))
+    .sort((a, b) => a.start_date.localeCompare(b.start_date));
+}
+
+export async function addAcademicBlackout(
+  accessToken: string,
+  spreadsheetId: string,
+  input: { start_date: string; end_date: string; label: string }
+): Promise<AcademicBlackout> {
+  await ensureAcademicCalendarSheet(accessToken, spreadsheetId);
+  const sheets = getSheetsClient(accessToken);
+  const blackout: AcademicBlackout = {
+    id: crypto.randomUUID(),
+    start_date: input.start_date,
+    end_date: input.end_date,
+    label: input.label,
+    created_at: new Date().toISOString(),
+  };
+  await sheets.spreadsheets.values.append({
+    spreadsheetId,
+    range: "academic_calendar!A:E",
+    valueInputOption: "RAW",
+    requestBody: {
+      values: [[blackout.id, blackout.start_date, blackout.end_date, blackout.label, blackout.created_at]],
+    },
+  });
+  return blackout;
+}
+
+export async function deleteAcademicBlackout(
+  accessToken: string,
+  spreadsheetId: string,
+  id: string
+): Promise<boolean> {
+  await ensureAcademicCalendarSheet(accessToken, spreadsheetId);
+  const deleted = await deleteMatchingRows(
+    accessToken, spreadsheetId, "academic_calendar!A2:E",
+    (r) => r[0] === id
+  );
+  return deleted > 0;
 }
 
 // ─── Courses ──────────────────────────────────────────────────────────────────
