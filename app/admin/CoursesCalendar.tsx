@@ -4,19 +4,9 @@ import { SemesterConfig } from "@/types";
 import { semesterEndFromWeeks } from "@/lib/week-utils";
 import { todayLocalISO } from "@/lib/local-date";
 import { IconChevronDown } from "@/components/icons";
+import { THAI_MONTHS, THAI_DOW, getMonthCells } from "@/lib/calendar-grid";
 
 interface Holiday { date: string; name: string; type: string; }
-
-const THAI_MONTHS = [
-  "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
-  "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม",
-];
-const THAI_DOW = ["อา", "จ", "อ", "พ", "พฤ", "ศ", "ส"];
-
-function pad(n: number): string { return n < 10 ? `0${n}` : `${n}`; }
-function toIso(y: number, mZeroIdx: number, d: number): string {
-  return `${y}-${pad(mZeroIdx + 1)}-${pad(d)}`;
-}
 
 // Google Calendar-style mini month widget — replaces the old flat list of every
 // holiday in the current year (which, once /api/holidays started returning a
@@ -70,31 +60,7 @@ export default function CoursesCalendar() {
 
   const todayIso = todayLocalISO();
 
-  const cells = useMemo(() => {
-    const { year, month } = cursor;
-    const firstOfMonth = new Date(Date.UTC(year, month, 1));
-    const startDow = firstOfMonth.getUTCDay(); // 0=Sun
-    const daysInMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
-    const daysInPrevMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
-
-    const list: { iso: string; day: number; inMonth: boolean }[] = [];
-    for (let i = 0; i < startDow; i++) {
-      const d = daysInPrevMonth - startDow + 1 + i;
-      const m = month === 0 ? 11 : month - 1;
-      const y = month === 0 ? year - 1 : year;
-      list.push({ iso: toIso(y, m, d), day: d, inMonth: false });
-    }
-    for (let d = 1; d <= daysInMonth; d++) {
-      list.push({ iso: toIso(year, month, d), day: d, inMonth: true });
-    }
-    while (list.length % 7 !== 0 || list.length < 35) {
-      const last = list[list.length - 1];
-      const [y, m, d] = last.iso.split("-").map(Number);
-      const next = new Date(Date.UTC(y, m - 1, d + 1));
-      list.push({ iso: next.toISOString().slice(0, 10), day: next.getUTCDate(), inMonth: false });
-    }
-    return list;
-  }, [cursor]);
+  const cells = useMemo(() => getMonthCells(cursor.year, cursor.month), [cursor]);
 
   const goPrev = () => setCursor((c) => (c.month === 0 ? { year: c.year - 1, month: 11 } : { year: c.year, month: c.month - 1 }));
   const goNext = () => setCursor((c) => (c.month === 11 ? { year: c.year + 1, month: 0 } : { year: c.year, month: c.month + 1 }));
