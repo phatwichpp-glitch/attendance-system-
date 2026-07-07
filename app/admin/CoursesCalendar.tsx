@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect, useMemo } from "react";
+import Link from "next/link";
 import { SemesterConfig } from "@/types";
 import { semesterEndFromWeeks } from "@/lib/week-utils";
 import { todayLocalISO } from "@/lib/local-date";
@@ -90,61 +91,72 @@ export default function CoursesCalendar() {
         </button>
       </div>
 
-      <div className="grid grid-cols-7 gap-1">
-        {THAI_DOW.map((d) => (
-          <div key={d} className="text-center text-[10px] font-medium text-gray-400 py-1">{d}</div>
-        ))}
-        {cells.map(({ iso, day, inMonth }) => {
-          const holidayName = holidayMap.get(iso);
-          const dow = new Date(`${iso}T00:00:00Z`).getUTCDay();
-          const teaching = inMonth && isTeachingDay(iso, dow);
-          const isHoliday = !!holidayName;
-          const isToday = iso === todayIso;
+      <Link
+        href="/admin/calendar"
+        title="ดูปฏิทินแบบเต็ม"
+        className="block rounded-lg -mx-1 px-1 py-1 transition-colors hover:bg-gray-50"
+      >
+        <div className="grid grid-cols-7 gap-1">
+          {THAI_DOW.map((d) => (
+            <div key={d} className="text-center text-[10px] font-medium text-gray-400 py-1">{d}</div>
+          ))}
+          {cells.map(({ iso, day, inMonth }) => {
+            const holidayName = holidayMap.get(iso);
+            const dow = new Date(`${iso}T00:00:00Z`).getUTCDay();
+            const teaching = inMonth && isTeachingDay(iso, dow);
+            const isHoliday = !!holidayName;
+            const isToday = iso === todayIso;
 
-          let bg = "transparent";
-          let color = inMonth ? "#374151" : "#d1d5db";
-          if (inMonth && isHoliday) { bg = "#FEF9EC"; color = "#854F0B"; }
-          else if (inMonth && teaching) { bg = "#E6F1FB"; color = "#185FA5"; }
+            let bg = "transparent";
+            let color = inMonth ? "#374151" : "#d1d5db";
+            if (inMonth && isHoliday) { bg = "#FEF9EC"; color = "#854F0B"; }
+            else if (inMonth && teaching) { bg = "#E6F1FB"; color = "#185FA5"; }
 
-          const title = [
-            holidayName ? `🎌 ${holidayName}` : null,
-            teaching ? "มีคาบเรียนตามตาราง" : null,
-          ].filter(Boolean).join(" · ") || undefined;
+            const title = [
+              holidayName ? `🎌 ${holidayName}` : null,
+              teaching ? "มีคาบเรียนตามตาราง" : null,
+            ].filter(Boolean).join(" · ") || undefined;
 
-          return (
-            <div
-              key={iso}
-              title={title}
-              className="aspect-square flex flex-col items-center justify-center rounded-lg text-[12px] relative"
-              style={{
-                backgroundColor: bg,
-                color,
-                fontWeight: isToday ? 700 : 500,
-                border: isToday ? "1.5px solid #185FA5" : "1px solid transparent",
-              }}
-            >
-              {day}
-              {inMonth && teaching && isHoliday && (
-                <span
-                  className="absolute rounded-full"
-                  style={{ bottom: 3, width: 4, height: 4, backgroundColor: "#185FA5" }}
-                  aria-hidden
-                />
-              )}
-            </div>
-          );
-        })}
-      </div>
+            return (
+              <div
+                key={iso}
+                title={title}
+                className="aspect-square flex flex-col items-center justify-center rounded-lg text-[12px] relative"
+                style={{
+                  backgroundColor: bg,
+                  color,
+                  fontWeight: isToday ? 700 : 500,
+                  border: isToday ? "1.5px solid #185FA5" : "1px solid transparent",
+                }}
+              >
+                {day}
+                {inMonth && teaching && isHoliday && (
+                  <span
+                    className="absolute rounded-full"
+                    style={{ bottom: 3, width: 4, height: 4, backgroundColor: "#185FA5" }}
+                    aria-hidden
+                  />
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </Link>
 
-      <div className="flex items-center gap-4 mt-3 text-[11px]" style={{ color: "#5F5E5A" }}>
-        <span className="flex items-center gap-1.5">
-          <span className="inline-block rounded" style={{ width: 10, height: 10, backgroundColor: "#E6F1FB" }} />
-          มีคาบเรียน
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span className="inline-block rounded" style={{ width: 10, height: 10, backgroundColor: "#FEF9EC", border: "1px solid #EF9F27" }} />
-          วันหยุดราชการ
-        </span>
+      <div className="flex items-center justify-between gap-2 mt-3">
+        <div className="flex items-center gap-4 text-[11px]" style={{ color: "#5F5E5A" }}>
+          <span className="flex items-center gap-1.5">
+            <span className="inline-block rounded" style={{ width: 10, height: 10, backgroundColor: "#E6F1FB" }} />
+            มีคาบเรียน
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="inline-block rounded" style={{ width: 10, height: 10, backgroundColor: "#FEF9EC", border: "1px solid #EF9F27" }} />
+            วันหยุดราชการ
+          </span>
+        </div>
+        <Link href="/admin/calendar" className="text-[11px] font-medium shrink-0" style={{ color: "#185FA5" }}>
+          ดูปฏิทินแบบเต็ม →
+        </Link>
       </div>
     </div>
   );

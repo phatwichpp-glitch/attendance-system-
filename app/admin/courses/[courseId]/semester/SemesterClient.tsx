@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import Spinner from "@/components/Spinner";
+import BlackoutDatesCard from "@/components/BlackoutDatesCard";
 import { Course, SemesterConfig } from "@/types";
 import SemesterConfigForm, {
   DEFAULT_SEMESTER_FORM,
@@ -122,6 +123,8 @@ export default function SemesterClient({ courseId, section }: { courseId: string
       </div>
 
       <SemesterConfigForm value={semester} onChange={setSemester} courseId={courseId} section={course?.section} />
+
+      <BlackoutDatesCard />
 
       {error && (
         <div className="rounded-lg px-4 py-3 text-[13px]" style={{ backgroundColor: "#FCEBEB", color: "#A32D2D" }}>

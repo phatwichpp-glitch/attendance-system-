@@ -39,8 +39,6 @@ export default function AdminNav({ email }: { email?: string | null }) {
           <div className="relative flex-1 min-w-0">
             <nav className="flex items-center gap-1 overflow-x-auto pr-4">
               {link("/admin", "Courses")}
-              {link("/admin/import", "Import")}
-              {link("/admin/setup", "Open Session")}
               {link("/admin/audit", "Audit Log")}
               {link("/admin/calendar", "Calendar")}
               {link("/admin/notifications", "Notifications")}

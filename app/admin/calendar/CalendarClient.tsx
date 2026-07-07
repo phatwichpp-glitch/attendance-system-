@@ -5,6 +5,7 @@ import { AcademicBlackout, Course, SemesterConfig } from "@/types";
 import { semesterEndFromWeeks, countWeeksBetween } from "@/lib/week-utils";
 import { todayLocalISO } from "@/lib/local-date";
 import { THAI_MONTHS, THAI_DOW, getMonthCells } from "@/lib/calendar-grid";
+import { useAcademicBlackouts } from "@/lib/hooks/useAcademicBlackouts";
 import { IconChevronDown } from "@/components/icons";
 
 const fmt = (d: string) =>
@@ -22,10 +23,13 @@ interface CourseSemesterRow {
 
 const rowKey = (r: { course_id: string; section: string }) => `${r.course_id}__${r.section}`;
 
+interface Holiday { date: string; name: string; type: string; }
+
 export default function CalendarClient() {
   const today = new Date();
   const [cursor, setCursor] = useState({ year: today.getFullYear(), month: today.getMonth() });
-  const [blackouts, setBlackouts] = useState<AcademicBlackout[] | null>(null);
+  const { blackouts, saving, deletingId, addBlackout: addBlackoutEntry, removeBlackout: removeBlackoutEntry } = useAcademicBlackouts();
+  const [holidays, setHolidays] = useState<Holiday[]>([]);
   const [semesterRanges, setSemesterRanges] = useState<SemesterRange[]>([]);
   const [courseRows, setCourseRows] = useState<CourseSemesterRow[]>([]);
   const [savedSnapshot, setSavedSnapshot] = useState<Record<string, { start: string; end: string }>>({});
@@ -36,19 +40,11 @@ export default function CalendarClient() {
   const [label, setLabel] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState("");
 
   const load = useCallback(async () => {
     try {
-      const [blackoutRes, coursesRes] = await Promise.all([
-        fetch("/api/sheets/academic-calendar"),
-        fetch("/api/sheets/courses"),
-      ]);
-      const blackoutData = await blackoutRes.json();
-      setBlackouts(blackoutData.blackouts ?? []);
-
+      const coursesRes = await fetch("/api/sheets/courses");
       const coursesData = await coursesRes.json();
       const courseList = (coursesData.courses ?? []) as Course[];
       const configsMap = (coursesData.configs ?? {}) as Record<string, SemesterConfig>;
@@ -89,6 +85,22 @@ export default function CalendarClient() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    // Fetch a year on each side too — the visible 6-week grid can bleed into an
+    // adjacent month that falls in a different calendar year (Dec/Jan edges).
+    const years = [cursor.year - 1, cursor.year, cursor.year + 1];
+    fetch(`/api/holidays?years=${years.join(",")}`)
+      .then((r) => r.json())
+      .then((d) => setHolidays(d.holidays ?? []))
+      .catch(() => {});
+  }, [cursor.year]);
+
+  const holidayMap = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const h of holidays) m.set(h.date.slice(0, 10), h.name);
+    return m;
+  }, [holidays]);
 
   const cells = useMemo(() => getMonthCells(cursor.year, cursor.month), [cursor]);
   const todayIso = todayLocalISO();
@@ -162,43 +174,19 @@ export default function CalendarClient() {
   const addBlackout = async () => {
     setError("");
     if (!label.trim()) { setError("กรอกชื่อช่วงเวลาก่อน (เช่น สอบกลางภาค)"); return; }
-    if (!startDate || !endDate) { setError("เลือกวันเริ่มต้นและวันสิ้นสุด — คลิกบนปฏิทินด้านบน 2 ครั้ง (วันเริ่ม แล้วก็วันสิ้นสุด)"); return; }
+    if (!startDate || !endDate) { setError("เลือกวันเริ่มต้นและวันสิ้นสุด — พิมพ์เอง หรือคลิกบนปฏิทินด้านบน 2 ครั้ง (วันเริ่ม แล้วก็วันสิ้นสุด)"); return; }
     if (endDate < startDate) { setError("วันสิ้นสุดต้องไม่ก่อนวันเริ่มต้น"); return; }
 
-    setSaving(true);
-    try {
-      const res = await fetch("/api/sheets/academic-calendar", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ start_date: startDate, end_date: endDate, label: label.trim() }),
-      });
-      const d = await res.json();
-      if (!res.ok) {
-        setError(d.error === "end_before_start" ? "วันสิ้นสุดต้องไม่ก่อนวันเริ่มต้น" : "บันทึกไม่สำเร็จ");
-        return;
-      }
-      setBlackouts((prev) => [...(prev ?? []), d.blackout].sort((a, b) => a.start_date.localeCompare(b.start_date)));
-      setLabel("");
-      clearSelection();
-    } catch {
-      setError("บันทึกไม่สำเร็จ");
-    } finally {
-      setSaving(false);
-    }
+    const result = await addBlackoutEntry({ start_date: startDate, end_date: endDate, label: label.trim() });
+    if (!result.ok) { setError(result.error); return; }
+    setLabel("");
+    clearSelection();
   };
 
   const removeBlackout = async (b: AcademicBlackout) => {
     if (!confirm(`ลบ "${b.label}" (${fmt(b.start_date)} - ${fmt(b.end_date)})?`)) return;
-    setDeletingId(b.id);
-    try {
-      const res = await fetch(`/api/sheets/academic-calendar?id=${encodeURIComponent(b.id)}`, { method: "DELETE" });
-      if (!res.ok) { setError("ลบไม่สำเร็จ"); return; }
-      setBlackouts((prev) => (prev ?? []).filter((x) => x.id !== b.id));
-    } catch {
-      setError("ลบไม่สำเร็จ");
-    } finally {
-      setDeletingId(null);
-    }
+    const ok = await removeBlackoutEntry(b);
+    if (!ok) setError("ลบไม่สำเร็จ");
   };
 
   if (loading || blackouts === null) {
@@ -209,8 +197,10 @@ export default function CalendarClient() {
     <div className="space-y-4">
       <p className="text-[13px]" style={{ color: "#5F5E5A" }}>
         แก้วันเปิด-ปิดภาคเรียนของแต่ละวิชาได้ตรงนี้ (ค่าเดียวกับหน้า Semester Settings ของวิชานั้น แก้จากที่ไหนก็ได้ ข้อมูลจะตรงกันเสมอ)
-        แล้วคลิกวันบนปฏิทิน 2 ครั้ง (วันเริ่ม แล้วก็วันสิ้นสุด) เพื่อเลือกช่วงวันที่ให้ระบบ<strong>ไม่เปิดคาบเรียนอัตโนมัติ</strong>
-        ให้ทุกวิชาในบัญชีนี้ (เช่น สัปดาห์สอบกลางภาค/ปลายภาค) — ใช้ได้กับ Auto-Open เท่านั้น การเปิดคาบด้วยตนเองยังทำได้ตามปกติ
+        ปฏิทินด้านล่างแสดงทั้งช่วงภาคเรียนและวันหยุดราชการไทยให้เห็นพร้อมกัน — พิมพ์วันที่เอง หรือคลิกวันบนปฏิทิน 2 ครั้ง
+        (วันเริ่ม แล้วก็วันสิ้นสุด) เพื่อเลือกช่วงวันที่ให้ระบบ<strong>ไม่เปิดคาบเรียนอัตโนมัติ</strong>ให้ทุกวิชาในบัญชีนี้
+        (เช่น สัปดาห์สอบกลางภาค/ปลายภาค) — ใช้ได้กับ Auto-Open เท่านั้น การเปิดคาบด้วยตนเองยังทำได้ตามปกติ (วันหยุดราชการระบบข้าม
+        auto-open ให้เองอยู่แล้วโดยอัตโนมัติ ไม่ต้องเพิ่มเอง)
       </p>
 
       <div className="card space-y-3">
@@ -295,6 +285,7 @@ export default function CalendarClient() {
           ))}
           {cells.map(({ iso, day, inMonth }) => {
             const blackout = inMonth ? blackoutAt(iso) : undefined;
+            const holidayName = inMonth ? holidayMap.get(iso) : undefined;
             const pending = inMonth && isPending(iso);
             const inSemester = inMonth && isInSemester(iso);
             const isToday = iso === todayIso;
@@ -304,16 +295,22 @@ export default function CalendarClient() {
             let color = inMonth ? "#374151" : "#d1d5db";
             if (pending) { bg = "#E6F1FB"; color = "#185FA5"; }
             else if (blackout) { bg = "#FCEBEB"; color = "#A32D2D"; }
+            else if (holidayName) { bg = "#FEF9EC"; color = "#854F0B"; }
             else if (inSemester) { bg = "#f3f4f6"; color = "#4b5563"; }
+
+            const title = [
+              blackout ? `🚫 ${blackout.label}` : null,
+              holidayName ? `🎌 ${holidayName}` : null,
+            ].filter(Boolean).join(" · ") || undefined;
 
             return (
               <button
                 key={iso}
                 type="button"
                 onClick={() => inMonth && onDayClick(iso)}
-                title={blackout?.label}
+                title={title}
                 disabled={!inMonth}
-                className="aspect-square flex flex-col items-center justify-center rounded-lg text-[12px]"
+                className="aspect-square flex flex-col items-center justify-center rounded-lg text-[12px] relative"
                 style={{
                   backgroundColor: bg,
                   color,
@@ -327,6 +324,13 @@ export default function CalendarClient() {
                 }}
               >
                 {day}
+                {inMonth && blackout && holidayName && (
+                  <span
+                    className="absolute rounded-full"
+                    style={{ bottom: 3, width: 4, height: 4, backgroundColor: "#854F0B" }}
+                    aria-hidden
+                  />
+                )}
               </button>
             );
           })}
@@ -336,6 +340,10 @@ export default function CalendarClient() {
           <span className="flex items-center gap-1.5">
             <span className="inline-block rounded" style={{ width: 10, height: 10, backgroundColor: "#f3f4f6", border: "1px solid #d1d5db" }} />
             ช่วงภาคเรียน
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="inline-block rounded" style={{ width: 10, height: 10, backgroundColor: "#FEF9EC", border: "1px solid #EF9F27" }} />
+            วันหยุดราชการ
           </span>
           <span className="flex items-center gap-1.5">
             <span className="inline-block rounded" style={{ width: 10, height: 10, backgroundColor: "#FCEBEB", border: "1px solid #A32D2D" }} />
@@ -350,13 +358,35 @@ export default function CalendarClient() {
 
       <div className="card space-y-3">
         <h2 className="font-medium text-gray-900">เพิ่มช่วงวันที่</h2>
-        <div className="flex items-center gap-2 text-[13px]" style={{ color: "#5F5E5A" }}>
-          <span>{startDate ? fmt(startDate) : "เลือกวันเริ่มต้น"}</span>
-          <span>–</span>
-          <span>{endDate ? fmt(endDate) : "เลือกวันสิ้นสุด"}</span>
+        <p className="text-[11px]" style={{ color: "#9ca3af" }}>พิมพ์วันที่เองในช่องด้านล่าง หรือคลิก 2 ครั้งบนปฏิทินด้านบนก็ได้ — ทั้งสองแบบเชื่อมกัน</p>
+        <div className="flex gap-2">
+          <div className="flex-1">
+            <label className="block text-[12px] text-gray-500 mb-1">วันเริ่มต้น</label>
+            <input
+              type="date"
+              className="input text-[13px] w-full"
+              value={startDate}
+              max={endDate || undefined}
+              onChange={(e) => setStartDate(e.target.value)}
+            />
+          </div>
+          <div className="flex-1">
+            <label className="block text-[12px] text-gray-500 mb-1">วันสิ้นสุด</label>
+            <input
+              type="date"
+              className="input text-[13px] w-full"
+              value={endDate}
+              min={startDate || undefined}
+              onChange={(e) => setEndDate(e.target.value)}
+            />
+          </div>
           {(startDate || endDate) && (
-            <button onClick={clearSelection} className="text-[12px] underline ml-1" style={{ background: "none", border: "none", cursor: "pointer", color: "#185FA5" }}>
-              ล้างการเลือก
+            <button
+              onClick={clearSelection}
+              className="text-[12px] underline shrink-0 self-end mb-2.5"
+              style={{ background: "none", border: "none", cursor: "pointer", color: "#185FA5" }}
+            >
+              ล้าง
             </button>
           )}
         </div>
