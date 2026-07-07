@@ -786,17 +786,21 @@ function GpsRow({ status, accuracy, showHelp, onToggleHelp, onRetry }: {
               </button>
               {showHelp && (
                 <div style={{ marginTop: 8, padding: "10px 12px", backgroundColor: "white", borderRadius: 8, border: "0.5px solid #e5e7eb", fontSize: 11, color: "#374151", lineHeight: 1.7 }}>
-                  <strong>วิธีอนุญาตให้เข้าถึงตำแหน่ง:</strong><br />
-                  • Chrome: แถบที่อยู่ → ไอคอน 🔒 → การตั้งค่าเว็บไซต์ → ตำแหน่ง → อนุญาต<br />
-                  • Safari: ตั้งค่า → Safari → ตำแหน่ง → อนุญาต<br />
-                  • Firefox: ไอคอน 🔒 → อนุญาตการเข้าถึงตำแหน่ง
+                  <strong>ถ้ากด &quot;อนุญาต&quot; ไปแล้วแต่ยังขึ้น Denied (มักเจอใน iPhone):</strong><br />
+                  บนไอโฟนมีสิทธิ์ 2 ชั้นที่ต้องเปิดพร้อมกัน — กด &quot;อนุญาต&quot; แค่ตอนเบราว์เซอร์ถามครั้งแรกอาจไม่พอ<br />
+                  <strong>1. เช็คสิทธิ์รวมทั้งเครื่อง:</strong> ตั้งค่า → ความเป็นส่วนตัวและความปลอดภัย → บริการหาตำแหน่ง
+                  → เปิดสวิตช์บนสุด แล้วเลื่อนหา Safari (หรือเบราว์เซอร์ที่ใช้) → ตั้งเป็น &quot;ขณะใช้แอป&quot;<br />
+                  <strong>2. เช็คสิทธิ์เฉพาะเว็บนี้:</strong> กดไอคอน &quot;aA&quot; ที่มุมซ้ายแถบที่อยู่ (ตอนเปิดหน้านี้ค้างอยู่)
+                  → การตั้งค่าเว็บไซต์ → ตำแหน่ง → อนุญาต — ขั้นตอนนี้จะ<strong>ทับค่าจากข้อ 1</strong> ถ้าเคยกดปฏิเสธเว็บนี้ไว้ก่อน<br />
+                  <strong>3. ถ้าเปิดในโหมดส่วนตัว (Private)</strong> ให้ลองเปิดลิงก์นี้ในแท็บปกติแทน<br />
+                  แก้เสร็จแล้วต้อง<strong>โหลดหน้านี้ใหม่</strong> (กดปุ่มด้านล่าง) ไม่ใช่แค่กด Try Again เฉยๆ ถึงจะอ่านสิทธิ์ใหม่
                 </div>
               )}
               <button
-                onClick={onRetry}
+                onClick={() => window.location.reload()}
                 style={{ fontSize: 11, color: "#374151", background: "white", border: "0.5px solid #d1d5db", borderRadius: 6, cursor: "pointer", padding: "5px 12px", marginTop: 8, display: "block" }}
               >
-                Try Again
+                โหลดหน้านี้ใหม่
               </button>
             </>
           )}
