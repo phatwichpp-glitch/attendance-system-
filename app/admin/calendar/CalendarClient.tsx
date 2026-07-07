@@ -175,7 +175,7 @@ export default function CalendarClient() {
   const addBlackout = async () => {
     setError("");
     if (!label.trim()) { setError("เลือกหรือกรอกชื่อช่วงเวลาก่อน"); return; }
-    if (!startDate || !endDate) { setError("เลือกวันเริ่มต้นและวันสิ้นสุด — พิมพ์เอง หรือคลิกบนปฏิทินด้านบน 2 ครั้ง (วันเริ่ม แล้วก็วันสิ้นสุด)"); return; }
+    if (!startDate || !endDate) { setError("เลือกวันเริ่มต้นและวันสิ้นสุด — พิมพ์เอง หรือคลิกบนปฏิทินด้านล่าง 2 ครั้ง (วันเริ่ม แล้วก็วันสิ้นสุด)"); return; }
     if (endDate < startDate) { setError("วันสิ้นสุดต้องไม่ก่อนวันเริ่มต้น"); return; }
 
     const result = await addBlackoutEntry({ start_date: startDate, end_date: endDate, label: label.trim() });
@@ -252,6 +252,60 @@ export default function CalendarClient() {
             })}
           </div>
         )}
+      </div>
+
+      <div className="card space-y-3">
+        <h2 className="font-medium text-gray-900">วันที่ไม่เปิดคาบอัตโนมัติ</h2>
+        <p className="text-[12px]" style={{ color: "#5F5E5A" }}>
+          กำหนดช่วงวันที่ (เช่น สัปดาห์สอบกลางภาค/ปลายภาค) ที่ไม่ต้องการให้ระบบ<strong>เปิดคาบเรียนอัตโนมัติ</strong> —
+          มีผลกับ<strong>ทุกวิชา</strong>ในบัญชีนี้ ไม่ใช่แค่วิชานี้วิชาเดียว ใช้ได้กับ Auto-Open เท่านั้น
+          การเปิดคาบด้วยตนเองยังทำได้ตามปกติ ไม่ถูกบล็อก
+        </p>
+        <p className="text-[11px]" style={{ color: "#9ca3af" }}>พิมพ์วันที่เอง หรือคลิก 2 ครั้งบนปฏิทินด้านล่างก็ได้ — ทั้งสองแบบเชื่อมกัน</p>
+        <div className="flex gap-2">
+          <div className="flex-1">
+            <label className="block text-[12px] text-gray-500 mb-1">วันเริ่มต้น</label>
+            <input
+              type="date"
+              className="input text-[13px] w-full"
+              value={startDate}
+              max={endDate || undefined}
+              onChange={(e) => setStartDate(e.target.value)}
+            />
+          </div>
+          <div className="flex-1">
+            <label className="block text-[12px] text-gray-500 mb-1">วันสิ้นสุด</label>
+            <input
+              type="date"
+              className="input text-[13px] w-full"
+              value={endDate}
+              min={startDate || undefined}
+              onChange={(e) => setEndDate(e.target.value)}
+            />
+          </div>
+          {(startDate || endDate) && (
+            <button
+              onClick={clearSelection}
+              className="text-[12px] underline shrink-0 self-end mb-2.5"
+              style={{ background: "none", border: "none", cursor: "pointer", color: "#185FA5" }}
+            >
+              ล้าง
+            </button>
+          )}
+        </div>
+        <div>
+          <label className="block text-[12px] text-gray-500 mb-1">ชื่อช่วงเวลา</label>
+          <BlackoutLabelPicker value={label} onChange={setLabel} />
+        </div>
+        <button
+          onClick={addBlackout}
+          disabled={saving}
+          className="btn-primary text-[13px] px-3"
+          style={{ minHeight: 36 }}
+        >
+          {saving && <Spinner className="h-4 w-4" />} เพิ่ม
+        </button>
+        {error && <p className="text-[11px]" style={{ color: "#A32D2D" }}>{error}</p>}
       </div>
 
       <div className="card">
@@ -354,59 +408,10 @@ export default function CalendarClient() {
         </div>
       </div>
 
-      <div className="card space-y-3">
-        <h2 className="font-medium text-gray-900">เพิ่มช่วงวันที่</h2>
-        <p className="text-[11px]" style={{ color: "#9ca3af" }}>พิมพ์วันที่เองในช่องด้านล่าง หรือคลิก 2 ครั้งบนปฏิทินด้านบนก็ได้ — ทั้งสองแบบเชื่อมกัน</p>
-        <div className="flex gap-2">
-          <div className="flex-1">
-            <label className="block text-[12px] text-gray-500 mb-1">วันเริ่มต้น</label>
-            <input
-              type="date"
-              className="input text-[13px] w-full"
-              value={startDate}
-              max={endDate || undefined}
-              onChange={(e) => setStartDate(e.target.value)}
-            />
-          </div>
-          <div className="flex-1">
-            <label className="block text-[12px] text-gray-500 mb-1">วันสิ้นสุด</label>
-            <input
-              type="date"
-              className="input text-[13px] w-full"
-              value={endDate}
-              min={startDate || undefined}
-              onChange={(e) => setEndDate(e.target.value)}
-            />
-          </div>
-          {(startDate || endDate) && (
-            <button
-              onClick={clearSelection}
-              className="text-[12px] underline shrink-0 self-end mb-2.5"
-              style={{ background: "none", border: "none", cursor: "pointer", color: "#185FA5" }}
-            >
-              ล้าง
-            </button>
-          )}
-        </div>
-        <div>
-          <label className="block text-[12px] text-gray-500 mb-1">ชื่อช่วงเวลา</label>
-          <BlackoutLabelPicker value={label} onChange={setLabel} />
-        </div>
-        <button
-          onClick={addBlackout}
-          disabled={saving}
-          className="btn-primary text-[13px] px-3"
-          style={{ minHeight: 36 }}
-        >
-          {saving && <Spinner className="h-4 w-4" />} เพิ่ม
-        </button>
-        {error && <p className="text-[11px]" style={{ color: "#A32D2D" }}>{error}</p>}
-      </div>
-
       <div className="card space-y-2">
         <h2 className="font-medium text-gray-900">ช่วงวันที่ที่ตั้งไว้</h2>
         {blackouts.length === 0 ? (
-          <p className="text-[13px]" style={{ color: "#9ca3af" }}>ยังไม่มีช่วงวันที่ — เลือกบนปฏิทินด้านบนได้เลย</p>
+          <p className="text-[13px]" style={{ color: "#9ca3af" }}>ยังไม่มีช่วงวันที่ — เพิ่มได้จากด้านบน</p>
         ) : (
           <ul className="divide-y divide-gray-100">
             {blackouts.map((b) => (
