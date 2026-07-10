@@ -310,7 +310,7 @@ export default function SemesterConfigForm({
 
       <div className="card space-y-4">
         <h2 className="font-medium text-gray-900">Default Attendance Settings</h2>
-        <SemesterSlider label="GPS Radius" value={semester.default_gps_radius} min={50} max={500} step={10} unit="m"
+        <SemesterSlider label="GPS Radius" value={semester.default_gps_radius} min={50} max={1000} step={10} unit="m"
           onChange={(v) => setSemester((s) => ({ ...s, default_gps_radius: v }))} />
         <SemesterSlider label="OTP Duration" value={semester.default_otp_min} min={1} max={180} step={1} unit="min"
           onChange={(v) => setSemester((s) => ({ ...s, default_otp_min: v }))} />

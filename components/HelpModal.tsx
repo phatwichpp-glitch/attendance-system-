@@ -411,8 +411,9 @@ export default function HelpModal({ onClose }: { onClose: () => void }) {
           {tab === "FAQ" && (
             <div className="space-y-3">
               <FAQ q="นักศึกษาเช็คชื่อไม่ผ่าน GPS ทำอย่างไร?">
-                ตรวจสอบว่า GPS Radius เพียงพอ (แนะนำ 100–200 m ในอาคาร) หรือใช้ Manual Override
-                เพื่อแก้สถานะให้นักศึกษารายคน
+                ตรวจสอบว่า GPS Radius เพียงพอ (แนะนำ 100–200 m ในอาคารทั่วไป) หรือใช้ Manual Override
+                เพื่อแก้สถานะให้นักศึกษารายคน — ถ้าเป็นตึกที่ GPS เพี้ยนมาก (fail พร้อมกันหลายคนทั้งที่อยู่ในห้อง)
+                ปรับ GPS Radius ได้สูงสุดถึง 1000 m ทั้งใน Semester Settings และตอน Open Session
               </FAQ>
               <FAQ q="OTP หมดอายุแล้ว จะเกิดอะไรขึ้น?">
                 session จะ<strong>ปิดอัตโนมัติ</strong>เมื่อ countdown ถึง 00:00

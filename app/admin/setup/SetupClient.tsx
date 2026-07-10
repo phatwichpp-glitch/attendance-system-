@@ -605,7 +605,7 @@ export default function SetupClient() {
           <p className="text-[11px]" style={{ color: "#185FA5" }}>Auto-filled from semester config</p>
         )}
         <div className="space-y-3">
-          <Slider label="GPS Radius" value={settings.radius_m} min={50} max={500} step={10} unit="m"
+          <Slider label="GPS Radius" value={settings.radius_m} min={50} max={1000} step={10} unit="m"
             onChange={(v) => setSettings((s) => ({ ...s, radius_m: v }))} />
           <div className="h-px" style={{ backgroundColor: "rgba(0,0,0,0.08)" }} />
           <MinuteSlider label="OTP Expires After" value={settings.otp_expire_min} min={1} max={classDurationMin} unit="min"
