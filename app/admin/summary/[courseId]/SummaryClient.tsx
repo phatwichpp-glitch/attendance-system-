@@ -241,9 +241,10 @@ export default function SummaryClient({ courseId, section }: { courseId: string;
     ws["!rows"] = [{ hpt: 30 }];
 
     const wb = XLSX.utils.book_new();
-    const sheetName = `${course.course_id} Sec${course.section}`;
+    const sheetName = `${course.course_id} Sec${course.section}`.replace(/[:\\/?*[\]]/g, "-");
     XLSX.utils.book_append_sheet(wb, ws, sheetName.slice(0, 31)); // Excel sheet name limit
-    XLSX.writeFile(wb, `attendance_${course.course_id}_sec${course.section}.xlsx`);
+    const fileSafeId = `${course.course_id}_sec${course.section}`.replace(/[:\\/?*[\]]/g, "-");
+    XLSX.writeFile(wb, `attendance_${fileSafeId}.xlsx`);
   };
 
   if (loading) return (
