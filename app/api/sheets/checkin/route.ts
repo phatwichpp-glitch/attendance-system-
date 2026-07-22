@@ -191,10 +191,13 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // 7. Calculate GPS distance
+    // 7. Calculate GPS distance — skipped entirely for online sessions, where
+    // there's no physical location to verify against.
     let gps_pass = false;
     let distance_m = 0;
-    if (lat != null && lng != null) {
+    if (sessionData.gps_enabled === false) {
+      gps_pass = true;
+    } else if (lat != null && lng != null) {
       distance_m = Math.round(
         calculateDistance(lat, lng, sessionData.lat, sessionData.lng)
       );
@@ -234,15 +237,19 @@ export async function POST(req: NextRequest) {
       lng: lng ?? undefined,
     };
 
-    // 9a. GPS anomaly heuristic — advisory only, doesn't touch status/gps_pass
+    // 9a. GPS anomaly heuristic — advisory only, doesn't touch status/gps_pass.
+    // Skipped for online sessions: a home GPS reading (or its absence) says
+    // nothing about cheating when there's no classroom to be spoofing.
     const flagNotes: string[] = [];
-    if (typeof accuracy === "number" && accuracy > GPS_ACCURACY_SUSPICIOUS_M) {
-      flagNotes.push(`Auto-flagged: GPS accuracy ต่ำผิดปกติ (±${Math.round(accuracy)}m)`);
-    } else if (
-      typeof accuracy === "number" && accuracy <= GPS_TOO_PRECISE_M &&
-      typeof location_jitter_m === "number" && (location_samples ?? 0) >= 2 && location_jitter_m === 0
-    ) {
-      flagNotes.push("Auto-flagged: ตำแหน่งนิ่งผิดปกติร่วมกับความแม่นยำสูงเกินจริง (สงสัยตำแหน่งปลอม)");
+    if (sessionData.gps_enabled !== false) {
+      if (typeof accuracy === "number" && accuracy > GPS_ACCURACY_SUSPICIOUS_M) {
+        flagNotes.push(`Auto-flagged: GPS accuracy ต่ำผิดปกติ (±${Math.round(accuracy)}m)`);
+      } else if (
+        typeof accuracy === "number" && accuracy <= GPS_TOO_PRECISE_M &&
+        typeof location_jitter_m === "number" && (location_samples ?? 0) >= 2 && location_jitter_m === 0
+      ) {
+        flagNotes.push("Auto-flagged: ตำแหน่งนิ่งผิดปกติร่วมกับความแม่นยำสูงเกินจริง (สงสัยตำแหน่งปลอม)");
+      }
     }
 
     // 9b. Device-conflict detection is intentionally NOT auto-flagged here.

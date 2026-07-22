@@ -169,6 +169,9 @@ export default function HelpModal({ onClose }: { onClose: () => void }) {
                 <Li>แก้ไขสถานะย้อนหลังได้จากตาราง (คลิกที่ cell)</Li>
                 <Li>Export .xlsx — format เดียวกับต้นฉบับ (ลำดับ รหัส ชื่อ) + ข้อมูลเช็คชื่อ</Li>
                 <Li>แสดงนักศึกษาที่ต่ำกว่า threshold เป็นสี highlight</Li>
+                <Li>กด &quot;🌐 ปิด GPS ย้อนหลัง&quot; เพื่อเลือกหลาย session พร้อมกัน (คลิกหัวคอลัมน์) แล้วปิด GPS check
+                  ย้อนหลัง — ใช้แก้ session ที่สอนออนไลน์แต่ลืมปิด GPS ตอนเปิดคาบ ระบบจะเปลี่ยนทุกคนที่ GPS Fail
+                  ในกลุ่มนั้นเป็น Present ให้อัตโนมัติ</Li>
               </FeatureGroup>
 
               <FeatureGroup icon="📋" title="Audit Log" color="#5F5E5A">
@@ -302,7 +305,7 @@ export default function HelpModal({ onClose }: { onClose: () => void }) {
                 <Step n="3">ตรวจสอบ/แก้เวลาเรียนได้ตรง ๆ หรือกดปุ่ม <em>ใช้เวลาปัจจุบัน</em> เพื่อเติมเวลาเดี๋ยวนี้ให้ทันที</Step>
                 <Step n="4">เลือก Single หรือ Double period</Step>
                 <Step n="5">รอ GPS ล็อก — หรือปักหมุดบนแผนที่ถ้า GPS ไม่แม่น</Step>
-                <Step n="6">ปรับ Settings (GPS Radius, OTP duration, late threshold) ถ้าต้องการ</Step>
+                <Step n="6">ปรับ Settings (GPS Radius, OTP duration, late threshold) ถ้าต้องการ — สอนออนไลน์ให้ปิด <strong>Enable GPS check</strong> เพื่อข้ามการตรวจตำแหน่งทั้งหมด นักศึกษาเช็คชื่อผ่านได้จากทุกที่</Step>
                 <Step n="7">กด <Chip>Open Session &amp; Generate OTP</Chip></Step>
                 <Note>เวลาที่กรอกจะถูกบันทึกไว้ตามจริงเสมอ (ไม่ถูกปัดเข้าคาบมาตรฐาน) — ค่า Settings จะถูกจำไว้ให้ครั้งหน้าด้วย</Note>
               </Section>
@@ -364,6 +367,9 @@ export default function HelpModal({ onClose }: { onClose: () => void }) {
                 <Step n="3">คลิกที่ตัวหัวคอลัมน์ (วันที่/Week label) เพื่อเปิดหน้า session นั้น — ใช้กลับเข้าไปดูรายละเอียดหรือ Re-Generate OTP ของคาบที่ปิดไปแล้ว</Step>
                 <Step n="4">hover บน column header — กด <strong>×</strong> มุมขวาบน เพื่อ<strong>ลบ session นั้นถาวร</strong> (มี confirm ก่อน)</Step>
                 <Step n="5">กด <Chip>Export .xlsx</Chip> เพื่อดาวน์โหลด — format เดียวกับต้นฉบับ + ข้อมูลเช็คชื่อ</Step>
+                <Step n="6">สอนออนไลน์แล้วลืมปิด GPS ตอนเปิดคาบ — กด &quot;🌐 ปิด GPS ย้อนหลัง&quot; เลือก session
+                  ที่เกี่ยวข้อง (คลิกหัวคอลัมน์) แล้วยืนยัน จะปิด GPS check ให้ session นั้นและเปลี่ยนทุกคนที่ GPS
+                  Fail เป็น Present ให้อัตโนมัติ</Step>
                 <Note>นักศึกษาที่ต่ำกว่า threshold จะถูก highlight — ปรับ threshold ได้มุมบนขวาของตาราง</Note>
               </Section>
 
@@ -414,6 +420,13 @@ export default function HelpModal({ onClose }: { onClose: () => void }) {
                 ตรวจสอบว่า GPS Radius เพียงพอ (แนะนำ 100–200 m ในอาคารทั่วไป) หรือใช้ Manual Override
                 เพื่อแก้สถานะให้นักศึกษารายคน — ถ้าเป็นตึกที่ GPS เพี้ยนมาก (fail พร้อมกันหลายคนทั้งที่อยู่ในห้อง)
                 ปรับ GPS Radius ได้สูงสุดถึง 1000 m ทั้งใน Semester Settings และตอน Open Session
+              </FAQ>
+              <FAQ q="สอนออนไลน์ นักศึกษาเช็คชื่อจากบ้านไม่ผ่าน GPS ทุกคน ทำยังไง?">
+                ขยาย GPS Radius ไม่ช่วย เพราะนักศึกษาไม่ได้อยู่ในพื้นที่จริง — ตอนเปิด Session ให้ปิด
+                <strong> Enable GPS check</strong> แทน (ในการ์ด Settings) จะข้ามการตรวจตำแหน่งทั้งหมด เช็คชื่อผ่านได้จากทุกที่
+                ถ้าคาบนั้นเปิดไปแล้วและมีคน GPS Fail ค้างอยู่ ไปที่ <Chip>Summary</Chip> กดปุ่ม
+                &quot;🌐 ปิด GPS ย้อนหลัง&quot; แล้วเลือก session ที่สอนออนไลน์ — ระบบจะปิด GPS ให้ session นั้นและ
+                เปลี่ยนทุกคนที่ GPS Fail เป็น Present ให้อัตโนมัติ
               </FAQ>
               <FAQ q="OTP หมดอายุแล้ว จะเกิดอะไรขึ้น?">
                 session จะ<strong>ปิดอัตโนมัติ</strong>เมื่อ countdown ถึง 00:00

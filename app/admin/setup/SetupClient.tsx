@@ -605,8 +605,17 @@ export default function SetupClient() {
           <p className="text-[11px]" style={{ color: "#185FA5" }}>Auto-filled from semester config</p>
         )}
         <div className="space-y-3">
-          <Slider label="GPS Radius" value={settings.radius_m} min={50} max={1000} step={10} unit="m"
-            onChange={(v) => setSettings((s) => ({ ...s, radius_m: v }))} />
+          <Toggle label="Enable GPS check" checked={settings.gps_enabled}
+            onChange={(v) => setSettings((s) => ({ ...s, gps_enabled: v }))} />
+          {!settings.gps_enabled && (
+            <p className="text-[11px] -mt-2" style={{ color: "#5F5E5A" }}>
+              สอนออนไลน์ — ข้ามการตรวจ GPS ทั้งหมด นักศึกษาเช็คชื่อผ่านได้จากทุกที่
+            </p>
+          )}
+          <div className={settings.gps_enabled ? "" : "opacity-40 pointer-events-none"}>
+            <Slider label="GPS Radius" value={settings.radius_m} min={50} max={1000} step={10} unit="m"
+              onChange={(v) => setSettings((s) => ({ ...s, radius_m: v }))} />
+          </div>
           <div className="h-px" style={{ backgroundColor: "rgba(0,0,0,0.08)" }} />
           <MinuteSlider label="OTP Expires After" value={settings.otp_expire_min} min={1} max={classDurationMin} unit="min"
             onChange={(v) => setSettings((s) => ({ ...s, otp_expire_min: v }))} />

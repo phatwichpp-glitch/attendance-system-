@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import * as XLSX from "xlsx";
 import Spinner from "@/components/Spinner";
@@ -57,10 +57,16 @@ export default function SummaryClient({ courseId, section }: { courseId: string;
   const [deleteSubmitting, setDeleteSubmitting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
   const [sortByIssues, setSortByIssues] = useState(false);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedSessions, setSelectedSessions] = useState<Set<string>>(new Set());
+  const [showBulkConfirm, setShowBulkConfirm] = useState(false);
+  const [bulkSubmitting, setBulkSubmitting] = useState(false);
+  const [bulkError, setBulkError] = useState("");
   const popoverRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    fetch(`/api/sheets/summary/${courseId}${section ? `?section=${encodeURIComponent(section)}` : ""}`)
+  const loadSummary = useCallback((showSpinner = true) => {
+    if (showSpinner) setLoading(true);
+    return fetch(`/api/sheets/summary/${courseId}${section ? `?section=${encodeURIComponent(section)}` : ""}`)
       .then((r) => r.json())
       .then((d: SummaryData) => {
         setData(d);
@@ -81,13 +87,36 @@ export default function SummaryClient({ courseId, section }: { courseId: string;
         } else {
           years.add(new Date().getFullYear());
         }
-        fetch(`/api/holidays?years=${[...years].join(",")}`)
+        return fetch(`/api/holidays?years=${[...years].join(",")}`)
           .then((r) => r.json())
           .then((hd) => setHolidays(hd.holidays ?? []))
           .catch(() => {});
       })
       .finally(() => setLoading(false));
   }, [courseId, section]);
+
+  useEffect(() => { loadSummary(); }, [loadSummary]);
+
+  const handleBulkGpsOff = async () => {
+    setBulkSubmitting(true);
+    setBulkError("");
+    try {
+      const res = await fetch("/api/sheets/sessions/bulk-gps-off", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_ids: [...selectedSessions] }),
+      });
+      if (!res.ok) throw new Error();
+      await loadSummary(false);
+      setShowBulkConfirm(false);
+      setSelectMode(false);
+      setSelectedSessions(new Set());
+    } catch {
+      setBulkError("บันทึกไม่สำเร็จ — กรุณาลองใหม่");
+    } finally {
+      setBulkSubmitting(false);
+    }
+  };
 
   // Close popover on outside click
   useEffect(() => {
@@ -391,6 +420,10 @@ export default function SummaryClient({ courseId, section }: { courseId: string;
     return count;
   });
 
+  const selectedGpsFailCount = data.attendance.filter(
+    (a) => selectedSessions.has(a.session_id) && a.status === "gps_fail"
+  ).length;
+
   return (
     <div className="space-y-4">
       {/* Header */}
@@ -428,6 +461,19 @@ export default function SummaryClient({ courseId, section }: { courseId: string;
           >
             {sortByIssues ? "⚠ เรียงตามปัญหา" : "⚠ เรียงตามปัญหา"}
           </button>
+          <button
+            type="button"
+            onClick={() => { setSelectMode((v) => !v); setSelectedSessions(new Set()); }}
+            className="text-[13px] px-3 py-1.5 rounded-xl font-medium transition-colors"
+            style={{
+              minHeight: 36,
+              backgroundColor: selectMode ? "#DBEAFE" : "#F1EFE8",
+              color: selectMode ? "#185FA5" : "#5F5E5A",
+              border: selectMode ? "0.5px solid #93C5FD" : "0.5px solid rgba(0,0,0,0.1)",
+            }}
+          >
+            {selectMode ? "🌐 ยกเลิกเลือก" : "🌐 ปิด GPS ย้อนหลัง"}
+          </button>
           <button onClick={exportXlsx} className="btn-outline text-[13px]" style={{ minHeight: 36 }}>
             <IconDownload size={14} /> Export .xlsx
           </button>
@@ -454,6 +500,29 @@ export default function SummaryClient({ courseId, section }: { courseId: string;
         </div>
       )}
 
+      {/* Bulk GPS-off action bar */}
+      {selectMode && (
+        <div className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg" style={{ backgroundColor: "#E6F1FB", border: "0.5px solid #93C5FD" }}>
+          <span className="text-[13px]" style={{ color: "#185FA5" }}>
+            {selectedSessions.size > 0
+              ? `เลือก ${selectedSessions.size} session`
+              : "คลิกเลือก session ที่สอนออนไลน์ (คลิกที่หัวคอลัมน์)"}
+          </span>
+          {selectedSessions.size > 0 && (
+            <div className="flex items-center gap-2">
+              <button type="button" onClick={() => setSelectedSessions(new Set())}
+                className="text-[13px] text-gray-500 underline" style={{ background: "none", border: "none", cursor: "pointer" }}>
+                ล้างการเลือก
+              </button>
+              <button type="button" onClick={() => setShowBulkConfirm(true)}
+                className="btn-primary text-[13px]" style={{ minHeight: 32, padding: "6px 14px" }}>
+                🌐 ปิด GPS ย้อนหลัง
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Grid */}
       <div className="overflow-auto rounded-xl relative" style={{ border: "0.5px solid rgba(0,0,0,0.1)", maxHeight: "calc(100vh - 240px)" }}>
         <table className="min-w-full text-[13px] border-collapse bg-white">
@@ -471,18 +540,28 @@ export default function SummaryClient({ courseId, section }: { courseId: string;
                 const isLinkedLeft = ss.linked_session_id && visibleSessions[ssIdx - 1]?.session_id === ss.linked_session_id;
                 const isSingleDouble = (ss.period_count ?? 1) >= 2 && ss.check_in_mode !== "double";
                 const isHovered = tooltipSession === ss.session_id;
+                const isSelected = selectedSessions.has(ss.session_id);
+                const isOnline = ss.gps_enabled === false;
                 return (
                   <th key={ss.session_id}
                     className="sticky top-0 z-10 px-2 py-2 text-[11px] font-medium text-center min-w-[3.5rem] relative cursor-pointer"
                     style={{
                       color: "#5F5E5A",
-                      backgroundColor: isHoliday ? "#FEF9EC" : isLinkedRight || isLinkedLeft ? "rgba(24,95,165,0.04)" : "white",
+                      backgroundColor: selectMode && isSelected ? "#DBEAFE" : isHoliday ? "#FEF9EC" : isLinkedRight || isLinkedLeft ? "rgba(24,95,165,0.04)" : "white",
                       borderLeft: isLinkedLeft ? "2px solid #185FA5" : undefined,
                       borderRight: isLinkedRight ? "2px solid #185FA5" : undefined,
                     }}
                     onMouseEnter={() => setTooltipSession(ss.session_id)}
                     onMouseLeave={() => setTooltipSession(null)}
                     onClick={() => {
+                      if (selectMode) {
+                        setSelectedSessions((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(ss.session_id)) next.delete(ss.session_id); else next.add(ss.session_id);
+                          return next;
+                        });
+                        return;
+                      }
                       // Touch devices have no hover: first tap reveals the tooltip
                       // + delete button, second tap navigates.
                       const touchOnly = typeof window !== "undefined" && window.matchMedia("(hover: none)").matches;
@@ -493,8 +572,22 @@ export default function SummaryClient({ courseId, section }: { courseId: string;
                       router.push(`/admin/session/${ss.session_id}`);
                     }}
                   >
-                    {/* Delete button — appears on hover */}
-                    {isHovered && (
+                    {/* Selection checkbox — select mode only */}
+                    {selectMode && (
+                      <span
+                        className="absolute top-0.5 left-0.5 rounded flex items-center justify-center text-[10px] leading-none"
+                        style={{
+                          width: 16, height: 16,
+                          border: `1.5px solid ${isSelected ? "#185FA5" : "#d1d5db"}`,
+                          backgroundColor: isSelected ? "#185FA5" : "white",
+                          color: "white",
+                        }}
+                      >
+                        {isSelected ? "✓" : ""}
+                      </span>
+                    )}
+                    {/* Delete button — appears on hover, hidden while selecting */}
+                    {isHovered && !selectMode && (
                       <button
                         type="button"
                         onClick={(e) => {
@@ -517,12 +610,13 @@ export default function SummaryClient({ courseId, section }: { courseId: string;
                           {isSingleDouble && " ×2"}
                           {isHoliday && " 🎌"}
                           {isPast && " 📋"}
+                          {isOnline && " 🌐"}
                         </div>
                         <div className="text-[10px] font-normal text-gray-400">{ss.date.slice(5)} P{ss.period}</div>
                       </>
                     ) : (
                       <>
-                        <div>{ss.date.slice(5)}{isHoliday && " 🎌"}</div>
+                        <div>{ss.date.slice(5)}{isHoliday && " 🎌"}{isOnline && " 🌐"}</div>
                         <div className="text-gray-400 font-normal">P{ss.period}</div>
                       </>
                     )}
@@ -537,7 +631,10 @@ export default function SummaryClient({ courseId, section }: { courseId: string;
                         {ss.check_in_mode === "double" && <p style={{ color: "#93C5FD" }}>Part {ss.part_number} of 2</p>}
                         {isPast && <p style={{ color: "#FBBF24" }}>📋 Past session</p>}
                         {holiday && <p style={{ color: "#FCA5A5" }}>🎌 {holiday.name}</p>}
-                        <p className="mt-1 pt-1" style={{ borderTop: "0.5px solid rgba(255,255,255,0.2)", color: "#94a3b8" }}>คลิกเพื่อเปิดหน้า session · × เพื่อลบถาวร</p>
+                        {isOnline && <p style={{ color: "#93C5FD" }}>🌐 Online (GPS off)</p>}
+                        <p className="mt-1 pt-1" style={{ borderTop: "0.5px solid rgba(255,255,255,0.2)", color: "#94a3b8" }}>
+                          {selectMode ? "คลิกเพื่อเลือก session นี้" : "คลิกเพื่อเปิดหน้า session · × เพื่อลบถาวร"}
+                        </p>
                       </div>
                     )}
                   </th>
@@ -739,6 +836,46 @@ export default function SummaryClient({ courseId, section }: { courseId: string;
                 style={{ minHeight: 36, backgroundColor: "#A32D2D" }}
               >
                 {deleteSubmitting ? <Spinner className="h-4 w-4 mx-auto" /> : "ลบถาวร"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk GPS-off confirmation modal */}
+      {showBulkConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: "rgba(0,0,0,0.5)" }}>
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-5 space-y-4">
+            <div>
+              <p className="text-[15px] font-semibold text-gray-900">ปิด GPS ย้อนหลัง?</p>
+              <p className="text-[13px] mt-2" style={{ color: "#374151" }}>
+                {selectedSessions.size} session ที่เลือกจะถูกตั้งเป็น &quot;สอนออนไลน์&quot; (ปิดการตรวจ GPS ถาวร)
+                {selectedGpsFailCount > 0 && (
+                  <> และนักศึกษาที่มีสถานะ <strong>GPS Fail {selectedGpsFailCount} คน</strong> จะถูกเปลี่ยนเป็น Present ทันที</>
+                )}
+              </p>
+            </div>
+            {bulkError && (
+              <p className="text-[12px]" style={{ color: "#A32D2D" }}>{bulkError}</p>
+            )}
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => { setShowBulkConfirm(false); setBulkError(""); }}
+                disabled={bulkSubmitting}
+                className="btn-outline flex-1 text-[13px]"
+                style={{ minHeight: 36 }}
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="button"
+                onClick={handleBulkGpsOff}
+                disabled={bulkSubmitting}
+                className="flex-1 text-[13px] rounded-xl font-medium text-white transition-colors"
+                style={{ minHeight: 36, backgroundColor: "#185FA5" }}
+              >
+                {bulkSubmitting ? <Spinner className="h-4 w-4 mx-auto" /> : "ยืนยัน"}
               </button>
             </div>
           </div>

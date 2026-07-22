@@ -19,6 +19,7 @@ export interface OpenSessionInput {
   radius_m: number | string;
   late_after_min: number | string;
   late_enabled?: boolean;
+  gps_enabled?: boolean;
   otp_expire_min: number | string;
   week_number?: number;
   week_label?: string;
@@ -64,6 +65,7 @@ export async function openSessionForCourse(
     radius_m,
     late_after_min,
     late_enabled = true,
+    gps_enabled = true,
     otp_expire_min,
     week_number,
     week_label,
@@ -128,6 +130,7 @@ export async function openSessionForCourse(
       radius_m: parsedRadius,
       late_after_min: parsedLateAfter,
       late_enabled: !!late_enabled,
+      gps_enabled: !!gps_enabled,
       otp_expire_min: parsedOtpExpire,
       opened_at: "", // inactive until teacher opens it
       closed_at: is_past_session ? new Date().toISOString() : "",
@@ -154,6 +157,7 @@ export async function openSessionForCourse(
       radius_m: parsedRadius,
       late_after_min: parsedLateAfter,
       late_enabled: !!late_enabled,
+      gps_enabled: !!gps_enabled,
       otp_expire_min: parsedOtpExpire,
       opened_at: new Date().toISOString(),
       closed_at: is_past_session ? new Date().toISOString() : "",
@@ -205,6 +209,7 @@ export async function openSessionForCourse(
     radius_m: parsedRadius,
     late_after_min: parsedLateAfter,
     late_enabled: !!late_enabled,
+    gps_enabled: !!gps_enabled,
     otp_expire_min: parsedOtpExpire,
     opened_at: new Date().toISOString(),
     closed_at: is_past_session ? new Date().toISOString() : "",

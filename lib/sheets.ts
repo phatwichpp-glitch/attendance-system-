@@ -100,13 +100,13 @@ export async function initializeSpreadsheet(
           values: [["student_id", "firstname", "lastname", "course_id", "section", "order_num"]],
         },
         {
-          range: "sessions!A1:X1",
+          range: "sessions!A1:Y1",
           values: [[
             "session_id", "course_id", "section", "period", "date", "otp",
             "lat", "lng", "radius_m", "late_after_min", "otp_expire_min",
             "opened_at", "closed_at", "week_number", "week_label", "is_past_session",
             "period_count", "period_end", "check_in_mode", "linked_session_id", "part_number",
-            "late_enabled", "start_time", "end_time",
+            "late_enabled", "start_time", "end_time", "gps_enabled",
           ]],
         },
         {
@@ -611,7 +611,7 @@ export async function createSession(
   const sheets = getSheetsClient(accessToken);
   await sheets.spreadsheets.values.append({
     spreadsheetId,
-    range: "sessions!A:X",
+    range: "sessions!A:Y",
     valueInputOption: "RAW",
     requestBody: {
       values: [[
@@ -630,6 +630,7 @@ export async function createSession(
         session.late_enabled === false ? "FALSE" : "TRUE",
         session.start_time ?? "",
         session.end_time ?? "",
+        session.gps_enabled === false ? "FALSE" : "TRUE",
       ]],
     },
   });
@@ -641,7 +642,7 @@ export async function getAllSessions(
 ): Promise<Session[]> {
   const sheets = getSheetsClient(accessToken);
   const res = await sheets.spreadsheets.values.get({
-    spreadsheetId, range: "sessions!A2:X",
+    spreadsheetId, range: "sessions!A2:Y",
   });
   return (res.data.values ?? []).map(rowToSession);
 }
@@ -710,6 +711,7 @@ function rowToSession(r: string[]): Session {
     late_enabled: r[21] !== "FALSE",
     start_time: r[22] || undefined,
     end_time: r[23] || undefined,
+    gps_enabled: r[24] !== "FALSE",
   };
 }
 
@@ -1311,18 +1313,18 @@ export async function updateSessionById(
     "week_label" | "date" | "period" | "closed_at" | "week_number" | "opened_at" |
     "period_count" | "period_end" | "check_in_mode" | "linked_session_id" | "part_number" |
     "otp" | "radius_m" | "late_after_min" | "otp_expire_min" | "late_enabled" |
-    "start_time" | "end_time"
+    "start_time" | "end_time" | "gps_enabled"
   >>
 ): Promise<boolean> {
   const sheets = getSheetsClient(accessToken);
-  const res = await sheets.spreadsheets.values.get({ spreadsheetId, range: "sessions!A2:X" });
+  const res = await sheets.spreadsheets.values.get({ spreadsheetId, range: "sessions!A2:Y" });
   const rows = (res.data.values ?? []) as string[][];
   const idx = rows.findIndex((r) => r[0] === sessionId);
   if (idx === -1) return false;
 
-  // Pad row to 24 columns so new fields always have indices
+  // Pad row to 25 columns so new fields always have indices
   const row = [...rows[idx]];
-  while (row.length < 24) row.push("");
+  while (row.length < 25) row.push("");
 
   if (updates.period !== undefined) row[3] = updates.period;
   if (updates.date !== undefined) row[4] = updates.date;
@@ -1342,10 +1344,11 @@ export async function updateSessionById(
   if (updates.late_enabled !== undefined) row[21] = updates.late_enabled ? "TRUE" : "FALSE";
   if (updates.start_time !== undefined) row[22] = updates.start_time ?? "";
   if (updates.end_time !== undefined) row[23] = updates.end_time ?? "";
+  if (updates.gps_enabled !== undefined) row[24] = updates.gps_enabled ? "TRUE" : "FALSE";
 
   await sheets.spreadsheets.values.update({
     spreadsheetId,
-    range: `sessions!A${idx + 2}:X${idx + 2}`,
+    range: `sessions!A${idx + 2}:Y${idx + 2}`,
     valueInputOption: "RAW",
     requestBody: { values: [row] },
   });
@@ -1374,6 +1377,66 @@ export async function reopenSession(
   });
   if (ok) await deleteAutoAbsentForSession(accessToken, spreadsheetId, sessionId);
   return ok ? { otp, opened_at } : null;
+}
+
+// Retroactive fix for sessions that turned out to be taught online: turns off
+// the geofence on each session and un-fails any gps_fail record from it, using
+// the exact same fields the single-record "approve" action sets (see
+// app/api/sheets/attendance/[attendanceId]/route.ts) so the two paths stay
+// indistinguishable in the audit trail. Batched into one read+write per sheet
+// regardless of how many sessions are selected.
+export async function bulkDisableGpsForSessions(
+  accessToken: string,
+  spreadsheetId: string,
+  sessionIds: string[]
+): Promise<{ sessionsUpdated: number; recordsCleared: number; perSession: Record<string, number> }> {
+  const sheets = getSheetsClient(accessToken);
+  const idSet = new Set(sessionIds);
+
+  // 1. Sessions: flip gps_enabled off for matching rows
+  const sessRes = await sheets.spreadsheets.values.get({ spreadsheetId, range: "sessions!A2:Y" });
+  const sessRows = (sessRes.data.values ?? []) as string[][];
+  let sessionsUpdated = 0;
+  for (const row of sessRows) {
+    if (idSet.has(row[0])) {
+      while (row.length < 25) row.push("");
+      row[24] = "FALSE";
+      sessionsUpdated++;
+    }
+  }
+  if (sessionsUpdated > 0) {
+    await sheets.spreadsheets.values.update({
+      spreadsheetId, range: "sessions!A2:Y",
+      valueInputOption: "RAW", requestBody: { values: sessRows },
+    });
+  }
+
+  // 2. Attendance: clear gps_fail → present for matching sessions
+  const attRes = await sheets.spreadsheets.values.get({ spreadsheetId, range: "attendance!A2:Z" });
+  const attRows = (attRes.data.values ?? []) as string[][];
+  const now = new Date().toISOString();
+  const perSession: Record<string, number> = {};
+  for (const row of attRows) {
+    if (idSet.has(row[1]) && row[6] === "gps_fail") {
+      while (row.length < 22) row.push("");
+      row[6] = "present";                          // status
+      row[10] = "TRUE";                             // overridden
+      row[11] = now;                                // overridden_at
+      row[16] = "ปิด GPS check — สอนออนไลน์";        // edit_note
+      row[20] = "approve";                           // action_taken
+      row[21] = now;                                 // action_taken_at
+      perSession[row[1]] = (perSession[row[1]] ?? 0) + 1;
+    }
+  }
+  const recordsCleared = Object.values(perSession).reduce((a, b) => a + b, 0);
+  if (recordsCleared > 0) {
+    await sheets.spreadsheets.values.update({
+      spreadsheetId, range: "attendance!A2:Z",
+      valueInputOption: "RAW", requestBody: { values: attRows },
+    });
+  }
+
+  return { sessionsUpdated, recordsCleared, perSession };
 }
 
 // ─── Attendance CRUD ──────────────────────────────────────────────────────────
